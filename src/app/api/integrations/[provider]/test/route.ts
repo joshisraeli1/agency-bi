@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { decryptJson } from "@/lib/encryption";
 import { testConnection as testSheetsConnection } from "@/lib/integrations/sheets";
+import { testConnection as testXeroConnection } from "@/lib/integrations/xero";
+import { testConnection as testSlackConnection } from "@/lib/integrations/slack";
+import { testConnectionGmail } from "@/lib/integrations/gmail";
+import { testConnectionCalendar } from "@/lib/integrations/calendar";
 
 export async function POST(
   _request: NextRequest,
@@ -84,6 +88,61 @@ export async function POST(
           success: true,
           message: `Connected! Found ${sheetsResult.tabs?.length ?? 0} tab(s)`,
           tabs: sheetsResult.tabs,
+        });
+      }
+
+      case "xero": {
+        const accessToken = decrypted.accessToken as string;
+        const tenantId = decrypted.tenantId as string;
+        if (!accessToken) throw new Error("Access token not configured");
+        if (!tenantId) throw new Error("Tenant ID not configured");
+        const xeroResult = await testXeroConnection(accessToken, tenantId);
+        if (!xeroResult.success) {
+          throw new Error(xeroResult.error ?? "Connection failed");
+        }
+        return NextResponse.json({
+          success: true,
+          message: `Connected to ${xeroResult.orgName || "Xero"}`,
+        });
+      }
+
+      case "slack": {
+        const botToken = decrypted.botToken as string;
+        if (!botToken) throw new Error("Bot token not configured");
+        const slackResult = await testSlackConnection(botToken);
+        if (!slackResult.success) {
+          throw new Error(slackResult.error ?? "Connection failed");
+        }
+        return NextResponse.json({
+          success: true,
+          message: `Connected to ${slackResult.team || "Slack"} as ${slackResult.user || "bot"}`,
+        });
+      }
+
+      case "gmail": {
+        const gmailAccessToken = decrypted.accessToken as string;
+        if (!gmailAccessToken) throw new Error("Access token not configured");
+        const gmailResult = await testConnectionGmail(gmailAccessToken);
+        if (!gmailResult.success) {
+          throw new Error(gmailResult.error ?? "Connection failed");
+        }
+        return NextResponse.json({
+          success: true,
+          message: `Connected as ${gmailResult.email || "Gmail user"}`,
+        });
+      }
+
+      case "calendar": {
+        const calAccessToken = decrypted.accessToken as string;
+        if (!calAccessToken) throw new Error("Access token not configured");
+        const calResult = await testConnectionCalendar(calAccessToken);
+        if (!calResult.success) {
+          throw new Error(calResult.error ?? "Connection failed");
+        }
+        return NextResponse.json({
+          success: true,
+          message: `Connected! Found ${calResult.calendars?.length ?? 0} calendar(s)`,
+          calendars: calResult.calendars,
         });
       }
 

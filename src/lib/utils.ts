@@ -38,3 +38,33 @@ export function slugify(str: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 }
+
+export function formatPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+export function getMonthRange(n: number): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(format(d, "yyyy-MM"));
+  }
+  return months;
+}
+
+export function getEffectiveHourlyRate(member: {
+  costType?: string | null;
+  hourlyRate?: number | null;
+  annualSalary?: number | null;
+  weeklyHours?: number | null;
+}): number | null {
+  if (member.costType === "hourly" && member.hourlyRate) {
+    return member.hourlyRate;
+  }
+  if (member.annualSalary) {
+    const weeklyHours = member.weeklyHours || 38;
+    return member.annualSalary / (52 * weeklyHours);
+  }
+  return null;
+}

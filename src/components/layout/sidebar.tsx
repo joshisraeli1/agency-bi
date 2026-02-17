@@ -10,12 +10,16 @@ import {
   Plug,
   GitMerge,
   Settings,
+  BarChart3,
+  MessageSquare,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/team", label: "Team", icon: UserCog },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/chat", label: "AI Chat", icon: MessageSquare },
   { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/entities", label: "Entity Resolution", icon: GitMerge },
   { href: "/settings", label: "Settings", icon: Settings },

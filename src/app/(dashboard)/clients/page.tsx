@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,7 +69,12 @@ export default async function ClientsPage() {
                   <TableRow key={client.id}>
                     <TableCell>
                       <div>
-                        <span className="font-medium">{client.name}</span>
+                        <Link
+                          href={`/clients/${client.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {client.name}
+                        </Link>
                         {client._count.aliases > 0 && (
                           <span className="text-xs text-muted-foreground ml-1">
                             (+{client._count.aliases} aliases)

@@ -35,3 +35,7 @@ export class RateLimiter {
 export const mondayRateLimiter = new RateLimiter(60, 10); // 60 tokens, 10/sec
 export const hubspotRateLimiter = new RateLimiter(100, 10); // 100/10sec
 export const sheetsRateLimiter = new RateLimiter(60, 1); // 60/min
+export const xeroRateLimiter = new RateLimiter(60, 1); // 60/min
+export const slackRateLimiter = new RateLimiter(50, 1); // Tier 3: ~50/min
+export const gmailRateLimiter = new RateLimiter(25, 1); // 250 quota units/sec, conservative
+export const calendarRateLimiter = new RateLimiter(25, 1); // Same as Gmail

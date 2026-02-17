@@ -24,25 +24,21 @@ const integrationMeta: Record<
     name: "Xero",
     description: "Invoices, expenses, and financial data",
     configUrl: "/integrations/xero",
-    disabled: true,
   },
   slack: {
     name: "Slack",
     description: "Client communication logs and team activity",
     configUrl: "/integrations/slack",
-    disabled: true,
   },
   gmail: {
     name: "Gmail",
     description: "Client email communication tracking",
     configUrl: "/integrations/gmail",
-    disabled: true,
   },
   calendar: {
     name: "Google Calendar",
     description: "Meeting logs and client meeting tracking",
     configUrl: "/integrations/calendar",
-    disabled: true,
   },
 };
 

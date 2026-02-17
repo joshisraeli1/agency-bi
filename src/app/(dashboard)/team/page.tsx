@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,7 +62,12 @@ export default async function TeamPage() {
                   <TableRow key={member.id}>
                     <TableCell>
                       <div>
-                        <span className="font-medium">{member.name}</span>
+                        <Link
+                          href={`/team/${member.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {member.name}
+                        </Link>
                         {member.email && (
                           <p className="text-xs text-muted-foreground">
                             {member.email}
