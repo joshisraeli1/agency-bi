@@ -97,4 +97,20 @@ export interface AgencyKPIs {
     margin: number;
     revenue: number;
   }[];
+  marginByDivision: {
+    division: string;
+    revenue: number;
+    cost: number;
+    margin: number;
+    marginPercent: number;
+  }[];
+  divisionMarginTrend: Record<string, unknown>[];
+  clientLTVByIndustry: {
+    industry: string;
+    revenue: number;
+  }[];
+  clientLTVByDivision: {
+    division: string;
+    revenue: number;
+  }[];
 }
