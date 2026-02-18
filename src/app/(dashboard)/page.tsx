@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -35,26 +36,34 @@ export default async function OverviewPage({ searchParams }: Props) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Revenue"
-          value={formatCurrency(revenue.totalRevenue)}
-          icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Avg Margin"
-          value={formatPercent(revenue.avgMarginPercent)}
-          icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Clients"
-          value={String(clientCount)}
-          icon={<Users className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Team Members"
-          value={String(teamCount)}
-          icon={<UserCog className="h-4 w-4 text-muted-foreground" />}
-        />
+        <Link href="/financials">
+          <StatCard
+            title="Total Revenue"
+            value={formatCurrency(revenue.totalRevenue)}
+            icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+          />
+        </Link>
+        <Link href="/analytics">
+          <StatCard
+            title="Avg Margin"
+            value={formatPercent(revenue.avgMarginPercent)}
+            icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
+          />
+        </Link>
+        <Link href="/clients">
+          <StatCard
+            title="Clients"
+            value={String(clientCount)}
+            icon={<Users className="h-4 w-4 text-muted-foreground" />}
+          />
+        </Link>
+        <Link href="/team">
+          <StatCard
+            title="Team Members"
+            value={String(teamCount)}
+            icon={<UserCog className="h-4 w-4 text-muted-foreground" />}
+          />
+        </Link>
       </div>
 
       <RevenueCharts data={revenue} />
@@ -75,7 +84,9 @@ export default async function OverviewPage({ searchParams }: Props) {
                     key={client.clientId}
                     className="flex items-center justify-between text-sm"
                   >
-                    <span className="font-medium">{client.clientName}</span>
+                    <Link href={`/clients/${client.clientId}`} className="font-medium hover:underline">
+                      {client.clientName}
+                    </Link>
                     <div className="flex items-center gap-2">
                       <MarginBadge marginPercent={client.marginPercent} />
                       <span className="text-xs text-muted-foreground">
