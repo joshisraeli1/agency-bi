@@ -1,14 +1,25 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import path from "path";
 
 async function main() {
   const { PrismaClient } = await import("../src/generated/prisma/client.js");
 
-  const dbPath = path.resolve(__dirname, "..", "dev.db");
-  const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
-  const prisma = new PrismaClient({ adapter });
+  const url = process.env.DATABASE_URL || "file:./dev.db";
+  let prisma;
+
+  if (url.startsWith("postgresql:") || url.startsWith("postgres:")) {
+    const { PrismaPg } = await import("@prisma/adapter-pg");
+    const adapter = new PrismaPg({ connectionString: url });
+    prisma = new PrismaClient({ adapter });
+  } else {
+    const { PrismaBetterSqlite3 } = await import("@prisma/adapter-better-sqlite3");
+    const dbPath = url.startsWith("file:")
+      ? path.resolve(__dirname, "..", url.replace("file:", "").replace("./", ""))
+      : path.resolve(__dirname, "..", "dev.db");
+    const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+    prisma = new PrismaClient({ adapter });
+  }
 
   try {
     // ── Admin user ──────────────────────────────────────────────────
