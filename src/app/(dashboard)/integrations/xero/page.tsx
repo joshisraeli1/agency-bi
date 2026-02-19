@@ -7,12 +7,21 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
   Loader2,
   RefreshCw,
   ExternalLink,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -34,6 +43,14 @@ export default function XeroIntegrationPage() {
     message: string;
   } | null>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
+
+  // Discovery state
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryData, setDiscoveryData] = useState<{
+    organisation: { name: string };
+    invoices: { total: number; samples: Array<{ id: string; number: string; contact: string; total: number; status: string; date: string; type: string }> };
+    expenses: { total: number; samples: Array<{ id: string; contact: string; total: number; status: string; date: string }> };
+  } | null>(null);
 
   // Sync state for each type
   const [syncStates, setSyncStates] = useState<
@@ -149,6 +166,23 @@ export default function XeroIntegrationPage() {
       setIsConnected(false);
     } finally {
       setIsTesting(false);
+    }
+  }
+
+  async function handleDiscover() {
+    setDiscovering(true);
+    try {
+      const res = await fetch("/api/integrations/xero/discover", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setDiscoveryData(data);
+        }
+      }
+    } catch {
+      // Discovery failed
+    } finally {
+      setDiscovering(false);
     }
   }
 
@@ -377,6 +411,112 @@ export default function XeroIntegrationPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Data Preview */}
+      {isConnected && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Data Preview</CardTitle>
+                <CardDescription>
+                  Preview your Xero data before syncing to verify the structure looks correct.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleDiscover}
+                disabled={discovering}
+              >
+                {discovering ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Search className="mr-2 h-4 w-4" />
+                    Preview Data
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          {discoveryData && (
+            <CardContent className="space-y-6">
+              {/* Invoices preview */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">
+                  Invoices ({discoveryData.invoices.total} sampled)
+                </h3>
+                {discoveryData.invoices.samples.length > 0 ? (
+                  <div className="rounded-md border overflow-auto max-h-48">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs py-1 px-2">Number</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Contact</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Total</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Status</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Date</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Type</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {discoveryData.invoices.samples.map((inv) => (
+                          <TableRow key={inv.id}>
+                            <TableCell className="text-xs py-1 px-2">{inv.number || "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{inv.contact || "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">${Number(inv.total).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{inv.status}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{inv.date || "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{inv.type}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No invoices found</p>
+                )}
+              </div>
+
+              {/* Expenses preview */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">
+                  Expenses ({discoveryData.expenses.total} sampled)
+                </h3>
+                {discoveryData.expenses.samples.length > 0 ? (
+                  <div className="rounded-md border overflow-auto max-h-48">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs py-1 px-2">Contact</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Total</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Status</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {discoveryData.expenses.samples.map((exp) => (
+                          <TableRow key={exp.id}>
+                            <TableCell className="text-xs py-1 px-2">{exp.contact || "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">${Number(exp.total).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{exp.status}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{exp.date || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No expenses found</p>
+                )}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* Sync Actions */}
       {isConnected && (

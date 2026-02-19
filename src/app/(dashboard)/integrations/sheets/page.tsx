@@ -10,13 +10,29 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   FileSpreadsheet,
   Loader2,
   CheckCircle2,
   XCircle,
   RefreshCw,
   ArrowLeft,
-  Eye,
+  Search,
+  Save,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -36,26 +52,43 @@ interface SyncStatus {
 
 type TabKey = "salary" | "clients" | "costs" | "client-match" | "packages";
 
-const TAB_META: Record<TabKey, { tabName: string; description: string }> = {
+interface DiscoveredTab {
+  name: string;
+  headers: string[];
+  sampleRows: string[][];
+  totalRows: number;
+  error?: string;
+}
+
+// Config key that maps to the tabMappings field in SheetsConfig
+const TAB_CONFIG_KEYS: Record<TabKey, string> = {
+  salary: "salary",
+  clients: "clients",
+  costs: "costs",
+  "client-match": "clientMatch",
+  packages: "packages",
+};
+
+const TAB_META: Record<TabKey, { description: string; expectedHeaders: string[] }> = {
   salary: {
-    tabName: "4.3 Salary Data",
     description: "Team member salary, hourly rates, and employment details",
+    expectedHeaders: ["name", "email", "role", "division", "salary", "hourly rate"],
   },
   clients: {
-    tabName: "4.2 Client Data",
     description: "Client retainer values, packages, and deal stages",
+    expectedHeaders: ["client name", "retainer value", "deal stage", "status", "package"],
   },
   costs: {
-    tabName: "4.4 Segmented Cost Data",
     description: "Monthly segmented cost data per client",
+    expectedHeaders: ["client name", "month", "cost", "hours", "category"],
   },
   "client-match": {
-    tabName: "5.3 Client Match",
-    description: "Client name mappings between Monday.com and HubSpot",
+    description: "Client name mappings across platforms",
+    expectedHeaders: ["monday name", "hubspot name", "canonical name"],
   },
   packages: {
-    tabName: "5.2 Package Lookup",
     description: "Package tier definitions with hours and rates",
+    expectedHeaders: ["package name", "tier", "hours included", "monthly rate"],
   },
 };
 
@@ -73,19 +106,19 @@ export default function SheetsIntegrationPage() {
   const [configLoading, setConfigLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Test connection state
-  const [testing, setTesting] = useState(false);
-  const [availableTabs, setAvailableTabs] = useState<string[] | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
+  // Discovery state
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredTabs, setDiscoveredTabs] = useState<DiscoveredTab[] | null>(null);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
 
-  // Sync state: per-tab import IDs and statuses
-  const [syncImports, setSyncImports] = useState<Record<TabKey, string | null>>({
-    salary: null,
-    clients: null,
-    costs: null,
-    "client-match": null,
-    packages: null,
-  });
+  // Tab mapping: maps our data type keys to the actual tab names in the spreadsheet
+  const [tabMappings, setTabMappings] = useState<Record<string, string>>({});
+  const [mappingsSaved, setMappingsSaved] = useState(false);
+
+  // Preview state: which tab is expanded for preview
+  const [previewTab, setPreviewTab] = useState<TabKey | null>(null);
+
+  // Sync state
   const [syncStatuses, setSyncStatuses] = useState<Record<TabKey, SyncStatus | null>>({
     salary: null,
     clients: null,
@@ -109,12 +142,14 @@ export default function SheetsIntegrationPage() {
           const data = await res.json();
           if (data.config) {
             setServiceAccountEmail(data.config.serviceAccountEmail ?? "");
-            // Private key is masked, so don't set it — user needs to re-enter
             setSheetId(data.config.sheetId ?? "");
+            if (data.config.tabMappings) {
+              setTabMappings(data.config.tabMappings);
+            }
           }
         }
       } catch {
-        // Config not found — that's fine, user will set it up
+        // Config not found
       } finally {
         setConfigLoading(false);
       }
@@ -122,10 +157,7 @@ export default function SheetsIntegrationPage() {
     loadConfig();
   }, []);
 
-  // ---------------------------------------------------------------------------
   // Cleanup polling on unmount
-  // ---------------------------------------------------------------------------
-
   useEffect(() => {
     return () => {
       for (const interval of Object.values(pollingRef.current)) {
@@ -135,13 +167,12 @@ export default function SheetsIntegrationPage() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Save config
+  // Save config (credentials + tab mappings)
   // ---------------------------------------------------------------------------
 
-  async function saveConfig() {
+  async function saveConfig(extraConfig?: Record<string, unknown>) {
     setSaving(true);
     try {
-      // Ensure the integration record exists
       await fetch("/api/integrations/sheets", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -151,6 +182,8 @@ export default function SheetsIntegrationPage() {
             serviceAccountEmail,
             ...(privateKey ? { privateKey } : {}),
             sheetId,
+            tabMappings,
+            ...extraConfig,
           },
         }),
       });
@@ -160,39 +193,55 @@ export default function SheetsIntegrationPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Test connection
+  // Discover tabs (connect + inspect structure)
   // ---------------------------------------------------------------------------
 
-  async function handleTestConnection() {
-    setTesting(true);
-    setTestError(null);
-    setAvailableTabs(null);
+  async function handleDiscover() {
+    setDiscovering(true);
+    setDiscoverError(null);
+    setDiscoveredTabs(null);
 
-    // Save first
+    // Save credentials first
     await saveConfig();
 
     try {
-      const res = await fetch("/api/integrations/sheets/test", { method: "POST" });
+      const res = await fetch("/api/integrations/sheets/discover", { method: "POST" });
       const data = await res.json();
 
-      if (data.success) {
-        setAvailableTabs(data.tabs ?? []);
-      } else {
-        setTestError(data.error ?? "Connection test failed");
+      if (!res.ok || !data.success) {
+        setDiscoverError(data.error ?? "Discovery failed");
+        return;
+      }
+
+      setDiscoveredTabs(data.tabs ?? []);
+
+      // Load existing tab mappings if any
+      if (data.tabMappings && Object.keys(data.tabMappings).length > 0) {
+        setTabMappings(data.tabMappings);
       }
     } catch (err) {
-      setTestError(err instanceof Error ? err.message : "Connection test failed");
+      setDiscoverError(err instanceof Error ? err.message : "Discovery failed");
     } finally {
-      setTesting(false);
+      setDiscovering(false);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Poll sync status
+  // Save tab mappings
+  // ---------------------------------------------------------------------------
+
+  async function handleSaveMappings() {
+    setMappingsSaved(false);
+    await saveConfig({ tabMappings });
+    setMappingsSaved(true);
+    setTimeout(() => setMappingsSaved(false), 3000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sync
   // ---------------------------------------------------------------------------
 
   const startPolling = useCallback((tab: TabKey, importId: string) => {
-    // Clear existing poll for this tab
     if (pollingRef.current[tab]) {
       clearInterval(pollingRef.current[tab]);
     }
@@ -203,34 +252,25 @@ export default function SheetsIntegrationPage() {
         if (res.ok) {
           const data: SyncStatus = await res.json();
           setSyncStatuses((prev) => ({ ...prev, [tab]: data }));
-
           if (data.status === "completed" || data.status === "failed") {
             clearInterval(pollingRef.current[tab]);
             delete pollingRef.current[tab];
           }
         }
       } catch {
-        // Polling error, will retry next interval
+        // Will retry
       }
     };
 
-    // Initial poll
     poll();
     pollingRef.current[tab] = setInterval(poll, 1500);
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Sync single tab
-  // ---------------------------------------------------------------------------
-
   async function handleSync(tab: TabKey) {
-    // Save config first
-    await saveConfig();
-
+    await saveConfig({ tabMappings });
     try {
       const res = await fetch(`/api/sync/sheets?tab=${tab}`, { method: "POST" });
       const data = await res.json();
-
       if (data.error) {
         setSyncStatuses((prev) => ({
           ...prev,
@@ -246,10 +286,7 @@ export default function SheetsIntegrationPage() {
         }));
         return;
       }
-
-      const importId = data.importId;
-      setSyncImports((prev) => ({ ...prev, [tab]: importId }));
-      startPolling(tab, importId);
+      startPolling(tab, data.importId);
     } catch (err) {
       setSyncStatuses((prev) => ({
         ...prev,
@@ -266,36 +303,20 @@ export default function SheetsIntegrationPage() {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Sync all tabs
-  // ---------------------------------------------------------------------------
-
   async function handleSyncAll() {
     setSyncingAll(true);
-
-    // Save config first
-    await saveConfig();
-
+    await saveConfig({ tabMappings });
     try {
       const res = await fetch("/api/sync/sheets?tab=all", { method: "POST" });
       const data = await res.json();
-
-      if (data.error) {
-        setSyncingAll(false);
-        return;
-      }
-
       if (data.importIds) {
         const importIds: string[] = data.importIds;
         TAB_ORDER.forEach((tab, idx) => {
-          if (importIds[idx]) {
-            setSyncImports((prev) => ({ ...prev, [tab]: importIds[idx] }));
-            startPolling(tab, importIds[idx]);
-          }
+          if (importIds[idx]) startPolling(tab, importIds[idx]);
         });
       }
     } catch {
-      // Error starting sync all
+      // Error
     } finally {
       setSyncingAll(false);
     }
@@ -321,6 +342,18 @@ export default function SheetsIntegrationPage() {
     );
   }
 
+  function getMappedTabName(tabKey: TabKey): string | null {
+    const configKey = TAB_CONFIG_KEYS[tabKey];
+    return tabMappings[configKey] || null;
+  }
+
+  function getDiscoveredTabData(tabName: string): DiscoveredTab | null {
+    return discoveredTabs?.find((t) => t.name === tabName) ?? null;
+  }
+
+  const mappedCount = TAB_ORDER.filter((k) => getMappedTabName(k)).length;
+  const hasDiscoveredTabs = discoveredTabs && discoveredTabs.length > 0;
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -334,7 +367,7 @@ export default function SheetsIntegrationPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-4xl">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/integrations">
@@ -349,16 +382,19 @@ export default function SheetsIntegrationPage() {
           <div>
             <h1 className="text-2xl font-bold">Google Sheets Integration</h1>
             <p className="text-sm text-muted-foreground">
-              Connect to the efficiency spreadsheet for salary, client, and cost data.
+              Connect your spreadsheet, map tabs to data types, then sync.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Configuration Card */}
+      {/* Step 1: Connection Settings */}
       <Card>
         <CardHeader>
-          <CardTitle>Connection Settings</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <span className="flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold h-5 w-5">1</span>
+            Connection Settings
+          </CardTitle>
           <CardDescription>
             Configure your Google service account credentials and spreadsheet ID.
           </CardDescription>
@@ -386,8 +422,7 @@ export default function SheetsIntegrationPage() {
               className="font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">
-              Paste the private key from your service account JSON file. You can also paste the
-              entire JSON file contents, and the key will be extracted.
+              Paste the private key from your service account JSON file, or the entire JSON contents.
             </p>
           </div>
 
@@ -400,190 +435,324 @@ export default function SheetsIntegrationPage() {
               onChange={(e) => setSheetId(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              The ID from the spreadsheet URL: docs.google.com/spreadsheets/d/
-              <strong>SPREADSHEET_ID</strong>/edit
+              The ID from the spreadsheet URL: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit
             </p>
           </div>
 
           <div className="flex items-center gap-3 pt-2">
             <Button
-              onClick={handleTestConnection}
-              disabled={testing || !serviceAccountEmail || !sheetId}
-              variant="outline"
+              onClick={handleDiscover}
+              disabled={discovering || !serviceAccountEmail || !sheetId}
             >
-              {testing ? (
+              {discovering ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Testing...
+                  Discovering...
                 </>
               ) : (
                 <>
-                  <Eye className="mr-2 h-4 w-4" />
-                  Preview Tabs
+                  <Search className="mr-2 h-4 w-4" />
+                  Discover Tabs
                 </>
-              )}
-            </Button>
-            <Button onClick={saveConfig} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save Configuration"
               )}
             </Button>
           </div>
 
-          {/* Test results */}
-          {testError && (
+          {discoverError && (
             <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 mt-3">
               <div className="flex items-center gap-2 text-sm text-destructive">
                 <XCircle className="h-4 w-4 shrink-0" />
-                <span>{testError}</span>
-              </div>
-            </div>
-          )}
-
-          {availableTabs && (
-            <div className="rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 p-3 mt-3">
-              <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 mb-2">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>Connection successful! Found {availableTabs.length} tab(s):</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {availableTabs.map((tab) => (
-                  <Badge key={tab} variant="secondary" className="text-xs">
-                    {tab}
-                  </Badge>
-                ))}
+                <span>{discoverError}</span>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Separator />
+      {/* Step 2: Tab Mapping (only show after discovery) */}
+      {hasDiscoveredTabs && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold h-5 w-5">2</span>
+              Map Your Tabs
+            </CardTitle>
+            <CardDescription>
+              Found {discoveredTabs!.length} tab(s) in your spreadsheet. Map each data type to the correct tab.
+              {mappedCount > 0 && (
+                <span className="ml-1 font-medium text-foreground">
+                  ({mappedCount}/{TAB_ORDER.length} mapped)
+                </span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Available tabs preview */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">Available tabs in your spreadsheet:</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {discoveredTabs!.map((tab) => (
+                  <Badge key={tab.name} variant="secondary" className="text-xs">
+                    {tab.name} ({tab.totalRows} rows)
+                  </Badge>
+                ))}
+              </div>
+            </div>
 
-      {/* Sync Tabs */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Data Sync</h2>
-            <p className="text-sm text-muted-foreground">
-              Sync data from individual sheet tabs or run all at once.
-            </p>
-          </div>
-          <Button
-            onClick={handleSyncAll}
-            disabled={syncingAll || isAnySyncing() || !sheetId}
-          >
-            {syncingAll ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Sync All
-              </>
-            )}
-          </Button>
-        </div>
+            <Separator />
 
-        {TAB_ORDER.map((tabKey) => {
-          const meta = TAB_META[tabKey];
-          const status = syncStatuses[tabKey];
-          const syncing = isTabSyncing(tabKey);
-          const progress = getProgressPercent(status);
+            {/* Mapping dropdowns */}
+            <div className="space-y-4">
+              {TAB_ORDER.map((tabKey) => {
+                const meta = TAB_META[tabKey];
+                const configKey = TAB_CONFIG_KEYS[tabKey];
+                const mappedTab = tabMappings[configKey] || "";
+                const tabData = mappedTab ? getDiscoveredTabData(mappedTab) : null;
 
-          return (
-            <Card key={tabKey}>
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-sm">{meta.tabName}</h3>
-                      {status?.status === "completed" && (
-                        <Badge variant="default" className="text-xs">
-                          Completed
-                        </Badge>
-                      )}
-                      {status?.status === "failed" && (
-                        <Badge variant="destructive" className="text-xs">
-                          Failed
-                        </Badge>
-                      )}
-                      {syncing && (
-                        <Badge variant="secondary" className="text-xs">
-                          Syncing
-                        </Badge>
-                      )}
+                return (
+                  <div key={tabKey} className="space-y-2">
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 min-w-0">
+                        <Label className="text-sm font-medium capitalize">
+                          {tabKey.replace("-", " ")}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{meta.description}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Expected columns: {meta.expectedHeaders.join(", ")}
+                        </p>
+                      </div>
+                      <Select
+                        value={mappedTab}
+                        onValueChange={(value) => {
+                          setTabMappings((prev) => ({
+                            ...prev,
+                            [configKey]: value === "__none" ? "" : value,
+                          }));
+                          setMappingsSaved(false);
+                        }}
+                      >
+                        <SelectTrigger className="w-[240px]">
+                          <SelectValue placeholder="Select a tab..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none">-- Skip --</SelectItem>
+                          {discoveredTabs!.map((tab) => (
+                            <SelectItem key={tab.name} value={tab.name}>
+                              {tab.name} ({tab.totalRows} rows)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <p className="text-xs text-muted-foreground">{meta.description}</p>
 
-                    {/* Progress bar */}
-                    {status && (
-                      <div className="mt-3 space-y-1.5">
-                        <Progress value={progress} className="h-1.5" />
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{status.currentStep}</span>
-                          <span>
-                            {status.recordsSynced}/{status.recordsFound} synced
-                            {status.recordsFailed > 0 && (
-                              <span className="text-destructive">
-                                {" "}({status.recordsFailed} failed)
-                              </span>
-                            )}
+                    {/* Header match indicator */}
+                    {tabData && tabData.headers.length > 0 && (
+                      <div className="ml-0 pl-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                          <span className="text-xs text-muted-foreground">
+                            Headers: {tabData.headers.slice(0, 8).join(", ")}
+                            {tabData.headers.length > 8 && ` +${tabData.headers.length - 8} more`}
                           </span>
                         </div>
 
-                        {/* Errors */}
-                        {status.errors.length > 0 && status.status !== "running" && (
-                          <div className="mt-2 rounded-md bg-destructive/5 border border-destructive/10 p-2">
-                            <p className="text-xs font-medium text-destructive mb-1">
-                              Errors ({status.errors.length}):
-                            </p>
-                            <ul className="text-xs text-muted-foreground space-y-0.5 max-h-24 overflow-auto">
-                              {status.errors.slice(0, 5).map((error, i) => (
-                                <li key={i} className="truncate">
-                                  {error}
-                                </li>
-                              ))}
-                              {status.errors.length > 5 && (
-                                <li className="text-muted-foreground/70">
-                                  ...and {status.errors.length - 5} more
-                                </li>
-                              )}
-                            </ul>
+                        {/* Preview toggle */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-6 px-2"
+                          onClick={() =>
+                            setPreviewTab(previewTab === tabKey ? null : tabKey)
+                          }
+                        >
+                          {previewTab === tabKey ? "Hide Preview" : "Show Preview"}
+                        </Button>
+
+                        {/* Sample data table */}
+                        {previewTab === tabKey && tabData.sampleRows.length > 0 && (
+                          <div className="mt-2 rounded-md border overflow-auto max-h-48">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {tabData.headers.map((h, i) => (
+                                    <TableHead key={i} className="text-xs whitespace-nowrap py-1 px-2">
+                                      {h}
+                                    </TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {tabData.sampleRows.map((row, ri) => (
+                                  <TableRow key={ri}>
+                                    {tabData.headers.map((_, ci) => (
+                                      <TableCell key={ci} className="text-xs py-1 px-2 whitespace-nowrap max-w-[200px] truncate">
+                                        {row[ci] ?? ""}
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
                           </div>
                         )}
                       </div>
                     )}
-                  </div>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSync(tabKey)}
-                    disabled={syncing || isAnySyncing() || !sheetId}
-                  >
-                    {syncing ? (
-                      <>
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        Syncing
-                      </>
-                    ) : (
-                      "Sync"
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                    {tabKey !== TAB_ORDER[TAB_ORDER.length - 1] && <Separator className="mt-3" />}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button onClick={handleSaveMappings} disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save Tab Mappings
+                  </>
+                )}
+              </Button>
+              {mappingsSaved && (
+                <span className="flex items-center gap-1.5 text-sm text-green-600">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Saved!
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 3: Sync (only show when tabs are mapped) */}
+      {mappedCount > 0 && (
+        <>
+          <Separator />
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <span className="flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold h-5 w-5">3</span>
+                  Sync Data
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Sync mapped tabs. Only tabs with a mapping will be synced.
+                </p>
+              </div>
+              <Button
+                onClick={handleSyncAll}
+                disabled={syncingAll || isAnySyncing() || mappedCount === 0}
+              >
+                {syncingAll ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Sync All ({mappedCount})
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {TAB_ORDER.map((tabKey) => {
+              const mappedTabName = getMappedTabName(tabKey);
+              if (!mappedTabName) return null;
+
+              const meta = TAB_META[tabKey];
+              const status = syncStatuses[tabKey];
+              const syncing = isTabSyncing(tabKey);
+              const progress = getProgressPercent(status);
+
+              return (
+                <Card key={tabKey}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-medium text-sm">{mappedTabName}</h3>
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {tabKey.replace("-", " ")}
+                          </Badge>
+                          {status?.status === "completed" && (
+                            <Badge variant="default" className="text-xs">Completed</Badge>
+                          )}
+                          {status?.status === "failed" && (
+                            <Badge variant="destructive" className="text-xs">Failed</Badge>
+                          )}
+                          {syncing && (
+                            <Badge variant="secondary" className="text-xs">Syncing</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{meta.description}</p>
+
+                        {status && (
+                          <div className="mt-3 space-y-1.5">
+                            <Progress value={progress} className="h-1.5" />
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{status.currentStep}</span>
+                              <span>
+                                {status.recordsSynced}/{status.recordsFound} synced
+                                {status.recordsFailed > 0 && (
+                                  <span className="text-destructive">
+                                    {" "}({status.recordsFailed} failed)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+
+                            {status.errors.length > 0 && status.status !== "running" && (
+                              <div className="mt-2 rounded-md bg-destructive/5 border border-destructive/10 p-2">
+                                <p className="text-xs font-medium text-destructive mb-1">
+                                  Errors ({status.errors.length}):
+                                </p>
+                                <ul className="text-xs text-muted-foreground space-y-0.5 max-h-24 overflow-auto">
+                                  {status.errors.slice(0, 5).map((error, i) => (
+                                    <li key={i} className="truncate">{error}</li>
+                                  ))}
+                                  {status.errors.length > 5 && (
+                                    <li className="text-muted-foreground/70">
+                                      ...and {status.errors.length - 5} more
+                                    </li>
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSync(tabKey)}
+                        disabled={syncing || isAnySyncing()}
+                      >
+                        {syncing ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Syncing
+                          </>
+                        ) : (
+                          "Sync"
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }

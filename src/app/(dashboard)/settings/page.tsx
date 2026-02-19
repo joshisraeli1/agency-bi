@@ -31,7 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Save, Plus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Save, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { UserForm } from "@/components/forms/user-form";
 import { format } from "date-fns";
 
@@ -78,6 +78,11 @@ export default function SettingsPage() {
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Data reset state
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<{ success: boolean; message: string } | null>(null);
+
   const loadUsers = useCallback(async () => {
     const res = await fetch("/api/users");
     if (res.ok) {
@@ -120,6 +125,25 @@ export default function SettingsPage() {
   function handleAddUser() {
     setEditUser(null);
     setUserFormOpen(true);
+  }
+
+  async function handleResetData() {
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const res = await fetch("/api/data/reset", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResetResult({ success: true, message: data.message });
+      } else {
+        setResetResult({ success: false, message: data.error || "Reset failed" });
+      }
+    } catch (err) {
+      setResetResult({ success: false, message: err instanceof Error ? err.message : "Reset failed" });
+    } finally {
+      setResetting(false);
+      setShowResetConfirm(false);
+    }
   }
 
   async function handleDeleteUser() {
@@ -385,6 +409,74 @@ export default function SettingsPage() {
         }
         onSuccess={loadUsers}
       />
+
+      <Separator />
+
+      {/* Data Management */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Data Management
+          </CardTitle>
+          <CardDescription>
+            Reset business data before importing real data from integrations.
+            This preserves your user accounts, integration configs, and app settings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {resetResult && (
+            <Alert variant={resetResult.success ? "default" : "destructive"}>
+              <AlertDescription>{resetResult.message}</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex items-center justify-between rounded-md border p-4">
+            <div>
+              <p className="text-sm font-medium">Clear All Business Data</p>
+              <p className="text-xs text-muted-foreground">
+                Removes all clients, team members, financials, time entries, deliverables,
+                chat history, and sync logs. User accounts and integration configs are preserved.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={() => setShowResetConfirm(true)}
+              disabled={resetting}
+            >
+              {resetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                "Clear Data"
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Reset confirmation dialog */}
+      <Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear All Business Data?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete all clients, team members, financial records,
+              time entries, deliverables, and chat history. This cannot be undone.
+              Your user accounts and integration configurations will be preserved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleResetData} disabled={resetting}>
+              {resetting ? "Clearing..." : "Yes, Clear Everything"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteUser} onOpenChange={() => setDeleteUser(null)}>
         <DialogContent>

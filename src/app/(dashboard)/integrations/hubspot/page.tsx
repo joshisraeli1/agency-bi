@@ -16,11 +16,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
   Loader2,
   RefreshCw,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -51,6 +60,13 @@ export default function HubSpotIntegrationPage() {
     message: string;
   } | null>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
+
+  // Discovery state
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryData, setDiscoveryData] = useState<{
+    deals: { total: number; samples: Array<{ id: string; name: string; amount: string; stage: string; closeDate: string }> };
+    companies: { total: number; samples: Array<{ id: string; name: string; domain: string; industry: string }> };
+  } | null>(null);
 
   // Sync state for each type
   const [syncStates, setSyncStates] = useState<
@@ -212,6 +228,23 @@ export default function HubSpotIntegrationPage() {
       setIsConnected(false);
     } finally {
       setIsTesting(false);
+    }
+  }
+
+  async function handleDiscover() {
+    setDiscovering(true);
+    try {
+      const res = await fetch("/api/integrations/hubspot/discover", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setDiscoveryData({ deals: data.deals, companies: data.companies });
+        }
+      }
+    } catch {
+      // Discovery failed silently
+    } finally {
+      setDiscovering(false);
     }
   }
 
@@ -514,6 +547,106 @@ export default function HubSpotIntegrationPage() {
               )}
             </Button>
           </CardContent>
+        </Card>
+      )}
+
+      {/* Data Preview */}
+      {isConnected && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Data Preview</CardTitle>
+                <CardDescription>
+                  Preview your HubSpot data before syncing to verify the structure looks correct.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleDiscover}
+                disabled={discovering}
+              >
+                {discovering ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Search className="mr-2 h-4 w-4" />
+                    Preview Data
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          {discoveryData && (
+            <CardContent className="space-y-6">
+              {/* Deals preview */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">
+                  Deals ({discoveryData.deals.total} found)
+                </h3>
+                {discoveryData.deals.samples.length > 0 ? (
+                  <div className="rounded-md border overflow-auto max-h-48">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs py-1 px-2">Name</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Amount</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Stage</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Close Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {discoveryData.deals.samples.map((d) => (
+                          <TableRow key={d.id}>
+                            <TableCell className="text-xs py-1 px-2">{d.name}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{d.amount ? `$${Number(d.amount).toLocaleString()}` : "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{d.stage || "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{d.closeDate || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No deals found</p>
+                )}
+              </div>
+
+              {/* Companies preview */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">
+                  Companies ({discoveryData.companies.total} found)
+                </h3>
+                {discoveryData.companies.samples.length > 0 ? (
+                  <div className="rounded-md border overflow-auto max-h-48">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs py-1 px-2">Name</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Domain</TableHead>
+                          <TableHead className="text-xs py-1 px-2">Industry</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {discoveryData.companies.samples.map((c) => (
+                          <TableRow key={c.id}>
+                            <TableCell className="text-xs py-1 px-2">{c.name}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{c.domain || "-"}</TableCell>
+                            <TableCell className="text-xs py-1 px-2">{c.industry || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No companies found</p>
+                )}
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 

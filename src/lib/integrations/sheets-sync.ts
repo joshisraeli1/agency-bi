@@ -18,9 +18,16 @@ interface SheetsConfig {
   serviceAccountEmail: string;
   privateKey: string;
   sheetId: string;
+  tabMappings?: {
+    salary?: string;
+    clients?: string;
+    costs?: string;
+    clientMatch?: string;
+    packages?: string;
+  };
 }
 
-async function loadSheetsConfig(): Promise<SheetsConfig> {
+export async function loadSheetsConfig(): Promise<SheetsConfig> {
   const integration = await db.integrationConfig.findUnique({
     where: { provider: "sheets" },
   });
@@ -100,8 +107,9 @@ export class SalaryDataSyncAdapter implements SyncAdapter<SalaryRow> {
     const config = await loadSheetsConfig();
     const auth = getAuth(config);
 
-    syncLogger.info(context.importId, "Reading '4.3 Salary Data' tab...");
-    const { headers, rows } = await readNamedSheet(auth, config.sheetId, "4.3 Salary Data");
+    const tabName = config.tabMappings?.salary ?? "4.3 Salary Data";
+    syncLogger.info(context.importId, `Reading '${tabName}' tab...`);
+    const { headers, rows } = await readNamedSheet(auth, config.sheetId, tabName);
 
     if (headers.length === 0) {
       syncLogger.info(context.importId, "No headers found in salary data tab");
@@ -265,8 +273,9 @@ export class ClientDataSyncAdapter implements SyncAdapter<ClientRow> {
     const config = await loadSheetsConfig();
     const auth = getAuth(config);
 
-    syncLogger.info(context.importId, "Reading '4.2 Client Data' tab...");
-    const { headers, rows } = await readNamedSheet(auth, config.sheetId, "4.2 Client Data");
+    const tabName = config.tabMappings?.clients ?? "4.2 Client Data";
+    syncLogger.info(context.importId, `Reading '${tabName}' tab...`);
+    const { headers, rows } = await readNamedSheet(auth, config.sheetId, tabName);
 
     if (headers.length === 0) {
       syncLogger.info(context.importId, "No headers found in client data tab");
@@ -387,12 +396,9 @@ export class SegmentedCostDataSyncAdapter implements SyncAdapter<CostRow> {
     const config = await loadSheetsConfig();
     const auth = getAuth(config);
 
-    syncLogger.info(context.importId, "Reading '4.4 Segmented Cost Data' tab...");
-    const { headers, rows } = await readNamedSheet(
-      auth,
-      config.sheetId,
-      "4.4 Segmented Cost Data"
-    );
+    const tabName = config.tabMappings?.costs ?? "4.4 Segmented Cost Data";
+    syncLogger.info(context.importId, `Reading '${tabName}' tab...`);
+    const { headers, rows } = await readNamedSheet(auth, config.sheetId, tabName);
 
     if (headers.length === 0) {
       syncLogger.info(context.importId, "No headers found in cost data tab");
@@ -579,8 +585,9 @@ export class ClientMatchSyncAdapter implements SyncAdapter<ClientMatchRow> {
     const config = await loadSheetsConfig();
     const auth = getAuth(config);
 
-    syncLogger.info(context.importId, "Reading '5.3 Client Match' tab...");
-    const { headers, rows } = await readNamedSheet(auth, config.sheetId, "5.3 Client Match");
+    const tabName = config.tabMappings?.clientMatch ?? "5.3 Client Match";
+    syncLogger.info(context.importId, `Reading '${tabName}' tab...`);
+    const { headers, rows } = await readNamedSheet(auth, config.sheetId, tabName);
 
     if (headers.length === 0) {
       syncLogger.info(context.importId, "No headers found in client match tab");
@@ -721,8 +728,9 @@ export class PackageLookupSyncAdapter implements SyncAdapter<PackageRow> {
     const config = await loadSheetsConfig();
     const auth = getAuth(config);
 
-    syncLogger.info(context.importId, "Reading '5.2 Package Lookup' tab...");
-    const { headers, rows } = await readNamedSheet(auth, config.sheetId, "5.2 Package Lookup");
+    const tabName = config.tabMappings?.packages ?? "5.2 Package Lookup";
+    syncLogger.info(context.importId, `Reading '${tabName}' tab...`);
+    const { headers, rows } = await readNamedSheet(auth, config.sheetId, tabName);
 
     if (headers.length === 0) {
       syncLogger.info(context.importId, "No headers found in package lookup tab");
@@ -843,28 +851,46 @@ export const ALL_SHEET_TABS: SheetsSyncTab[] = [
   "packages",
 ];
 
+export const SHEET_TAB_DEFAULTS: Record<SheetsSyncTab, string> = {
+  salary: "4.3 Salary Data",
+  clients: "4.2 Client Data",
+  costs: "4.4 Segmented Cost Data",
+  "client-match": "5.3 Client Match",
+  packages: "5.2 Package Lookup",
+};
+
 export const SHEET_TAB_META: Record<
   SheetsSyncTab,
-  { tabName: string; description: string }
+  { defaultTabName: string; configKey: string; description: string; expectedHeaders: string[] }
 > = {
   salary: {
-    tabName: "4.3 Salary Data",
+    defaultTabName: "4.3 Salary Data",
+    configKey: "salary",
     description: "Team member salary, hourly rates, and employment details",
+    expectedHeaders: ["name", "email", "role", "division", "salary", "hourly rate"],
   },
   clients: {
-    tabName: "4.2 Client Data",
+    defaultTabName: "4.2 Client Data",
+    configKey: "clients",
     description: "Client retainer values, packages, and deal stages",
+    expectedHeaders: ["client name", "retainer value", "deal stage", "status", "package"],
   },
   costs: {
-    tabName: "4.4 Segmented Cost Data",
+    defaultTabName: "4.4 Segmented Cost Data",
+    configKey: "costs",
     description: "Monthly segmented cost data per client",
+    expectedHeaders: ["client name", "month", "cost", "hours", "category"],
   },
   "client-match": {
-    tabName: "5.3 Client Match",
+    defaultTabName: "5.3 Client Match",
+    configKey: "clientMatch",
     description: "Client name mappings between Monday.com and HubSpot",
+    expectedHeaders: ["monday name", "hubspot name", "canonical name"],
   },
   packages: {
-    tabName: "5.2 Package Lookup",
+    defaultTabName: "5.2 Package Lookup",
+    configKey: "packages",
     description: "Package tier definitions with hours and rates",
+    expectedHeaders: ["package name", "tier", "hours included", "monthly rate"],
   },
 };

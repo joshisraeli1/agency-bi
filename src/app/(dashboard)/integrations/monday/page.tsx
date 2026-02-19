@@ -21,6 +21,15 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
+import {
   Loader2,
   CheckCircle2,
   XCircle,
@@ -29,6 +38,7 @@ import {
   LayoutGrid,
   Clock,
   Film,
+  Search,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -124,6 +134,22 @@ export default function MondayIntegrationPage() {
   // Sync state
   const [syncStatus, setSyncStatus] = useState<Record<string, SyncStatus>>({});
   const [syncingType, setSyncingType] = useState<string | null>(null);
+
+  // Discovery/preview state
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryData, setDiscoveryData] = useState<{
+    selectedBoards: Array<{
+      id: string;
+      name: string;
+      groups: string[];
+      sampleItems: Array<{
+        id: string;
+        name: string;
+        group: string;
+        columnValues: Record<string, string>;
+      }>;
+    }>;
+  } | null>(null);
 
   // Config loading
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -324,6 +350,28 @@ export default function MondayIntegrationPage() {
         [field]: columnId,
       },
     }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Discover / Preview data
+  // ---------------------------------------------------------------------------
+
+  async function handleDiscover() {
+    await handleSaveBoardConfig();
+    setDiscovering(true);
+    try {
+      const res = await fetch("/api/integrations/monday/discover", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setDiscoveryData({ selectedBoards: data.selectedBoards });
+        }
+      }
+    } catch {
+      // Discovery failed
+    } finally {
+      setDiscovering(false);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -789,6 +837,108 @@ export default function MondayIntegrationPage() {
           </Card>
         );
       })}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Data Preview Card                                                   */}
+      {/* ------------------------------------------------------------------ */}
+      {connectionStatus === "connected" &&
+        (timeTrackingBoards.length > 0 || creativesBoards.length > 0) && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Search className="size-5" />
+                    Data Preview
+                  </CardTitle>
+                  <CardDescription>
+                    Preview your Monday.com data to verify groups (client names) and
+                    column values look correct before syncing.
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleDiscover}
+                  disabled={discovering}
+                >
+                  {discovering ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Search className="mr-2 size-4" />
+                  )}
+                  Preview Data
+                </Button>
+              </div>
+            </CardHeader>
+            {discoveryData && (
+              <CardContent className="space-y-6">
+                {discoveryData.selectedBoards.map((board) => (
+                  <div key={board.id}>
+                    <h3 className="text-sm font-medium mb-2">{board.name}</h3>
+
+                    {/* Groups = Client names */}
+                    {board.groups.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Groups (will become client names):
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {board.groups.map((g) => (
+                            <Badge key={g} variant="secondary" className="text-xs">
+                              {g}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sample items */}
+                    {board.sampleItems.length > 0 && (
+                      <div className="rounded-md border overflow-auto max-h-48">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs py-1 px-2">Item</TableHead>
+                              <TableHead className="text-xs py-1 px-2">Group</TableHead>
+                              {Object.keys(board.sampleItems[0]?.columnValues ?? {})
+                                .slice(0, 5)
+                                .map((key) => (
+                                  <TableHead key={key} className="text-xs py-1 px-2 whitespace-nowrap">
+                                    {key}
+                                  </TableHead>
+                                ))}
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {board.sampleItems.map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell className="text-xs py-1 px-2 whitespace-nowrap max-w-[200px] truncate">
+                                  {item.name}
+                                </TableCell>
+                                <TableCell className="text-xs py-1 px-2 whitespace-nowrap">
+                                  {item.group}
+                                </TableCell>
+                                {Object.keys(board.sampleItems[0]?.columnValues ?? {})
+                                  .slice(0, 5)
+                                  .map((key) => (
+                                    <TableCell key={key} className="text-xs py-1 px-2 whitespace-nowrap max-w-[150px] truncate">
+                                      {item.columnValues[key] || "-"}
+                                    </TableCell>
+                                  ))}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+
+                    <Separator className="mt-4" />
+                  </div>
+                ))}
+              </CardContent>
+            )}
+          </Card>
+        )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Sync Actions Card                                                   */}
