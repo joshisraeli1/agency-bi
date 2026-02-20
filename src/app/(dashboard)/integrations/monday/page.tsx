@@ -39,6 +39,7 @@ import {
   Clock,
   Film,
   Search,
+  Users,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -76,7 +77,7 @@ interface ConfigData {
   enabled: boolean;
   config: {
     apiToken?: string;
-    boardIds?: { timeTracking: string[]; creatives: string[] };
+    boardIds?: { timeTracking: string[]; creatives: string[]; clients: string[] };
     columnMappings?: Record<string, Record<string, string>>;
   };
   lastSyncAt?: string;
@@ -103,6 +104,16 @@ const CREATIVES_FIELDS = [
   { key: "reviewer", label: "Reviewer", type: "people" },
 ] as const;
 
+// Column mapping field definitions for client boards
+const CLIENTS_FIELDS = [
+  { key: "status", label: "Status", type: "status" },
+  { key: "industry", label: "Industry", type: "text" },
+  { key: "website", label: "Website", type: "text" },
+  { key: "retainerValue", label: "Retainer Value", type: "numbers" },
+  { key: "dealStage", label: "Deal Stage", type: "status" },
+  { key: "notes", label: "Notes", type: "long_text" },
+] as const;
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -124,6 +135,7 @@ export default function MondayIntegrationPage() {
   // Selected boards
   const [timeTrackingBoards, setTimeTrackingBoards] = useState<string[]>([]);
   const [creativesBoards, setCreativesBoards] = useState<string[]>([]);
+  const [clientsBoards, setClientsBoards] = useState<string[]>([]);
 
   // Column state per board
   const [boardColumns, setBoardColumns] = useState<Record<string, Column[]>>({});
@@ -174,6 +186,7 @@ export default function MondayIntegrationPage() {
           if (data.config.boardIds) {
             setTimeTrackingBoards(data.config.boardIds.timeTracking ?? []);
             setCreativesBoards(data.config.boardIds.creatives ?? []);
+            setClientsBoards(data.config.boardIds.clients ?? []);
           }
           if (data.config.columnMappings) {
             setColumnMappings(data.config.columnMappings);
@@ -240,11 +253,11 @@ export default function MondayIntegrationPage() {
   );
 
   useEffect(() => {
-    const allSelected = [...timeTrackingBoards, ...creativesBoards];
+    const allSelected = [...timeTrackingBoards, ...creativesBoards, ...clientsBoards];
     for (const boardId of allSelected) {
       fetchColumnsForBoard(boardId);
     }
-  }, [timeTrackingBoards, creativesBoards, fetchColumnsForBoard]);
+  }, [timeTrackingBoards, creativesBoards, clientsBoards, fetchColumnsForBoard]);
 
   // ---------------------------------------------------------------------------
   // Save API token
@@ -316,6 +329,7 @@ export default function MondayIntegrationPage() {
             boardIds: {
               timeTracking: timeTrackingBoards,
               creatives: creativesBoards,
+              clients: clientsBoards,
             },
             columnMappings,
           },
@@ -378,7 +392,7 @@ export default function MondayIntegrationPage() {
   // Sync triggers
   // ---------------------------------------------------------------------------
 
-  async function handleSync(type: "time_tracking" | "creatives") {
+  async function handleSync(type: "time_tracking" | "creatives" | "clients") {
     // Save config first
     await handleSaveBoardConfig();
 
@@ -584,8 +598,8 @@ export default function MondayIntegrationPage() {
             Monday.com Integration
           </h1>
           <p className="text-muted-foreground text-sm">
-            Connect your Monday.com workspace to sync time tracking and
-            deliverables data.
+            Connect your Monday.com workspace to sync clients, time tracking,
+            and deliverables data.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -788,6 +802,45 @@ export default function MondayIntegrationPage() {
                   </div>
                 </div>
 
+                {/* Client Boards */}
+                <div className="space-y-3">
+                  <Label className="text-base font-medium flex items-center gap-2">
+                    <Users className="size-4" />
+                    Client Boards
+                  </Label>
+                  <p className="text-muted-foreground text-xs">
+                    Select boards that contain your client list. Each item name
+                    becomes a client record.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {boards.map((board) => (
+                      <button
+                        key={board.id}
+                        type="button"
+                        onClick={() =>
+                          toggleBoard(
+                            board.id,
+                            clientsBoards,
+                            setClientsBoards
+                          )
+                        }
+                        className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                          clientsBoards.includes(board.id)
+                            ? "border-primary bg-primary/5 font-medium"
+                            : "border-border hover:bg-accent"
+                        }`}
+                      >
+                        {board.name}
+                        {clientsBoards.includes(board.id) && (
+                          <Badge className="ml-2" variant="default">
+                            Selected
+                          </Badge>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <Button onClick={handleSaveBoardConfig}>
                   Save Board Selection
                 </Button>
@@ -838,11 +891,31 @@ export default function MondayIntegrationPage() {
         );
       })}
 
+      {clientsBoards.map((boardId) => {
+        const board = boards.find((b) => b.id === boardId);
+        return (
+          <Card key={`cl-map-${boardId}`}>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Column Mapping: {board?.name ?? boardId}
+              </CardTitle>
+              <CardDescription>
+                Map Monday.com columns to client fields. Item names become client
+                names.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderColumnMapper(boardId, CLIENTS_FIELDS)}
+            </CardContent>
+          </Card>
+        );
+      })}
+
       {/* ------------------------------------------------------------------ */}
       {/* Data Preview Card                                                   */}
       {/* ------------------------------------------------------------------ */}
       {connectionStatus === "connected" &&
-        (timeTrackingBoards.length > 0 || creativesBoards.length > 0) && (
+        (timeTrackingBoards.length > 0 || creativesBoards.length > 0 || clientsBoards.length > 0) && (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -944,7 +1017,7 @@ export default function MondayIntegrationPage() {
       {/* Sync Actions Card                                                   */}
       {/* ------------------------------------------------------------------ */}
       {connectionStatus === "connected" &&
-        (timeTrackingBoards.length > 0 || creativesBoards.length > 0) && (
+        (timeTrackingBoards.length > 0 || creativesBoards.length > 0 || clientsBoards.length > 0) && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -957,6 +1030,33 @@ export default function MondayIntegrationPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Clients Sync */}
+              {clientsBoards.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Sync Clients</p>
+                      <p className="text-muted-foreground text-xs">
+                        {clientsBoards.length} board
+                        {clientsBoards.length !== 1 ? "s" : ""} selected
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleSync("clients")}
+                      disabled={syncingType !== null}
+                    >
+                      {syncingType === "clients" ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Users className="mr-2 size-4" />
+                      )}
+                      Sync Clients
+                    </Button>
+                  </div>
+                  {renderSyncProgress("clients")}
+                </div>
+              )}
+
               {/* Time Tracking Sync */}
               {timeTrackingBoards.length > 0 && (
                 <div>

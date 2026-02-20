@@ -41,10 +41,11 @@ export async function POST(_request: NextRequest) {
 
   try {
     const boards = await fetchBoards(apiToken);
-    const boardIds = (decrypted.boardIds as { timeTracking?: string[]; creatives?: string[] }) ?? {};
+    const boardIds = (decrypted.boardIds as { timeTracking?: string[]; creatives?: string[]; clients?: string[] }) ?? {};
     const selectedIds = [
       ...(boardIds.timeTracking ?? []),
       ...(boardIds.creatives ?? []),
+      ...(boardIds.clients ?? []),
     ];
 
     // For selected boards, fetch columns and a sample of items
@@ -110,6 +111,7 @@ export async function POST(_request: NextRequest) {
       config: {
         timeTrackingBoards: boardIds.timeTracking ?? [],
         creativesBoards: boardIds.creatives ?? [],
+        clientsBoards: boardIds.clients ?? [],
       },
     });
   } catch (err) {

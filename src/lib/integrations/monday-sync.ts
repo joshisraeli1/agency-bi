@@ -18,6 +18,7 @@ export interface MondayConfig {
   boardIds: {
     timeTracking: string[];
     creatives: string[];
+    clients: string[];
   };
   columnMappings?: {
     [boardId: string]: {
@@ -31,6 +32,11 @@ export interface MondayConfig {
       animator?: string;           // column id for animator assignment
       designer?: string;           // column id for designer assignment
       reviewer?: string;           // column id for reviewer assignment
+      industry?: string;           // column id for client industry
+      website?: string;            // column id for client website
+      retainerValue?: string;      // column id for retainer value
+      dealStage?: string;          // column id for deal stage
+      notes?: string;              // column id for notes
     };
   };
 }
@@ -505,6 +511,204 @@ export class MondayCreativesSyncAdapter implements SyncAdapter<MondayItem> {
         syncLogger.error(
           context.importId,
           `Failed to sync deliverable for item ${item.id}: ${msg}`
+        );
+      }
+    }
+
+    return { synced, failed, errors };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MondayClientsSyncAdapter
+// ---------------------------------------------------------------------------
+
+export class MondayClientsSyncAdapter implements SyncAdapter<MondayItem> {
+  name = "Monday Clients";
+  provider = "monday";
+
+  async *fetchAll(context: SyncContext): AsyncGenerator<MondayItem[], void, unknown> {
+    const config = await loadConfig();
+    const boardIds = config.boardIds?.clients ?? [];
+
+    if (boardIds.length === 0) {
+      syncLogger.info(context.importId, "No client boards configured");
+      return;
+    }
+
+    for (const boardId of boardIds) {
+      syncLogger.info(context.importId, `Fetching clients from board ${boardId}`);
+
+      try {
+        for await (const batch of fetchBoardItems(config.apiToken, boardId)) {
+          for (const item of batch) {
+            (item as MondayItem & { _boardId?: string })._boardId = boardId;
+          }
+          yield batch;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        syncLogger.error(context.importId, `Error fetching board ${boardId}: ${msg}`);
+      }
+    }
+  }
+
+  async mapAndUpsert(
+    items: MondayItem[],
+    context: SyncContext
+  ): Promise<{ synced: number; failed: number; errors: string[] }> {
+    let synced = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const config = await loadConfig();
+
+    for (const item of items) {
+      try {
+        const boardId = (item as MondayItem & { _boardId?: string })._boardId ?? "";
+        const mappings = config.columnMappings?.[boardId] ?? {};
+
+        // Item name = client name
+        const clientName = item.name.trim();
+        if (!clientName) {
+          failed++;
+          errors.push(`Item ${item.id}: empty name, skipping`);
+          continue;
+        }
+
+        // Skip overhead/internal entries
+        if (isOverheadClient(clientName)) {
+          syncLogger.info(context.importId, `Skipping internal/overhead item: ${clientName}`);
+          continue;
+        }
+
+        // Parse status
+        const statusCol = getColumnValue(item, mappings.status) ?? findColumnByType(item, "status");
+        const rawStatus = statusCol
+          ? (parseColumnValue("status", statusCol.value, statusCol.text) as string | null)
+          : null;
+
+        // Map Monday status labels to our status values
+        let status = "active";
+        if (rawStatus) {
+          const lower = rawStatus.toLowerCase();
+          if (lower.includes("paused") || lower.includes("hold") || lower.includes("on hold")) {
+            status = "paused";
+          } else if (lower.includes("churn") || lower.includes("lost") || lower.includes("cancelled")) {
+            status = "churned";
+          } else if (lower.includes("prospect") || lower.includes("lead") || lower.includes("potential")) {
+            status = "prospect";
+          }
+        }
+
+        // Parse industry
+        const industryCol = getColumnValue(item, mappings.industry);
+        let industry: string | null = null;
+        if (industryCol) {
+          const parsed = parseColumnValue(industryCol.type, industryCol.value, industryCol.text);
+          industry = typeof parsed === "string" ? parsed : Array.isArray(parsed) ? parsed[0] ?? null : null;
+        }
+
+        // Parse website
+        const websiteCol = getColumnValue(item, mappings.website);
+        let website: string | null = null;
+        if (websiteCol) {
+          const parsed = parseColumnValue(websiteCol.type, websiteCol.value, websiteCol.text);
+          website = typeof parsed === "string" ? parsed : null;
+        }
+
+        // Parse retainer value
+        const retainerCol = getColumnValue(item, mappings.retainerValue);
+        let retainerValue: number | null = null;
+        if (retainerCol) {
+          const parsed = parseColumnValue("numbers", retainerCol.value, retainerCol.text);
+          retainerValue = typeof parsed === "number" ? parsed : null;
+        }
+
+        // Parse deal stage
+        const dealStageCol = getColumnValue(item, mappings.dealStage);
+        let dealStage: string | null = null;
+        if (dealStageCol) {
+          const parsed = parseColumnValue(dealStageCol.type, dealStageCol.value, dealStageCol.text);
+          dealStage = typeof parsed === "string" ? parsed : Array.isArray(parsed) ? parsed[0] ?? null : null;
+        }
+
+        // Parse notes
+        const notesCol = getColumnValue(item, mappings.notes);
+        let notes: string | null = null;
+        if (notesCol) {
+          const parsed = parseColumnValue(notesCol.type, notesCol.value, notesCol.text);
+          notes = typeof parsed === "string" ? parsed : null;
+        }
+
+        // Find existing client by mondayItemId or name
+        const existingByItemId = await db.client.findFirst({
+          where: { mondayItemId: item.id },
+          select: { id: true },
+        });
+
+        if (existingByItemId) {
+          // Update existing client matched by mondayItemId
+          await db.client.update({
+            where: { id: existingByItemId.id },
+            data: {
+              name: clientName,
+              status,
+              industry,
+              website,
+              retainerValue,
+              dealStage,
+              notes,
+            },
+          });
+        } else {
+          // Try to match by name (case-insensitive)
+          const allClients = await db.client.findMany({
+            select: { id: true, name: true, mondayItemId: true },
+          });
+          const nameMatch = allClients.find(
+            (c) => c.name.toLowerCase() === clientName.toLowerCase()
+          );
+
+          if (nameMatch) {
+            // Link existing client to this Monday item
+            await db.client.update({
+              where: { id: nameMatch.id },
+              data: {
+                mondayItemId: item.id,
+                status,
+                industry: industry ?? undefined,
+                website: website ?? undefined,
+                retainerValue: retainerValue ?? undefined,
+                dealStage: dealStage ?? undefined,
+                notes: notes ?? undefined,
+              },
+            });
+          } else {
+            // Create new client
+            await db.client.create({
+              data: {
+                name: clientName,
+                mondayItemId: item.id,
+                status,
+                industry,
+                website,
+                retainerValue,
+                dealStage,
+                notes,
+                source: "monday",
+              },
+            });
+          }
+        }
+
+        synced++;
+      } catch (err) {
+        failed++;
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`Item ${item.id} (${item.name}): ${msg}`);
+        syncLogger.error(
+          context.importId,
+          `Failed to sync client for item ${item.id}: ${msg}`
         );
       }
     }
