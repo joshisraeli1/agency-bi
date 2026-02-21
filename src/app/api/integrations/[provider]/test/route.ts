@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { decryptJson } from "@/lib/encryption";
 import { testConnection as testSheetsConnection } from "@/lib/integrations/sheets";
@@ -11,6 +12,11 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ provider: string }> }
 ) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { provider } = await params;
 
   const config = await db.integrationConfig.findUnique({

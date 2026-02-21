@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
 import {
@@ -23,6 +24,11 @@ interface XeroConfig {
  * so users can preview their data before syncing.
  */
 export async function POST(_request: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const config = await db.integrationConfig.findUnique({
     where: { provider: "xero" },
   });

@@ -186,6 +186,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Limit file size to 10MB to prevent memory exhaustion
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File too large. Maximum size is 10MB." },
+        { status: 400 }
+      );
+    }
+
     if (!uploadType || !["invoices", "expenses"].includes(uploadType)) {
       return NextResponse.json(
         { error: 'Invalid type. Must be "invoices" or "expenses".' },

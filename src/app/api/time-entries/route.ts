@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createTimeEntrySchema } from "@/lib/validations/time-entry";
+import { getSession } from "@/lib/auth";
 
 export async function GET() {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const entries = await db.timeEntry.findMany({
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     include: {
@@ -14,6 +20,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
   const parsed = createTimeEntrySchema.safeParse(body);
   if (!parsed.success) {

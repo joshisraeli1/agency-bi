@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { confirmClientMatch, confirmTeamMemberMatch } from "@/lib/entities/resolver";
+import { getSession } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { action, entityType, keepId, mergeId } = await request.json();
 

@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { streamChatResponse } from "@/lib/ai/chat-service";
+import { getSession } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
+  const authSession = await getSession();
+  if (!authSession) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { message, sessionId } = body;

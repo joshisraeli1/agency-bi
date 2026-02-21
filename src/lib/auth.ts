@@ -2,9 +2,18 @@ import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
 import { cookies } from "next/headers";
 import CryptoJS from "crypto-js";
+import crypto from "crypto";
 import { db } from "./db";
 
-const SESSION_SECRET = process.env.SESSION_SECRET || "dev-session-secret";
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required. Generate with: openssl rand -hex 32`);
+  }
+  return value;
+}
+
+const SESSION_SECRET = requireEnv("SESSION_SECRET");
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -60,7 +69,12 @@ function verifySession(token: string): SessionPayload | null {
   if (!encoded || !signature) return null;
   const json = Buffer.from(encoded, "base64url").toString("utf8");
   const expectedSig = CryptoJS.HmacSHA256(json, SESSION_SECRET).toString();
-  if (signature !== expectedSig) return null;
+  // Constant-time comparison to prevent timing attacks
+  const sigBuf = Buffer.from(signature, "utf8");
+  const expectedBuf = Buffer.from(expectedSig, "utf8");
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
   const payload = JSON.parse(json) as SessionPayload;
   if (Date.now() > payload.exp) return null;
   return payload;

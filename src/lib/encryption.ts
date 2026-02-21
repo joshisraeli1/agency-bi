@@ -1,6 +1,14 @@
 import CryptoJS from "crypto-js";
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "default-dev-key-change-in-production";
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required. Generate with: openssl rand -hex 32`);
+  }
+  return value;
+}
+
+const ENCRYPTION_KEY = requireEnv("ENCRYPTION_KEY");
 
 export function encrypt(plaintext: string): string {
   return CryptoJS.AES.encrypt(plaintext, ENCRYPTION_KEY).toString();

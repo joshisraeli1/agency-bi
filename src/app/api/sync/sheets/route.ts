@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync/engine";
 import {
   createSheetsSyncAdapter,
@@ -16,6 +17,11 @@ const VALID_TABS = new Set<string>([
 ]);
 
 export async function POST(request: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const tab = searchParams.get("tab") ?? "all";
 

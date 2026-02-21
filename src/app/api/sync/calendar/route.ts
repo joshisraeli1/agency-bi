@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createCalendarAdapter } from "@/lib/integrations/calendar-sync";
 import { syncEngine } from "@/lib/sync/engine";
 
 export async function POST() {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   // Verify Calendar is configured
   const config = await db.integrationConfig.findUnique({
     where: { provider: "calendar" },
