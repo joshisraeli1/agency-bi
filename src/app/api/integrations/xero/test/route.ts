@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { decryptJson } from "@/lib/encryption";
 import { testConnection } from "@/lib/integrations/xero";
 
 export async function POST() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
 
   const config = await db.integrationConfig.findUnique({
     where: { provider: "xero" },

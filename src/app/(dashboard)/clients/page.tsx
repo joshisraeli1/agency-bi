@@ -3,6 +3,7 @@ import { ClientsActions } from "@/components/forms/clients-actions";
 
 export default async function ClientsPage() {
   const clients = await db.client.findMany({
+    where: { status: { not: "prospect" } },
     orderBy: { name: "asc" },
     include: {
       _count: {

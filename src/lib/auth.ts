@@ -49,11 +49,12 @@ export function verifyTotp(secret: string, token: string): boolean {
   return delta !== null;
 }
 
-interface SessionPayload {
+export interface SessionPayload {
   userId: string;
   email: string;
   name: string;
   role: string;
+  totpEnabled: boolean;
   exp: number;
 }
 
@@ -85,12 +86,14 @@ export async function createSession(user: {
   email: string;
   name: string;
   role: string;
+  totpEnabled: boolean;
 }) {
   const payload: SessionPayload = {
     userId: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
+    totpEnabled: user.totpEnabled,
     exp: Date.now() + SESSION_DURATION_MS,
   };
   const token = signSession(payload);
@@ -115,6 +118,77 @@ export async function getSession(): Promise<SessionPayload | null> {
 export async function destroySession() {
   const cookieStore = await cookies();
   cookieStore.delete("session");
+}
+
+// ---------------------------------------------------------------------------
+// Role-Based Access Control helpers
+// ---------------------------------------------------------------------------
+
+type Role = "admin" | "manager" | "viewer";
+
+/**
+ * Check if a session has the required minimum role.
+ * Role hierarchy: admin > manager > viewer
+ */
+export function hasRole(session: { role: string }, minRole: Role): boolean {
+  const hierarchy: Record<string, number> = { admin: 3, manager: 2, viewer: 1 };
+  return (hierarchy[session.role] ?? 0) >= (hierarchy[minRole] ?? 99);
+}
+
+/**
+ * Require authentication. Returns session or a 401 Response.
+ */
+export async function requireAuth(): Promise<
+  { session: SessionPayload; error?: never } | { session?: never; error: Response }
+> {
+  const session = await getSession();
+  if (!session) {
+    return { error: new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }) };
+  }
+  return { session };
+}
+
+/**
+ * Require authentication + minimum role. Returns session or a 401/403 Response.
+ */
+export async function requireRole(minRole: Role): Promise<
+  { session: SessionPayload; error?: never } | { session?: never; error: Response }
+> {
+  const auth = await requireAuth();
+  if (auth.error) return auth;
+  if (!hasRole(auth.session, minRole)) {
+    return { error: new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) };
+  }
+  return { session: auth.session };
+}
+
+// ---------------------------------------------------------------------------
+// Audit logging
+// ---------------------------------------------------------------------------
+
+export async function logAudit(opts: {
+  action: string;
+  userId?: string;
+  entity?: string;
+  entityId?: string;
+  details?: string;
+  ip?: string;
+}) {
+  try {
+    await db.auditLog.create({
+      data: {
+        action: opts.action,
+        userId: opts.userId ?? null,
+        entity: opts.entity ?? null,
+        entityId: opts.entityId ?? null,
+        details: opts.details ?? null,
+        ipAddress: opts.ip ?? null,
+      },
+    });
+  } catch {
+    // Never let audit logging break the request
+    console.error("Audit log failed:", opts.action);
+  }
 }
 
 export async function checkAccountLock(userId: string): Promise<{

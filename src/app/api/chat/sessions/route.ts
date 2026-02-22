@@ -1,15 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requireAuth, logAudit } from "@/lib/auth";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const sessions = await db.chatSession.findMany({
-    where: { userId: session.userId },
+    where: { userId: auth.session.userId },
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,
@@ -24,17 +22,17 @@ export async function GET() {
 }
 
 export async function POST() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const chatSession = await db.chatSession.create({
     data: {
-      userId: session.userId,
+      userId: auth.session.userId,
       title: "New Chat",
     },
   });
+
+  await logAudit({ action: "chat_session_created", userId: auth.session.userId, entity: "chat_session", entityId: chatSession.id, details: "Created new chat session" });
 
   return NextResponse.json(chatSession);
 }

@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createFinancialSchema } from "@/lib/validations/financial";
-import { getSession } from "@/lib/auth";
+import { requireAuth, requireRole, logAudit } from "@/lib/auth";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const records = await db.financialRecord.findMany({
     orderBy: [{ month: "desc" }, { createdAt: "desc" }],
@@ -19,10 +17,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const body = await request.json();
   const parsed = createFinancialSchema.safeParse(body);
@@ -43,6 +40,8 @@ export async function POST(request: Request) {
       source: "manual",
     },
   });
+
+  await logAudit({ action: "financial_record_created", userId: session.userId, entity: "financial_record", entityId: record.id, details: `Created financial record: ${data.type} $${data.amount}` });
 
   return NextResponse.json(record, { status: 201 });
 }

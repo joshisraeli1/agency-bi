@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createHubSpotAdapter } from "@/lib/integrations/hubspot-sync";
 import { syncEngine } from "@/lib/sync/engine";
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") as
@@ -39,6 +38,8 @@ export async function POST(request: NextRequest) {
   try {
     const adapter = createHubSpotAdapter(type);
     const importId = await syncEngine.run(adapter, "full", "manual");
+
+    await logAudit({ action: "sync_triggered", userId: session.userId, entity: "sync", entityId: importId, details: `Triggered HubSpot sync: ${type}` });
 
     return NextResponse.json({ importId });
   } catch (err) {

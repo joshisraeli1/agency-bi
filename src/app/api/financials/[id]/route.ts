@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateFinancialSchema } from "@/lib/validations/financial";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { id } = await params;
   const body = await request.json();
@@ -33,6 +32,8 @@ export async function PUT(
     },
   });
 
+  await logAudit({ action: "financial_record_updated", userId: session.userId, entity: "financial_record", entityId: record.id, details: `Updated financial record: ${data.type} $${data.amount}` });
+
   return NextResponse.json(record);
 }
 
@@ -40,12 +41,14 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { id } = await params;
   await db.financialRecord.delete({ where: { id } });
+
+  await logAudit({ action: "financial_record_deleted", userId: session.userId, entity: "financial_record", entityId: id, details: `Deleted financial record: ${id}` });
+
   return NextResponse.json({ success: true });
 }

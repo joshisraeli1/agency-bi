@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { streamChatResponse } from "@/lib/ai/chat-service";
-import { getSession } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
-  const authSession = await getSession();
-  if (!authSession) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
+  const authSession = auth.session;
 
   try {
     const body = await request.json();
@@ -20,12 +19,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify session exists
+    // Verify session exists and belongs to the current user
     const session = await db.chatSession.findUnique({
       where: { id: sessionId },
     });
 
-    if (!session) {
+    if (!session || session.userId !== authSession.userId) {
       return NextResponse.json(
         { error: "Session not found" },
         { status: 404 }

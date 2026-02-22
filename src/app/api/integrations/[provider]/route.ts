@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuth, requireRole, logAudit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { encryptJson, decryptJson } from "@/lib/encryption";
 
@@ -7,10 +7,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ provider: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const { provider } = await params;
 
@@ -68,10 +66,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ provider: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { provider } = await params;
   const body = await request.json();
@@ -105,6 +102,8 @@ export async function PUT(
       enabled: body.enabled ?? existing?.enabled ?? false,
     },
   });
+
+  await logAudit({ action: "integration_config_updated", userId: session.userId, entity: "integration", entityId: provider, details: `Updated integration config: ${provider}` });
 
   return NextResponse.json({
     provider: updated.provider,

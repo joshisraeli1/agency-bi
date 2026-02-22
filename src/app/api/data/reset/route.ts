@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 
 /**
  * POST /api/data/reset
@@ -10,10 +10,9 @@ import { getSession } from "@/lib/auth";
  * Only admins can access this endpoint.
  */
 export async function POST() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   try {
     // Delete in dependency order (children first)
@@ -86,6 +85,8 @@ export async function POST() {
     results.chatSessions = chatSessions;
 
     const totalDeleted = Object.values(results).reduce((a, b) => a + b, 0);
+
+    await logAudit({ action: "data_reset", userId: session.userId, entity: "system", details: `Reset ${totalDeleted} records across ${Object.keys(results).length} tables` });
 
     return NextResponse.json({
       success: true,

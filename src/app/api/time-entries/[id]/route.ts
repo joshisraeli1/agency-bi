@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateTimeEntrySchema } from "@/lib/validations/time-entry";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { id } = await params;
   const body = await request.json();
@@ -32,6 +31,8 @@ export async function PUT(
     },
   });
 
+  await logAudit({ action: "time_entry_updated", userId: session.userId, entity: "time_entry", entityId: entry.id, details: `Updated time entry: ${data.hours}h on ${data.date}` });
+
   return NextResponse.json(entry);
 }
 
@@ -39,12 +40,14 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { id } = await params;
   await db.timeEntry.delete({ where: { id } });
+
+  await logAudit({ action: "time_entry_deleted", userId: session.userId, entity: "time_entry", entityId: id, details: `Deleted time entry: ${id}` });
+
   return NextResponse.json({ success: true });
 }

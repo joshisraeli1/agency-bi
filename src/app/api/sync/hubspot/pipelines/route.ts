@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { decryptJson } from "@/lib/encryption";
 import { fetchPipelines } from "@/lib/integrations/hubspot";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const config = await db.integrationConfig.findUnique({
     where: { provider: "hubspot" },

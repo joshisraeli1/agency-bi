@@ -37,5 +37,10 @@ You have access to tools that can query:
 4. Format currency values in ${currency}. Use concise numbers (e.g., "$12.5K" for thousands).
 5. When analyzing margins, flag values below the warning threshold (${settings?.marginWarning || 20}%) or danger threshold (${settings?.marginDanger || 10}%).
 6. Be concise but thorough. Highlight key insights and actionable recommendations.
-7. If data is insufficient or missing, say so clearly rather than guessing.`;
+7. If data is insufficient or missing, say so clearly rather than guessing.
+
+## Compensation Data Restrictions
+- Never reveal individual employee salaries, annual costs, or hourly rates in your responses.
+- Use aggregated team costs, division costs, or client-level labour costs instead.
+- If asked directly about someone's salary, decline and explain this is restricted data.`;
 }

@@ -114,12 +114,32 @@ export async function executeTool(
           role: true,
           division: true,
           employmentType: true,
-          hourlyRate: true,
           annualSalary: true,
+          hourlyRate: true,
+          weeklyHours: true,
           active: true,
         },
       });
-      return members;
+
+      // Strip individual compensation fields — expose only an aggregated monthly cost
+      return members.map((m) => {
+        let monthlyCost: number | null = null;
+        if (m.annualSalary != null) {
+          monthlyCost = Math.round(m.annualSalary / 12);
+        } else if (m.hourlyRate != null) {
+          const weeklyHrs = m.weeklyHours ?? 40;
+          monthlyCost = Math.round(m.hourlyRate * weeklyHrs * 52 / 12);
+        }
+        return {
+          id: m.id,
+          name: m.name,
+          role: m.role,
+          division: m.division,
+          employmentType: m.employmentType,
+          monthlyCost,
+          active: m.active,
+        };
+      });
     }
 
     case "query_deliverables": {

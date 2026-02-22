@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createTeamMemberSchema } from "@/lib/validations/team-member";
-import { getSession } from "@/lib/auth";
+import { requireAuth, requireRole, logAudit } from "@/lib/auth";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const members = await db.teamMember.findMany({
     orderBy: { name: "asc" },
@@ -21,10 +19,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const body = await request.json();
   const parsed = createTeamMemberSchema.safeParse(body);
@@ -49,6 +46,8 @@ export async function POST(request: Request) {
       source: "manual",
     },
   });
+
+  await logAudit({ action: "team_member_created", userId: session.userId, entity: "team_member", entityId: member.id, details: `Created team member: ${member.name}` });
 
   return NextResponse.json(member, { status: 201 });
 }

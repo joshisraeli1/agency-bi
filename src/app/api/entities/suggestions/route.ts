@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findClientMatches, findTeamMemberMatches } from "@/lib/entities/resolver";
-import { getSession } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const type = request.nextUrl.searchParams.get("type") || "clients";
 

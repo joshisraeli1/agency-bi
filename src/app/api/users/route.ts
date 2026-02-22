@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession, hashPassword } from "@/lib/auth";
+import { requireRole, hashPassword, logAudit } from "@/lib/auth";
 import { createUserSchema } from "@/lib/validations/user";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
 
   const users = await db.user.findMany({
     orderBy: { name: "asc" },
@@ -25,10 +23,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const body = await request.json();
   const parsed = createUserSchema.safeParse(body);
@@ -59,6 +56,8 @@ export async function POST(request: Request) {
       createdAt: true,
     },
   });
+
+  await logAudit({ action: "user_created", userId: session.userId, entity: "user", entityId: user.id, details: `Created user: ${user.name} (${user.email})` });
 
   return NextResponse.json(user, { status: 201 });
 }

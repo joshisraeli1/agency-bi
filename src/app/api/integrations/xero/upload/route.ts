@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 import Papa from "papaparse";
 
 // ---------------------------------------------------------------------------
@@ -169,10 +169,9 @@ async function findOrCreateClient(
  */
 export async function POST(request: NextRequest) {
   // Auth check
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   try {
     const formData = await request.formData();
@@ -446,6 +445,8 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    await logAudit({ action: "xero_data_uploaded", userId: session.userId, entity: "financial_record", details: `Uploaded ${uploadType}: ${imported} imported, ${skipped} skipped, ${clientStats.created} clients created` });
 
     return NextResponse.json({
       success: true,

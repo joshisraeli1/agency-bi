@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { confirmClientMatch, confirmTeamMemberMatch } from "@/lib/entities/resolver";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("manager");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   try {
     const { action, entityType, keepId, mergeId } = await request.json();
@@ -34,6 +33,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      await logAudit({ action: "entity_resolved", userId: session.userId, entity: entityType, entityId: keepId, details: `Merged ${entityType} ${mergeId} into ${keepId}` });
       return NextResponse.json({ success: true, action: "merged" });
     }
 

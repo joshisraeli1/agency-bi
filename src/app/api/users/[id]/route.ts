@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession, hashPassword } from "@/lib/auth";
+import { requireRole, hashPassword, logAudit } from "@/lib/auth";
 import { updateUserSchema } from "@/lib/validations/user";
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
+  const { id } = await params;
   const body = await request.json();
   const parsed = updateUserSchema.safeParse(body);
   if (!parsed.success) {
@@ -50,6 +49,8 @@ export async function PUT(
     },
   });
 
+  await logAudit({ action: "user_updated", userId: session.userId, entity: "user", entityId: user.id, details: `Updated user: ${user.name} (${user.email})` });
+
   return NextResponse.json(user);
 }
 
@@ -57,11 +58,11 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
+
   const { id } = await params;
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
 
   // Prevent deleting yourself
   if (session.userId === id) {
@@ -76,5 +77,8 @@ export async function DELETE(
   }
 
   await db.user.delete({ where: { id } });
+
+  await logAudit({ action: "user_deleted", userId: session.userId, entity: "user", entityId: id, details: `Deleted user: ${id}` });
+
   return NextResponse.json({ success: true });
 }

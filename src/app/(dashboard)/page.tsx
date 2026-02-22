@@ -4,12 +4,11 @@ import { db } from "@/lib/db";
 import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle } from "lucide-react";
+import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle, Calendar, PiggyBank } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -20,7 +19,7 @@ export default async function OverviewPage({ searchParams }: Props) {
   const months = parseInt(monthsParam || "6", 10);
 
   const [clientCount, teamCount, recentImports, revenue] = await Promise.all([
-    db.client.count(),
+    db.client.count({ where: { status: { not: "prospect" } } }),
     db.teamMember.count(),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
@@ -35,12 +34,26 @@ export default async function OverviewPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <Link href="/financials">
           <StatCard
-            title="Total Revenue"
+            title={`Revenue (${months}mo)`}
             value={formatCurrency(revenue.totalRevenue)}
             icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+          />
+        </Link>
+        <Link href="/financials">
+          <StatCard
+            title="Annualized Revenue"
+            value={formatCurrency(revenue.annualizedRevenue)}
+            icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
+          />
+        </Link>
+        <Link href="/financials">
+          <StatCard
+            title="Annualized Profit"
+            value={formatCurrency(revenue.annualizedProfit)}
+            icon={<PiggyBank className="h-4 w-4 text-muted-foreground" />}
           />
         </Link>
         <Link href="/analytics">
@@ -54,6 +67,7 @@ export default async function OverviewPage({ searchParams }: Props) {
           <StatCard
             title="Clients"
             value={String(clientCount)}
+            description="Excl. prospects"
             icon={<Users className="h-4 w-4 text-muted-foreground" />}
           />
         </Link>

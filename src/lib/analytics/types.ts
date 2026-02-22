@@ -57,6 +57,12 @@ export interface RevenueOverview {
   totalCost: number;
   totalMargin: number;
   avgMarginPercent: number;
+  annualizedRevenue: number;
+  annualizedProfit: number;
+  revenueBySource: {
+    source: string;
+    revenue: number;
+  }[];
   monthlyTrend: {
     month: string;
     revenue: number;

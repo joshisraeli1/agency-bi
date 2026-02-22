@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireRole, logAudit } from "@/lib/auth";
 import { syncEngine } from "@/lib/sync/engine";
 import {
   createSheetsSyncAdapter,
@@ -17,10 +17,9 @@ const VALID_TABS = new Set<string>([
 ]);
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
+  const session = auth.session;
 
   const { searchParams } = new URL(request.url);
   const tab = searchParams.get("tab") ?? "all";
@@ -50,11 +49,15 @@ export async function POST(request: NextRequest) {
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
 
+      await logAudit({ action: "sync_triggered", userId: session.userId, entity: "sync", details: "Triggered Sheets sync: all tabs" });
+
       return NextResponse.json({ importIds, tab: "all" });
     }
 
     const adapter = createSheetsSyncAdapter(tab as SheetsSyncTab);
     const importId = await syncEngine.run(adapter, "full", "api");
+
+    await logAudit({ action: "sync_triggered", userId: session.userId, entity: "sync", entityId: importId, details: `Triggered Sheets sync: ${tab}` });
 
     return NextResponse.json({ importId, tab });
   } catch (err) {

@@ -7,20 +7,29 @@ export async function getRevenueOverview(
 ): Promise<RevenueOverview> {
   const monthRange = getMonthRange(months);
 
-  const [financials, clients, settings] = await Promise.all([
+  // Get prospect client IDs so we can exclude them from financials
+  const [prospectClients, financialsRaw, settings] = await Promise.all([
+    db.client.findMany({
+      where: { status: "prospect" },
+      select: { id: true },
+    }),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
       include: { client: true },
     }),
-    db.client.findMany({ where: { status: "active" } }),
     db.appSettings.findFirst(),
   ]);
 
+  const prospectIds = new Set(prospectClients.map((c) => c.id));
+
+  // Filter out financial records belonging to prospect clients
+  const financials = financialsRaw.filter((f) => !prospectIds.has(f.clientId));
+
   const marginWarning = settings?.marginWarning ?? 20;
 
-  // Totals
+  // Totals — revenue only from HubSpot (source of truth for revenue)
   const totalRevenue = financials
-    .filter((f) => f.type === "retainer" || f.type === "project")
+    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
     .reduce((sum, f) => sum + f.amount, 0);
 
   const totalCost = financials
@@ -31,11 +40,35 @@ export async function getRevenueOverview(
   const avgMarginPercent =
     totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0;
 
+  // Annualized metrics: extrapolate from monthly average
+  const monthsWithRevenue = monthRange.filter((month) => {
+    return financials.some(
+      (f) => f.month === month && (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && f.amount > 0
+    );
+  }).length;
+
+  const avgMonthlyRevenue = monthsWithRevenue > 0 ? totalRevenue / monthsWithRevenue : 0;
+  const avgMonthlyCost = monthsWithRevenue > 0 ? totalCost / monthsWithRevenue : 0;
+  const annualizedRevenue = avgMonthlyRevenue * 12;
+  const annualizedProfit = (avgMonthlyRevenue - avgMonthlyCost) * 12;
+
+  // Revenue by source
+  const sourceMap = new Map<string, number>();
+  for (const f of financials) {
+    if (f.type === "retainer" || f.type === "project") {
+      const source = f.source || "unknown";
+      sourceMap.set(source, (sourceMap.get(source) || 0) + f.amount);
+    }
+  }
+  const revenueBySource = Array.from(sourceMap.entries())
+    .map(([source, revenue]) => ({ source, revenue }))
+    .sort((a, b) => b.revenue - a.revenue);
+
   // Monthly trend
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
     const rev = monthFinancials
-      .filter((f) => f.type === "retainer" || f.type === "project")
+      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
       .reduce((s, f) => s + f.amount, 0);
     const cost = monthFinancials
       .filter((f) => f.type === "cost")
@@ -56,7 +89,7 @@ export async function getRevenueOverview(
       revenue: 0,
       cost: 0,
     };
-    if (f.type === "retainer" || f.type === "project") {
+    if ((f.type === "retainer" || f.type === "project") && f.source === "hubspot") {
       existing.revenue += f.amount;
     } else if (f.type === "cost") {
       existing.cost += f.amount;
@@ -90,6 +123,9 @@ export async function getRevenueOverview(
     totalCost,
     totalMargin,
     avgMarginPercent,
+    annualizedRevenue,
+    annualizedProfit,
+    revenueBySource,
     monthlyTrend,
     byClient,
     atRiskClients,

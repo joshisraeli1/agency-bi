@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { decryptJson } from "@/lib/encryption";
 import { fetchBoards, fetchBoardColumns, fetchBoardItems } from "@/lib/integrations/monday";
@@ -11,10 +11,8 @@ import { fetchBoards, fetchBoardColumns, fetchBoardItems } from "@/lib/integrati
  * so users can see their actual Monday.com structure before syncing.
  */
 export async function POST(_request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
 
   const config = await db.integrationConfig.findUnique({
     where: { provider: "monday" },

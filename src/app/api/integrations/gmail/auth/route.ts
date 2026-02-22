@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { getAuthUrl } from "@/lib/integrations/gmail";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (auth.error) return auth.error;
 
   try {
     const url = getAuthUrl();

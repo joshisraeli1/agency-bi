@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuth, logAudit } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const { id } = await params;
+
+  // Verify the chat session belongs to the current user
+  const chatSession = await db.chatSession.findUnique({
+    where: { id },
+    select: { userId: true },
+  });
+
+  if (!chatSession || chatSession.userId !== auth.session.userId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const messages = await db.chatMessage.findMany({
     where: { sessionId: id },
@@ -33,15 +41,30 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
 
   const { id } = await params;
 
+  // Verify the chat session belongs to the current user
+  const chatSession = await db.chatSession.findUnique({
+    where: { id },
+    select: { userId: true },
+  });
+
+  if (!chatSession || chatSession.userId !== auth.session.userId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   await db.chatSession.delete({
     where: { id },
+  });
+
+  await logAudit({
+    action: "chat_session.delete",
+    userId: auth.session.userId,
+    entity: "chatSession",
+    entityId: id,
   });
 
   return NextResponse.json({ success: true });
