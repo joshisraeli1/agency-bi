@@ -2,9 +2,16 @@ import { Suspense } from "react";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getCommunicationOverview } from "@/lib/analytics/communication-overhead";
 import { getMeetingOverview } from "@/lib/analytics/meeting-overhead";
+import {
+  getLTVData,
+  getRevenueByServiceType,
+  getClientHealthData,
+  getTeamUtilizationData,
+} from "@/lib/analytics/advanced-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
+import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { CommunicationCharts } from "@/components/charts/communication-charts";
 import { MeetingCharts } from "@/components/charts/meeting-charts";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
@@ -17,10 +24,14 @@ interface Props {
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
-  const [data, comms, meetings] = await Promise.all([
+  const [data, comms, meetings, ltv, revenueByType, clientHealth, teamUtilization] = await Promise.all([
     getAgencyKPIs(months),
     getCommunicationOverview(months),
     getMeetingOverview(months),
+    getLTVData(),
+    getRevenueByServiceType(months),
+    getClientHealthData(months),
+    getTeamUtilizationData(months),
   ]);
 
   return (
@@ -70,6 +81,13 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       </div>
 
       <KpiCharts data={data} />
+
+      <AdvancedCharts
+        ltv={ltv}
+        revenueByType={revenueByType}
+        clientHealth={clientHealth}
+        teamUtilization={teamUtilization}
+      />
 
       {comms.totalMessages > 0 && (
         <>

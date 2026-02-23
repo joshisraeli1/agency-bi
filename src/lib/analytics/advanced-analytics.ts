@@ -1,0 +1,340 @@
+import { db } from "@/lib/db";
+import { getMonthRange, toMonthKey, getEffectiveHourlyRate } from "@/lib/utils";
+
+export interface LTVData {
+  clients: {
+    clientId: string;
+    clientName: string;
+    status: string;
+    industry: string;
+    totalRevenue: number;
+    monthsActive: number;
+    monthlyAvgRevenue: number;
+    startDate: Date;
+  }[];
+  byCohort: {
+    cohort: string;
+    clients: number;
+    totalRevenue: number;
+    avgLTV: number;
+  }[];
+  byIndustry: {
+    industry: string;
+    clients: number;
+    avgLTV: number;
+    avgMonths: number;
+  }[];
+}
+
+export interface RevenueByServiceType {
+  monthlyBreakdown: {
+    month: string;
+    retainer: number;
+    project: number;
+    total: number;
+    cost: number;
+    marginPercent: number;
+  }[];
+}
+
+export interface ClientHealthData {
+  clients: {
+    clientId: string;
+    clientName: string;
+    revenue: number;
+    marginPercent: number;
+    monthsRetained: number;
+  }[];
+}
+
+export interface TeamUtilizationData {
+  members: {
+    memberId: string;
+    memberName: string;
+    division: string;
+    billableHours: number;
+    capacity: number;
+    utilizationPercent: number;
+  }[];
+}
+
+export async function getLTVData(): Promise<LTVData> {
+  const [clients, financials] = await Promise.all([
+    db.client.findMany({
+      where: { status: { not: "prospect" } },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        industry: true,
+        createdAt: true,
+      },
+    }),
+    db.financialRecord.findMany({
+      where: { type: { in: ["retainer", "project"] }, source: "hubspot" },
+      select: { clientId: true, amount: true },
+    }),
+  ]);
+
+  // Sum revenue per client
+  const revenueMap = new Map<string, number>();
+  for (const f of financials) {
+    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
+  }
+
+  const now = new Date();
+  const clientData = clients.map((c) => {
+    const totalRevenue = revenueMap.get(c.id) || 0;
+    const monthsActive = Math.max(
+      1,
+      Math.round(
+        (now.getTime() - c.createdAt.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+      )
+    );
+    return {
+      clientId: c.id,
+      clientName: c.name,
+      status: c.status,
+      industry: c.industry || "Unknown",
+      totalRevenue,
+      monthsActive,
+      monthlyAvgRevenue: totalRevenue / monthsActive,
+      startDate: c.createdAt,
+    };
+  });
+
+  // Group by cohort (quarter of createdAt)
+  const cohortMap = new Map<
+    string,
+    { clients: number; totalRevenue: number }
+  >();
+  for (const c of clientData) {
+    const q = Math.floor(c.startDate.getMonth() / 3) + 1;
+    const cohort = `Q${q} ${c.startDate.getFullYear()}`;
+    const existing = cohortMap.get(cohort) || { clients: 0, totalRevenue: 0 };
+    existing.clients++;
+    existing.totalRevenue += c.totalRevenue;
+    cohortMap.set(cohort, existing);
+  }
+
+  const byCohort = Array.from(cohortMap.entries())
+    .map(([cohort, data]) => ({
+      cohort,
+      clients: data.clients,
+      totalRevenue: Math.round(data.totalRevenue),
+      avgLTV: Math.round(data.totalRevenue / data.clients),
+    }))
+    .sort((a, b) => a.cohort.localeCompare(b.cohort));
+
+  // Group by industry
+  const industryMap = new Map<
+    string,
+    { clients: number; totalRevenue: number; totalMonths: number }
+  >();
+  for (const c of clientData) {
+    const existing = industryMap.get(c.industry) || {
+      clients: 0,
+      totalRevenue: 0,
+      totalMonths: 0,
+    };
+    existing.clients++;
+    existing.totalRevenue += c.totalRevenue;
+    existing.totalMonths += c.monthsActive;
+    industryMap.set(c.industry, existing);
+  }
+
+  const byIndustry = Array.from(industryMap.entries())
+    .map(([industry, data]) => ({
+      industry,
+      clients: data.clients,
+      avgLTV: Math.round(data.totalRevenue / data.clients),
+      avgMonths: Math.round(data.totalMonths / data.clients),
+    }))
+    .sort((a, b) => b.avgLTV - a.avgLTV);
+
+  return { clients: clientData, byCohort, byIndustry };
+}
+
+export async function getRevenueByServiceType(
+  months = 6
+): Promise<RevenueByServiceType> {
+  const monthRange = getMonthRange(months);
+
+  const [prospectClients, financials, teamMembers] = await Promise.all([
+    db.client.findMany({
+      where: { status: "prospect" },
+      select: { id: true },
+    }),
+    db.financialRecord.findMany({
+      where: { month: { in: monthRange } },
+    }),
+    db.teamMember.findMany({
+      where: { active: true },
+      select: { annualSalary: true, hourlyRate: true, weeklyHours: true },
+    }),
+  ]);
+
+  const prospectIds = new Set(prospectClients.map((c) => c.id));
+  const filtered = financials.filter((f) => !prospectIds.has(f.clientId));
+
+  // Monthly team overhead
+  let monthlyTeamCost = 0;
+  for (const m of teamMembers) {
+    if (m.annualSalary) {
+      monthlyTeamCost += m.annualSalary / 12;
+    } else if (m.hourlyRate) {
+      monthlyTeamCost += (m.hourlyRate * (m.weeklyHours ?? 38) * 52) / 12;
+    }
+  }
+
+  const monthlyBreakdown = monthRange.map((month) => {
+    const mf = filtered.filter((f) => f.month === month);
+    const retainer = mf
+      .filter((f) => f.type === "retainer" && f.source === "hubspot")
+      .reduce((s, f) => s + f.amount, 0);
+    const project = mf
+      .filter((f) => f.type === "project" && f.source === "hubspot")
+      .reduce((s, f) => s + f.amount, 0);
+    const explicitCost = mf
+      .filter((f) => f.type === "cost")
+      .reduce((s, f) => s + f.amount, 0);
+    const total = retainer + project;
+    const cost = explicitCost + monthlyTeamCost;
+    const marginPercent = total > 0 ? ((total - cost) / total) * 100 : 0;
+    return {
+      month,
+      retainer: Math.round(retainer),
+      project: Math.round(project),
+      total: Math.round(total),
+      cost: Math.round(cost),
+      marginPercent: Number(marginPercent.toFixed(1)),
+    };
+  });
+
+  return { monthlyBreakdown };
+}
+
+export async function getClientHealthData(
+  months = 6
+): Promise<ClientHealthData> {
+  const monthRange = getMonthRange(months);
+
+  const [clients, financials] = await Promise.all([
+    db.client.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true, createdAt: true },
+    }),
+    db.financialRecord.findMany({
+      where: { month: { in: monthRange } },
+    }),
+  ]);
+
+  const now = new Date();
+  const clientMap = new Map(clients.map((c) => [c.id, c]));
+
+  // Aggregate financials per client
+  const clientFinancials = new Map<
+    string,
+    { revenue: number; cost: number }
+  >();
+  for (const f of financials) {
+    if (!clientMap.has(f.clientId)) continue;
+    const existing = clientFinancials.get(f.clientId) || {
+      revenue: 0,
+      cost: 0,
+    };
+    if (
+      (f.type === "retainer" || f.type === "project") &&
+      f.source === "hubspot"
+    ) {
+      existing.revenue += f.amount;
+    } else if (f.type === "cost") {
+      existing.cost += f.amount;
+    }
+    clientFinancials.set(f.clientId, existing);
+  }
+
+  const result = clients
+    .filter((c) => {
+      const fin = clientFinancials.get(c.id);
+      return fin && fin.revenue > 0;
+    })
+    .map((c) => {
+      const fin = clientFinancials.get(c.id)!;
+      const margin = fin.revenue - fin.cost;
+      const marginPercent = (margin / fin.revenue) * 100;
+      const monthsRetained = Math.max(
+        1,
+        Math.round(
+          (now.getTime() - c.createdAt.getTime()) /
+            (1000 * 60 * 60 * 24 * 30.44)
+        )
+      );
+      return {
+        clientId: c.id,
+        clientName: c.name,
+        revenue: Math.round(fin.revenue),
+        marginPercent: Number(marginPercent.toFixed(1)),
+        monthsRetained,
+      };
+    });
+
+  return { clients: result };
+}
+
+export async function getTeamUtilizationData(
+  months = 6
+): Promise<TeamUtilizationData> {
+  const monthRange = getMonthRange(months);
+  const startDate = new Date(`${monthRange[0]}-01`);
+
+  const [teamMembers, timeEntries, settings] = await Promise.all([
+    db.teamMember.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        name: true,
+        division: true,
+        weeklyHours: true,
+      },
+    }),
+    db.timeEntry.findMany({
+      where: { date: { gte: startDate } },
+      select: { teamMemberId: true, hours: true, isOverhead: true },
+    }),
+    db.appSettings.findFirst(),
+  ]);
+
+  const productiveHoursPerDay = settings?.productiveHours || 6.5;
+  const workingDaysPerMonth = 22;
+  const capacityPerMonth = productiveHoursPerDay * workingDaysPerMonth;
+
+  // Aggregate billable hours per team member
+  const hoursMap = new Map<string, number>();
+  for (const e of timeEntries) {
+    if (!e.teamMemberId || e.isOverhead) continue;
+    hoursMap.set(
+      e.teamMemberId,
+      (hoursMap.get(e.teamMemberId) || 0) + e.hours
+    );
+  }
+
+  const members = teamMembers.map((m) => {
+    const billableHours = hoursMap.get(m.id) || 0;
+    const capacity = capacityPerMonth * months;
+    const utilizationPercent =
+      capacity > 0 ? (billableHours / capacity) * 100 : 0;
+    return {
+      memberId: m.id,
+      memberName: m.name,
+      division: m.division || "Unassigned",
+      billableHours: Number(billableHours.toFixed(1)),
+      capacity: Number(capacity.toFixed(0)),
+      utilizationPercent: Number(utilizationPercent.toFixed(1)),
+    };
+  });
+
+  members.sort((a, b) => b.utilizationPercent - a.utilizationPercent);
+
+  return { members };
+}
