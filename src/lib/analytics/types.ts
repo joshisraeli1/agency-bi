@@ -25,6 +25,12 @@ export interface ClientProfitability {
     total: number;
     byStatus: Record<string, number>;
   };
+  overheadIndicators: {
+    slackMessages: number;
+    mondayRevisions: number;
+    calendarMeetings: number;
+    calendarHours: number;
+  };
 }
 
 export interface TeamMemberUtilization {

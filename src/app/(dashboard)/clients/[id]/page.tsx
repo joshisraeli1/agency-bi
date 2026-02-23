@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getClientProfitability } from "@/lib/analytics/client-profitability";
-import { db } from "@/lib/db";
-import { formatCurrency, formatHours, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatHours } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
 import { ClientProfitabilityCharts } from "@/components/dashboard/client-profitability-charts";
@@ -11,7 +10,7 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, DollarSign, Clock, TrendingUp, Users, MessageSquare, CalendarDays } from "lucide-react";
+import { ArrowLeft, DollarSign, Clock, TrendingUp, Users, MessageSquare, CalendarDays, LayoutList } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -30,23 +29,7 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
     notFound();
   }
 
-  const [commCount, recentComms, meetingCount, meetingHoursAgg, recentMeetings] = await Promise.all([
-    db.communicationLog.count({ where: { clientId: id } }),
-    db.communicationLog.findMany({
-      where: { clientId: id },
-      orderBy: { date: "desc" },
-      take: 10,
-    }),
-    db.meetingLog.count({ where: { clientId: id } }),
-    db.meetingLog.aggregate({ where: { clientId: id }, _sum: { duration: true } }),
-    db.meetingLog.findMany({
-      where: { clientId: id },
-      orderBy: { date: "desc" },
-      take: 10,
-    }),
-  ]);
-
-  const meetingHours = ((meetingHoursAgg._sum.duration || 0) / 60).toFixed(1);
+  const oh = data.overheadIndicators;
 
   return (
     <div className="space-y-6">
@@ -123,58 +106,41 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
         </Card>
       )}
 
-      {commCount > 0 && (
+      {(oh.slackMessages > 0 || oh.mondayRevisions > 0 || oh.calendarMeetings > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              Communication ({commCount} messages)
-            </CardTitle>
+            <CardTitle>Overhead Indicators</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {recentComms.map((msg) => (
-                <div
-                  key={msg.id}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <span className="font-medium truncate max-w-[60%]">
-                    {msg.subject || msg.summary || "Message"}
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {msg.date.toLocaleDateString()}
-                  </span>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Slack Messages
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {meetingCount > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4" />
-              Meetings ({meetingCount} meetings &middot; {meetingHours}h)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {recentMeetings.map((mtg) => (
-                <div
-                  key={mtg.id}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <span className="font-medium truncate max-w-[60%]">
-                    {mtg.title}
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {mtg.date.toLocaleDateString()}
-                    {mtg.duration ? ` · ${mtg.duration}min` : ""}
-                  </span>
+                <div className="text-2xl font-bold">{oh.slackMessages}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <LayoutList className="h-3.5 w-3.5" />
+                  Creative Revisions
                 </div>
-              ))}
+                <div className="text-2xl font-bold">{oh.mondayRevisions}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Meetings
+                </div>
+                <div className="text-2xl font-bold">{oh.calendarMeetings}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" />
+                  Meeting Hours
+                </div>
+                <div className="text-2xl font-bold">{oh.calendarHours.toFixed(1)}h</div>
+              </div>
             </div>
           </CardContent>
         </Card>

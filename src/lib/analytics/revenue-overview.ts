@@ -8,7 +8,7 @@ export async function getRevenueOverview(
   const monthRange = getMonthRange(months);
 
   // Get prospect client IDs so we can exclude them from financials
-  const [prospectClients, financialsRaw, settings] = await Promise.all([
+  const [prospectClients, financialsRaw, settings, teamMembers] = await Promise.all([
     db.client.findMany({
       where: { status: "prospect" },
       select: { id: true },
@@ -18,7 +18,22 @@ export async function getRevenueOverview(
       include: { client: true },
     }),
     db.appSettings.findFirst(),
+    db.teamMember.findMany({
+      where: { active: true },
+      select: { annualSalary: true, hourlyRate: true, weeklyHours: true, costType: true },
+    }),
   ]);
+
+  // Calculate monthly team salary cost as overhead
+  let monthlyTeamCost = 0;
+  for (const member of teamMembers) {
+    if (member.annualSalary) {
+      monthlyTeamCost += member.annualSalary / 12;
+    } else if (member.hourlyRate) {
+      const weeklyHrs = member.weeklyHours ?? 38;
+      monthlyTeamCost += (member.hourlyRate * weeklyHrs * 52) / 12;
+    }
+  }
 
   const prospectIds = new Set(prospectClients.map((c) => c.id));
 
@@ -32,9 +47,13 @@ export async function getRevenueOverview(
     .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
     .reduce((sum, f) => sum + f.amount, 0);
 
-  const totalCost = financials
+  const explicitCost = financials
     .filter((f) => f.type === "cost")
     .reduce((sum, f) => sum + f.amount, 0);
+
+  // Total cost = explicit costs from FinancialRecords + team salary overhead for the period
+  const totalTeamCostForPeriod = monthlyTeamCost * monthRange.length;
+  const totalCost = explicitCost + totalTeamCostForPeriod;
 
   const totalMargin = totalRevenue - totalCost;
   const avgMarginPercent =
@@ -48,7 +67,8 @@ export async function getRevenueOverview(
   }).length;
 
   const avgMonthlyRevenue = monthsWithRevenue > 0 ? totalRevenue / monthsWithRevenue : 0;
-  const avgMonthlyCost = monthsWithRevenue > 0 ? totalCost / monthsWithRevenue : 0;
+  const avgMonthlyExplicitCost = monthsWithRevenue > 0 ? explicitCost / monthsWithRevenue : 0;
+  const avgMonthlyCost = avgMonthlyExplicitCost + monthlyTeamCost;
   const annualizedRevenue = avgMonthlyRevenue * 12;
   const annualizedProfit = (avgMonthlyRevenue - avgMonthlyCost) * 12;
 
@@ -64,15 +84,16 @@ export async function getRevenueOverview(
     .map(([source, revenue]) => ({ source, revenue }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // Monthly trend
+  // Monthly trend (includes team salary overhead per month)
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
     const rev = monthFinancials
       .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
       .reduce((s, f) => s + f.amount, 0);
-    const cost = monthFinancials
+    const monthExplicitCost = monthFinancials
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
+    const cost = monthExplicitCost + monthlyTeamCost;
     return { month, revenue: rev, cost, margin: rev - cost };
   });
 
