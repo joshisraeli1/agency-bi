@@ -195,6 +195,55 @@ export async function executeTool(
       return await getAgencyKPIs((input.months as number) || 6);
     }
 
+    case "query_communications": {
+      const where: Record<string, unknown> = {};
+      if (input.clientId) where.clientId = input.clientId;
+      if (input.startDate || input.endDate) {
+        const dateFilter: Record<string, Date> = {};
+        if (input.startDate) dateFilter.gte = new Date(input.startDate as string);
+        if (input.endDate) dateFilter.lte = new Date(input.endDate as string);
+        where.date = dateFilter;
+      }
+
+      const messages = await db.communicationLog.findMany({
+        where,
+        take: (input.limit as number) || 50,
+        orderBy: { date: "desc" },
+        include: { client: { select: { name: true } } },
+      });
+
+      // Per-client breakdown
+      const clientCounts = new Map<string, { name: string; count: number }>();
+      for (const msg of messages) {
+        const key = msg.clientId || "unattributed";
+        const existing = clientCounts.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          clientCounts.set(key, {
+            name: msg.client?.name || "Unattributed",
+            count: 1,
+          });
+        }
+      }
+
+      return {
+        totalMessages: messages.length,
+        byClient: Array.from(clientCounts.entries()).map(([id, data]) => ({
+          clientId: id,
+          clientName: data.name,
+          messageCount: data.count,
+        })),
+        recentMessages: messages.slice(0, 20).map((m) => ({
+          date: m.date.toISOString().split("T")[0],
+          clientName: m.client?.name || "Unattributed",
+          subject: m.subject,
+          summary: m.summary,
+          type: m.type,
+        })),
+      };
+    }
+
     case "generate_chart": {
       return {
         _chart: true,

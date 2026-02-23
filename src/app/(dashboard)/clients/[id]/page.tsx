@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getClientProfitability } from "@/lib/analytics/client-profitability";
+import { db } from "@/lib/db";
 import { formatCurrency, formatHours, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
@@ -10,7 +11,7 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, DollarSign, Clock, TrendingUp, Users } from "lucide-react";
+import { ArrowLeft, DollarSign, Clock, TrendingUp, Users, MessageSquare } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -28,6 +29,15 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
   } catch {
     notFound();
   }
+
+  const [commCount, recentComms] = await Promise.all([
+    db.communicationLog.count({ where: { clientId: id } }),
+    db.communicationLog.findMany({
+      where: { clientId: id },
+      orderBy: { date: "desc" },
+      take: 10,
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -96,6 +106,34 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
                   <span className="text-muted-foreground">
                     {formatHours(member.hours)} &middot;{" "}
                     {formatCurrency(member.cost)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {commCount > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Communication ({commCount} messages)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {recentComms.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="font-medium truncate max-w-[60%]">
+                    {msg.subject || msg.summary || "Message"}
+                  </span>
+                  <span className="text-muted-foreground text-xs">
+                    {msg.date.toLocaleDateString()}
                   </span>
                 </div>
               ))}

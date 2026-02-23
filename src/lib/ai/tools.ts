@@ -138,6 +138,33 @@ export const chatTools: Anthropic.Tool[] = [
     },
   },
   {
+    name: "query_communications",
+    description:
+      "Query Slack communication logs. Returns message counts and recent messages per client. Use to analyze communication overhead and client engagement.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientId: {
+          type: "string",
+          description: "Filter by specific client ID",
+        },
+        startDate: {
+          type: "string",
+          description: "Start date (ISO format, e.g. 2025-01-01)",
+        },
+        endDate: {
+          type: "string",
+          description: "End date (ISO format, e.g. 2025-06-30)",
+        },
+        limit: {
+          type: "number",
+          description: "Max results to return (default 50)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: "generate_chart",
     description:
       "Generate a chart to visually display data. Use this when the user asks to see data visually or when a chart would help explain the data.",

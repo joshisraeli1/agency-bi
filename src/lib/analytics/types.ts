@@ -120,3 +120,20 @@ export interface AgencyKPIs {
     revenue: number;
   }[];
 }
+
+export interface CommunicationOverview {
+  totalMessages: number;
+  totalClients: number;
+  avgMessagesPerClient: number;
+  topClients: {
+    clientId: string;
+    clientName: string;
+    messageCount: number;
+    latestDate: Date;
+  }[];
+  monthlyTrend: {
+    month: string;
+    count: number;
+  }[];
+  unattributedCount: number;
+}

@@ -1,10 +1,12 @@
 import { Suspense } from "react";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
+import { getCommunicationOverview } from "@/lib/analytics/communication-overhead";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
+import { CommunicationCharts } from "@/components/charts/communication-charts";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Target, TrendingUp, DollarSign, Users, Building, UserCheck } from "lucide-react";
+import { Target, TrendingUp, DollarSign, Users, Building, UserCheck, MessageSquare } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -13,7 +15,10 @@ interface Props {
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
-  const data = await getAgencyKPIs(months);
+  const [data, comms] = await Promise.all([
+    getAgencyKPIs(months),
+    getCommunicationOverview(months),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -62,6 +67,36 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       </div>
 
       <KpiCharts data={data} />
+
+      {comms.totalMessages > 0 && (
+        <>
+          <div>
+            <h2 className="text-xl font-semibold">Communication Overhead</h2>
+            <p className="text-muted-foreground text-sm mt-1">Slack message analytics</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard
+              title="Total Messages"
+              value={String(comms.totalMessages)}
+              icon={<MessageSquare className="h-4 w-4 text-muted-foreground" />}
+            />
+            <StatCard
+              title="Clients Contacted"
+              value={String(comms.totalClients)}
+              description={`${comms.unattributedCount} unattributed`}
+              icon={<Users className="h-4 w-4 text-muted-foreground" />}
+            />
+            <StatCard
+              title="Avg Messages / Client"
+              value={comms.avgMessagesPerClient.toFixed(1)}
+              icon={<MessageSquare className="h-4 w-4 text-muted-foreground" />}
+            />
+          </div>
+
+          <CommunicationCharts data={comms} />
+        </>
+      )}
     </div>
   );
 }
