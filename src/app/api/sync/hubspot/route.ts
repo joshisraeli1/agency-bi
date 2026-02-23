@@ -36,6 +36,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // For deals sync: clean up old financial records to prevent double-counting
+    // Old format used category="deal", new format uses category="deal:{dealId}"
+    if (type === "deals") {
+      await db.financialRecord.deleteMany({
+        where: { source: "hubspot", type: "retainer" },
+      });
+    }
+
     const adapter = createHubSpotAdapter(type);
     const importId = await syncEngine.run(adapter, "full", "manual");
 

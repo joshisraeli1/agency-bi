@@ -12,6 +12,20 @@ import {
   type HubSpotContact,
 } from "./hubspot";
 
+/**
+ * Generate an array of "YYYY-MM" strings from startMonth to endMonth (inclusive).
+ */
+function monthsBetween(start: Date, end: Date): string[] {
+  const months: string[] = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (cursor <= endMonth) {
+    months.push(toMonthKey(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
+}
+
 interface HubSpotConfig {
   accessToken: string;
   pipelineId?: string;
@@ -77,26 +91,90 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
           continue;
         }
 
-        // Upsert Client by hubspotDealId
-        const client = await db.client.upsert({
-          where: { hubspotDealId: dealId },
-          create: {
-            name: dealName,
-            hubspotDealId: dealId,
-            dealStage: dealStage ?? undefined,
-            retainerValue: amount ?? undefined,
-            source: "hubspot",
-            status: dealStageToStatus(dealStage),
-          },
-          update: {
-            name: dealName,
-            dealStage: dealStage ?? undefined,
-            retainerValue: amount ?? undefined,
-          },
-        });
+        // Try to find the associated company to link deals to company clients
+        const companyAssocId =
+          deal.associations?.companies?.results?.[0]?.id ?? null;
 
-        // Create FinancialRecord for retainer amount if present
-        if (amount && amount > 0) {
+        let client;
+
+        if (companyAssocId) {
+          // Link deal to existing company client, or create company-based client
+          client = await db.client.upsert({
+            where: { hubspotCompanyId: companyAssocId },
+            create: {
+              name: dealName,
+              hubspotCompanyId: companyAssocId,
+              hubspotDealId: dealId,
+              dealStage: dealStage ?? undefined,
+              retainerValue: amount ?? undefined,
+              source: "hubspot",
+              status: dealStageToStatus(dealStage),
+            },
+            update: {
+              // Only update status/retainerValue if this deal is "closed won"
+              ...(dealStageToStatus(dealStage) === "active"
+                ? { retainerValue: amount ?? undefined, dealStage: dealStage ?? undefined }
+                : {}),
+            },
+          });
+        } else {
+          // No company association — fall back to deal-based client
+          client = await db.client.upsert({
+            where: { hubspotDealId: dealId },
+            create: {
+              name: dealName,
+              hubspotDealId: dealId,
+              dealStage: dealStage ?? undefined,
+              retainerValue: amount ?? undefined,
+              source: "hubspot",
+              status: dealStageToStatus(dealStage),
+            },
+            update: {
+              name: dealName,
+              dealStage: dealStage ?? undefined,
+              retainerValue: amount ?? undefined,
+            },
+          });
+        }
+
+        // Generate monthly retainer records for "closed won" deals
+        const status = dealStageToStatus(dealStage);
+        if (amount && amount > 0 && status === "active") {
+          const closeDate = deal.properties.closedate
+            ? new Date(deal.properties.closedate)
+            : new Date();
+          const now = new Date();
+          const months = monthsBetween(closeDate, now);
+
+          for (const month of months) {
+            await db.financialRecord.upsert({
+              where: {
+                clientId_month_type_category: {
+                  clientId: client.id,
+                  month,
+                  type: "retainer",
+                  category: `deal:${dealId}`,
+                },
+              },
+              create: {
+                clientId: client.id,
+                month,
+                type: "retainer",
+                category: `deal:${dealId}`,
+                amount,
+                description: `HubSpot deal: ${dealName}`,
+                source: "hubspot",
+                externalId: dealId,
+              },
+              update: {
+                amount,
+                description: `HubSpot deal: ${dealName}`,
+                externalId: dealId,
+              },
+            });
+          }
+        } else if (amount && amount > 0) {
+          // Non-active deal — single record at close date
           const month = deal.properties.closedate
             ? toMonthKey(new Date(deal.properties.closedate))
             : toMonthKey(new Date());
@@ -107,14 +185,14 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
                 clientId: client.id,
                 month,
                 type: "retainer",
-                category: "deal",
+                category: `deal:${dealId}`,
               },
             },
             create: {
               clientId: client.id,
               month,
               type: "retainer",
-              category: "deal",
+              category: `deal:${dealId}`,
               amount,
               description: `HubSpot deal: ${dealName}`,
               source: "hubspot",
@@ -176,7 +254,12 @@ export class CompaniesSyncAdapter implements SyncAdapter<HubSpotCompany> {
           continue;
         }
 
-        // Upsert Client by hubspotCompanyId
+        // Upsert Client by hubspotCompanyId — preserve existing status (deals sync sets it)
+        const existing = await db.client.findUnique({
+          where: { hubspotCompanyId: companyId },
+          select: { status: true },
+        });
+
         const client = await db.client.upsert({
           where: { hubspotCompanyId: companyId },
           create: {
@@ -185,12 +268,14 @@ export class CompaniesSyncAdapter implements SyncAdapter<HubSpotCompany> {
             industry: company.properties.industry ?? undefined,
             website: company.properties.domain ?? undefined,
             source: "hubspot",
-            status: "active",
+            status: "prospect",
           },
           update: {
             name: companyName,
             industry: company.properties.industry ?? undefined,
             website: company.properties.domain ?? undefined,
+            // Don't override status if deals sync already set it
+            ...(existing ? {} : { status: "prospect" }),
           },
         });
 

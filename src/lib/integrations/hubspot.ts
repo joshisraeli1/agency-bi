@@ -35,6 +35,11 @@ interface HubSpotContactProperties {
 export interface HubSpotDeal {
   id: string;
   properties: HubSpotDealProperties;
+  associations?: {
+    companies?: {
+      results: { id: string; type: string }[];
+    };
+  };
 }
 
 export interface HubSpotCompany {
@@ -116,6 +121,7 @@ export async function* fetchDeals(
     const params: Record<string, string> = {
       limit: "100",
       properties,
+      associations: "companies",
     };
     if (after) params.after = after;
 
