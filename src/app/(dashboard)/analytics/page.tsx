@@ -1,12 +1,14 @@
 import { Suspense } from "react";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getCommunicationOverview } from "@/lib/analytics/communication-overhead";
+import { getMeetingOverview } from "@/lib/analytics/meeting-overhead";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { CommunicationCharts } from "@/components/charts/communication-charts";
+import { MeetingCharts } from "@/components/charts/meeting-charts";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Target, TrendingUp, DollarSign, Users, Building, UserCheck, MessageSquare } from "lucide-react";
+import { Target, TrendingUp, DollarSign, Users, Building, UserCheck, MessageSquare, CalendarDays, Clock } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -15,9 +17,10 @@ interface Props {
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
-  const [data, comms] = await Promise.all([
+  const [data, comms, meetings] = await Promise.all([
     getAgencyKPIs(months),
     getCommunicationOverview(months),
+    getMeetingOverview(months),
   ]);
 
   return (
@@ -95,6 +98,37 @@ export default async function AnalyticsPage({ searchParams }: Props) {
           </div>
 
           <CommunicationCharts data={comms} />
+        </>
+      )}
+
+      {meetings.totalMeetings > 0 && (
+        <>
+          <div>
+            <h2 className="text-xl font-semibold">Meeting Overhead</h2>
+            <p className="text-muted-foreground text-sm mt-1">Google Calendar meeting analytics</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard
+              title="Total Meetings"
+              value={String(meetings.totalMeetings)}
+              icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
+            />
+            <StatCard
+              title="Meeting Hours"
+              value={`${meetings.totalHours}h`}
+              description={`${meetings.unattributedCount} unattributed`}
+              icon={<Clock className="h-4 w-4 text-muted-foreground" />}
+            />
+            <StatCard
+              title="Avg Duration"
+              value={`${meetings.avgDuration} min`}
+              description={`${meetings.totalClients} clients`}
+              icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
+            />
+          </div>
+
+          <MeetingCharts data={meetings} />
         </>
       )}
     </div>

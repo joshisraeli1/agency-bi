@@ -244,6 +244,64 @@ export async function executeTool(
       };
     }
 
+    case "query_meetings": {
+      const where: Record<string, unknown> = {};
+      if (input.clientId) where.clientId = input.clientId;
+      if (input.startDate || input.endDate) {
+        const dateFilter: Record<string, Date> = {};
+        if (input.startDate) dateFilter.gte = new Date(input.startDate as string);
+        if (input.endDate) dateFilter.lte = new Date(input.endDate as string);
+        where.date = dateFilter;
+      }
+
+      const meetings = await db.meetingLog.findMany({
+        where,
+        take: (input.limit as number) || 50,
+        orderBy: { date: "desc" },
+        include: {
+          client: { select: { name: true } },
+          attendees: { select: { email: true, name: true } },
+        },
+      });
+
+      // Per-client breakdown
+      const clientStats = new Map<string, { name: string; count: number; minutes: number }>();
+      for (const mtg of meetings) {
+        const key = mtg.clientId || "unattributed";
+        const existing = clientStats.get(key);
+        if (existing) {
+          existing.count++;
+          existing.minutes += mtg.duration || 0;
+        } else {
+          clientStats.set(key, {
+            name: mtg.client?.name || "Unattributed",
+            count: 1,
+            minutes: mtg.duration || 0,
+          });
+        }
+      }
+
+      const totalMinutes = meetings.reduce((s, m) => s + (m.duration || 0), 0);
+
+      return {
+        totalMeetings: meetings.length,
+        totalHours: Number((totalMinutes / 60).toFixed(1)),
+        byClient: Array.from(clientStats.entries()).map(([id, data]) => ({
+          clientId: id,
+          clientName: data.name,
+          meetingCount: data.count,
+          totalHours: Number((data.minutes / 60).toFixed(1)),
+        })),
+        recentMeetings: meetings.slice(0, 20).map((m) => ({
+          date: m.date.toISOString().split("T")[0],
+          title: m.title,
+          clientName: m.client?.name || "Unattributed",
+          duration: m.duration,
+          attendees: m.attendees.map((a) => a.name || a.email),
+        })),
+      };
+    }
+
     case "generate_chart": {
       return {
         _chart: true,

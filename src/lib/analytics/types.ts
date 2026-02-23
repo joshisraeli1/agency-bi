@@ -137,3 +137,23 @@ export interface CommunicationOverview {
   }[];
   unattributedCount: number;
 }
+
+export interface MeetingOverview {
+  totalMeetings: number;
+  totalHours: number;
+  totalClients: number;
+  avgMeetingsPerClient: number;
+  avgDuration: number; // minutes
+  topClients: {
+    clientId: string;
+    clientName: string;
+    meetingCount: number;
+    totalHours: number;
+  }[];
+  monthlyTrend: {
+    month: string;
+    count: number;
+    hours: number;
+  }[];
+  unattributedCount: number;
+}
