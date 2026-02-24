@@ -308,14 +308,18 @@ async function syncClients(db: PrismaClient, items: MondayItem[]) {
     // Try to find existing client by mondayItemId or name
     let existing = await db.client.findFirst({
       where: { mondayItemId: item.id },
+      select: { id: true, hubspotDealId: true, industry: true, website: true, retainerValue: true, dealStage: true, serviceType: true, smRetainer: true, contentRetainer: true, growthRetainer: true, productionRetainer: true, startDate: true, endDate: true },
     });
     if (!existing) {
       existing = await db.client.findFirst({
         where: { name: { equals: item.name, mode: "insensitive" } },
+        select: { id: true, hubspotDealId: true, industry: true, website: true, retainerValue: true, dealStage: true, serviceType: true, smRetainer: true, contentRetainer: true, growthRetainer: true, productionRetainer: true, startDate: true, endDate: true },
       });
     }
 
     if (existing) {
+      // Don't overwrite source on clients that originated from HubSpot
+      const isHubSpotClient = !!existing.hubspotDealId;
       await db.client.update({
         where: { id: existing.id },
         data: {
@@ -326,8 +330,15 @@ async function syncClients(db: PrismaClient, items: MondayItem[]) {
           retainerValue: totalRetainer || existing.retainerValue,
           dealStage: tier || existing.dealStage,
           mondayItemId: item.id,
-          source: "monday",
+          ...(isHubSpotClient ? {} : { source: "monday" }),
           notes,
+          startDate: kickOff || existing.startDate,
+          endDate: renewal || existing.endDate,
+          serviceType: service || existing.serviceType,
+          smRetainer: smRetainer || existing.smRetainer,
+          contentRetainer: contentRetainer || existing.contentRetainer,
+          growthRetainer: growthRetainer || existing.growthRetainer,
+          productionRetainer: productionRetainer || existing.productionRetainer,
         },
       });
       updated++;
@@ -343,6 +354,13 @@ async function syncClients(db: PrismaClient, items: MondayItem[]) {
           mondayItemId: item.id,
           source: "monday",
           notes,
+          startDate: kickOff,
+          endDate: renewal,
+          serviceType: service || null,
+          smRetainer: smRetainer || null,
+          contentRetainer: contentRetainer || null,
+          growthRetainer: growthRetainer || null,
+          productionRetainer: productionRetainer || null,
         },
       });
       created++;

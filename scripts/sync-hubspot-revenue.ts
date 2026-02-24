@@ -182,6 +182,21 @@ async function main() {
         continue;
       }
 
+      // Update client startDate/endDate from HubSpot deal dates
+      const startDateVal = props.start_date ? new Date(props.start_date) : null;
+      const endDateVal = props.churn_date ? new Date(props.churn_date) : null;
+      if (startDateVal || endDateVal) {
+        const dateUpdate: Record<string, Date> = {};
+        if (startDateVal && !isNaN(startDateVal.getTime())) dateUpdate.startDate = startDateVal;
+        if (endDateVal && !isNaN(endDateVal.getTime())) dateUpdate.endDate = endDateVal;
+        if (Object.keys(dateUpdate).length > 0) {
+          await db.client.update({
+            where: { id: clientId },
+            data: dateUpdate,
+          });
+        }
+      }
+
       // Determine end month: churn date if churned, otherwise current month
       const isChurned = stage === CHURNED_STAGE;
       const endMonth = isChurned && churnMonth ? churnMonth : now;

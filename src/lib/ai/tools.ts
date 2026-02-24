@@ -27,7 +27,7 @@ export const chatTools: Anthropic.Tool[] = [
   {
     name: "query_financials",
     description:
-      "Query financial records. Can filter by client, month range, type (retainer/project/cost/hours). Returns amounts and breakdowns.",
+      "Query financial records from HubSpot (single source of truth). All revenue is ex-GST. Excludes prospect clients. Can filter by client, month range, type (retainer/project/cost/hours). Returns totalRevenue, totalCost, grossProfit, marginPercent, and breakdowns.",
     input_schema: {
       type: "object" as const,
       properties: {

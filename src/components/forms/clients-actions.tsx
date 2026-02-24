@@ -42,7 +42,22 @@ interface Client {
   dealStage: string | null;
   source: string;
   notes: string | null;
+  startDate: Date | string | null;
+  endDate: Date | string | null;
   _count: { timeEntries: number; deliverables: number; aliases: number };
+}
+
+function formatTenure(startDate: Date | string | null, endDate: Date | string | null): string {
+  if (!startDate) return "\u2014";
+  const start = new Date(startDate);
+  const end = endDate ? new Date(endDate) : new Date();
+  const totalMonths = Math.max(0, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44)));
+  if (totalMonths < 1) return "<1 mo";
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  if (years === 0) return `${months} mo`;
+  if (months === 0) return `${years}y`;
+  return `${years}y ${months}mo`;
 }
 
 const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -108,6 +123,7 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Tenure</TableHead>
                   <TableHead>Retainer</TableHead>
                   <TableHead>Deal Stage</TableHead>
                   <TableHead>Source</TableHead>
@@ -138,6 +154,9 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                       <Badge variant={statusColors[client.status] || "outline"}>
                         {client.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatTenure(client.startDate, client.endDate)}
                     </TableCell>
                     <TableCell>
                       {client.retainerValue

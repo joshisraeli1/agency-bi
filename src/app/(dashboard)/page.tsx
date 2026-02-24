@@ -19,7 +19,7 @@ export default async function OverviewPage({ searchParams }: Props) {
   const months = parseInt(monthsParam || "6", 10);
 
   const [clientCount, teamCount, recentImports, revenue] = await Promise.all([
-    db.client.count({ where: { status: "active" } }),
+    db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
     db.teamMember.count(),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),

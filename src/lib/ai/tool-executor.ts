@@ -35,8 +35,21 @@ export async function executeTool(
     case "query_financials": {
       const months = (input.months as number) || 6;
       const monthRange = getMonthRange(months);
+
+      // Fetch prospect client IDs to exclude
+      const prospectClients = await db.client.findMany({
+        where: { status: "prospect" },
+        select: { id: true },
+      });
+      const prospectIds = new Set(prospectClients.map((c) => c.id));
+
+      // Fetch GST settings
+      const settings = await db.appSettings.findFirst();
+      const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
+
       const where: Record<string, unknown> = {
         month: { in: monthRange },
+        source: "hubspot", // HubSpot is the single source of truth for revenue
       };
       if (input.clientId) where.clientId = input.clientId;
       if (input.type) where.type = input.type;
@@ -47,21 +60,44 @@ export async function executeTool(
         orderBy: { month: "desc" },
       });
 
+      // Filter out prospect clients and apply GST conversion
+      const filtered = records.filter((r) => !prospectIds.has(r.clientId));
+
+      const totalRevenue = filtered
+        .filter((r) => r.type === "retainer" || r.type === "project")
+        .reduce((s, r) => s + r.amount / gstDivisor, 0);
+      const totalCost = filtered
+        .filter((r) => r.type === "cost")
+        .reduce((s, r) => s + r.amount, 0);
+      const grossProfit = totalRevenue - totalCost;
+
       const summary = {
-        totalAmount: records.reduce((s, r) => s + r.amount, 0),
-        recordCount: records.length,
+        totalRevenue: Math.round(totalRevenue),
+        totalCost: Math.round(totalCost),
+        grossProfit: Math.round(grossProfit),
+        marginPercent: totalRevenue > 0 ? Number(((grossProfit / totalRevenue) * 100).toFixed(1)) : 0,
+        recordCount: filtered.length,
         byType: {} as Record<string, number>,
-        records: records.slice(0, 50).map((r) => ({
+        records: filtered.slice(0, 50).map((r) => ({
           clientName: r.client.name,
           month: r.month,
           type: r.type,
           category: r.category,
-          amount: r.amount,
+          amount: Math.round(r.amount / gstDivisor),
+          source: r.source,
         })),
       };
 
-      for (const r of records) {
-        summary.byType[r.type] = (summary.byType[r.type] || 0) + r.amount;
+      for (const r of filtered) {
+        const exGst = (r.type === "retainer" || r.type === "project")
+          ? r.amount / gstDivisor
+          : r.amount;
+        summary.byType[r.type] = (summary.byType[r.type] || 0) + exGst;
+      }
+
+      // Round byType values
+      for (const key of Object.keys(summary.byType)) {
+        summary.byType[key] = Math.round(summary.byType[key]);
       }
 
       return summary;

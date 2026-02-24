@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 export async function getSystemPrompt(): Promise<string> {
   const [settings, clientCount, teamCount] = await Promise.all([
     db.appSettings.findFirst(),
-    db.client.count(),
+    db.client.count({ where: { hubspotDealId: { not: null }, status: { not: "prospect" } } }),
     db.teamMember.count(),
   ]);
 
@@ -21,10 +21,16 @@ export async function getSystemPrompt(): Promise<string> {
 - Margin warning threshold: ${settings?.marginWarning || 20}%
 - Margin danger threshold: ${settings?.marginDanger || 10}%
 
+## Revenue Data Rules
+- All revenue figures are ex-GST (exclusive of Goods & Services Tax).
+- HubSpot is the single source of truth for client revenue and profitability.
+- Client counts reflect only HubSpot-linked clients (excludes Monday-only duplicates).
+- Operational data (time tracking, creatives, campaigns, Slack, Calendar) comes from Monday.com and other integrations.
+
 ## Available Data
 You have access to tools that can query:
-- **Clients**: names, statuses, retainer values, industries
-- **Financial Records**: monthly revenue (retainer/project), costs, hours by client
+- **Clients**: names, statuses, retainer values, industries (HubSpot clients only for counts)
+- **Financial Records**: monthly revenue (retainer/project) ex-GST from HubSpot, costs, hours by client
 - **Time Entries**: individual time logs by team member and client
 - **Team Members**: names, roles, divisions, rates, employment types
 - **Deliverables**: creative assets with statuses, revisions, assignments

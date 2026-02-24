@@ -29,8 +29,9 @@ export interface LTVData {
 export interface RevenueByServiceType {
   monthlyBreakdown: {
     month: string;
-    retainer: number;
-    project: number;
+    socialMedia: number;
+    adsManagement: number;
+    contentDelivery: number;
     total: number;
     cost: number;
     marginPercent: number;
@@ -61,12 +62,14 @@ export interface TeamUtilizationData {
 export async function getLTVData(): Promise<LTVData> {
   const [clients, financials, settings] = await Promise.all([
     db.client.findMany({
-      where: { status: { not: "prospect" } },
+      where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
       select: {
         id: true,
         name: true,
         status: true,
         industry: true,
+        startDate: true,
+        endDate: true,
         createdAt: true,
       },
     }),
@@ -86,14 +89,40 @@ export async function getLTVData(): Promise<LTVData> {
   }
 
   const now = new Date();
+  const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
+
+  // Calculate actual tenure for churned clients to derive average churned tenure
+  const churnedTenures: number[] = [];
+  for (const c of clients) {
+    if (c.status === "churned" && c.startDate && c.endDate) {
+      const tenure = Math.max(1, Math.round(
+        (new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / MS_PER_MONTH
+      ));
+      churnedTenures.push(tenure);
+    }
+  }
+  const avgChurnedTenure = churnedTenures.length > 0
+    ? churnedTenures.reduce((a, b) => a + b, 0) / churnedTenures.length
+    : 12; // default fallback if no churned data
+
   const clientData = clients.map((c) => {
     const totalRevenue = revenueMap.get(c.id) || 0;
-    const monthsActive = Math.max(
-      1,
-      Math.round(
-        (now.getTime() - c.createdAt.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
-      )
-    );
+    const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
+
+    let monthsActive: number;
+    if (c.status === "churned" && c.endDate) {
+      // Churned: use actual tenure from startDate to endDate
+      monthsActive = Math.max(1, Math.round(
+        (new Date(c.endDate).getTime() - effectiveStart.getTime()) / MS_PER_MONTH
+      ));
+    } else {
+      // Active: use avg churned tenure as projected lifetime, or current tenure if longer
+      const currentTenure = Math.max(1, Math.round(
+        (now.getTime() - effectiveStart.getTime()) / MS_PER_MONTH
+      ));
+      monthsActive = Math.max(currentTenure, Math.round(avgChurnedTenure));
+    }
+
     return {
       clientId: c.id,
       clientName: c.name,
@@ -102,11 +131,11 @@ export async function getLTVData(): Promise<LTVData> {
       totalRevenue,
       monthsActive,
       monthlyAvgRevenue: totalRevenue / monthsActive,
-      startDate: c.createdAt,
+      startDate: effectiveStart,
     };
   });
 
-  // Group by cohort (quarter of createdAt)
+  // Group by cohort (quarter of startDate)
   const cohortMap = new Map<
     string,
     { clients: number; totalRevenue: number }
@@ -163,13 +192,23 @@ export async function getRevenueByServiceType(
 ): Promise<RevenueByServiceType> {
   const monthRange = getMonthRange(months);
 
-  const [prospectClients, financials, teamMembers, settings] = await Promise.all([
+  const [prospectClients, financials, clients, teamMembers, settings] = await Promise.all([
     db.client.findMany({
       where: { status: "prospect" },
       select: { id: true },
     }),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
+    }),
+    db.client.findMany({
+      where: { hubspotDealId: { not: null } },
+      select: {
+        id: true,
+        smRetainer: true,
+        contentRetainer: true,
+        growthRetainer: true,
+        productionRetainer: true,
+      },
     }),
     db.teamMember.findMany({
       where: { active: true },
@@ -181,6 +220,16 @@ export async function getRevenueByServiceType(
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
   const prospectIds = new Set(prospectClients.map((c) => c.id));
   const filtered = financials.filter((f) => !prospectIds.has(f.clientId));
+
+  // Build client service allocation lookup
+  const clientAlloc = new Map<string, { sm: number; growth: number; content: number; total: number }>();
+  for (const c of clients) {
+    const sm = c.smRetainer ?? 0;
+    const growth = c.growthRetainer ?? 0;
+    const content = (c.contentRetainer ?? 0) + (c.productionRetainer ?? 0);
+    const total = sm + growth + content;
+    clientAlloc.set(c.id, { sm, growth, content, total });
+  }
 
   // Monthly team overhead
   let monthlyTeamCost = 0;
@@ -194,22 +243,40 @@ export async function getRevenueByServiceType(
 
   const monthlyBreakdown = monthRange.map((month) => {
     const mf = filtered.filter((f) => f.month === month);
-    const retainer = mf
-      .filter((f) => f.type === "retainer" && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount / gstDivisor, 0);
-    const project = mf
-      .filter((f) => f.type === "project" && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount / gstDivisor, 0);
+    let socialMedia = 0;
+    let adsManagement = 0;
+    let contentDelivery = 0;
+
+    // Revenue records from HubSpot, allocated proportionally by service type
+    const revenueRecords = mf.filter(
+      (f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot"
+    );
+    for (const r of revenueRecords) {
+      const exGst = r.amount / gstDivisor;
+      const alloc = clientAlloc.get(r.clientId);
+      if (alloc && alloc.total > 0) {
+        socialMedia += exGst * (alloc.sm / alloc.total);
+        adsManagement += exGst * (alloc.growth / alloc.total);
+        contentDelivery += exGst * (alloc.content / alloc.total);
+      } else {
+        // No allocation data — split equally across 3 buckets
+        socialMedia += exGst / 3;
+        adsManagement += exGst / 3;
+        contentDelivery += exGst / 3;
+      }
+    }
+
     const explicitCost = mf
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
-    const total = retainer + project;
+    const total = socialMedia + adsManagement + contentDelivery;
     const cost = explicitCost + monthlyTeamCost;
     const marginPercent = total > 0 ? ((total - cost) / total) * 100 : 0;
     return {
       month,
-      retainer: Math.round(retainer),
-      project: Math.round(project),
+      socialMedia: Math.round(socialMedia),
+      adsManagement: Math.round(adsManagement),
+      contentDelivery: Math.round(contentDelivery),
       total: Math.round(total),
       cost: Math.round(cost),
       marginPercent: Number(marginPercent.toFixed(1)),

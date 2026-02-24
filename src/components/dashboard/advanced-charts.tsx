@@ -110,8 +110,8 @@ export function AdvancedCharts({
           title="Revenue & Gross Profit Over Time"
           data={revenueData}
           xKey="month"
-          barKeys={["retainer", "project"]}
-          barLabels={["Retainer", "Project"]}
+          barKeys={["socialMedia", "adsManagement", "contentDelivery"]}
+          barLabels={["Social Media Management", "Ads Management", "Content Delivery"]}
           lineKey="marginPercent"
           lineLabel="Margin %"
           stacked

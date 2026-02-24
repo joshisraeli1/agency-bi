@@ -38,6 +38,13 @@ model Client {
   xeroContactId    String?  @unique
   source           String   // hubspot | monday | sheets | manual
   notes            String?
+  startDate        DateTime?
+  endDate          DateTime?
+  serviceType      String?
+  smRetainer       Float?
+  contentRetainer  Float?
+  growthRetainer   Float?
+  productionRetainer Float?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
