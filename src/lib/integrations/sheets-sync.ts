@@ -199,11 +199,10 @@ export class SalaryDataSyncAdapter implements SyncAdapter<SalaryRow> {
             },
           });
         } else {
-          // Find existing by name and source, or create
+          // Find existing by name (any source), or create
           const existing = await db.teamMember.findFirst({
             where: {
-              name: { equals: name },
-              source: "sheets",
+              name: { equals: name, mode: "insensitive" },
             },
           });
 

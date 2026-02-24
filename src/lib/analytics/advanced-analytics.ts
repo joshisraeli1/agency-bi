@@ -59,7 +59,7 @@ export interface TeamUtilizationData {
 }
 
 export async function getLTVData(): Promise<LTVData> {
-  const [clients, financials] = await Promise.all([
+  const [clients, financials, settings] = await Promise.all([
     db.client.findMany({
       where: { status: { not: "prospect" } },
       select: {
@@ -74,12 +74,15 @@ export async function getLTVData(): Promise<LTVData> {
       where: { type: { in: ["retainer", "project"] }, source: "hubspot" },
       select: { clientId: true, amount: true },
     }),
+    db.appSettings.findFirst(),
   ]);
 
-  // Sum revenue per client
+  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
+
+  // Sum revenue per client (ex-GST)
   const revenueMap = new Map<string, number>();
   for (const f of financials) {
-    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
+    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount / gstDivisor);
   }
 
   const now = new Date();
@@ -160,7 +163,7 @@ export async function getRevenueByServiceType(
 ): Promise<RevenueByServiceType> {
   const monthRange = getMonthRange(months);
 
-  const [prospectClients, financials, teamMembers] = await Promise.all([
+  const [prospectClients, financials, teamMembers, settings] = await Promise.all([
     db.client.findMany({
       where: { status: "prospect" },
       select: { id: true },
@@ -172,8 +175,10 @@ export async function getRevenueByServiceType(
       where: { active: true },
       select: { annualSalary: true, hourlyRate: true, weeklyHours: true },
     }),
+    db.appSettings.findFirst(),
   ]);
 
+  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
   const prospectIds = new Set(prospectClients.map((c) => c.id));
   const filtered = financials.filter((f) => !prospectIds.has(f.clientId));
 
@@ -191,10 +196,10 @@ export async function getRevenueByServiceType(
     const mf = filtered.filter((f) => f.month === month);
     const retainer = mf
       .filter((f) => f.type === "retainer" && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount, 0);
+      .reduce((s, f) => s + f.amount / gstDivisor, 0);
     const project = mf
       .filter((f) => f.type === "project" && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount, 0);
+      .reduce((s, f) => s + f.amount / gstDivisor, 0);
     const explicitCost = mf
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
@@ -219,7 +224,7 @@ export async function getClientHealthData(
 ): Promise<ClientHealthData> {
   const monthRange = getMonthRange(months);
 
-  const [clients, financials] = await Promise.all([
+  const [clients, financials, chSettings] = await Promise.all([
     db.client.findMany({
       where: { status: "active" },
       select: { id: true, name: true, createdAt: true },
@@ -227,12 +232,14 @@ export async function getClientHealthData(
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
     }),
+    db.appSettings.findFirst(),
   ]);
 
+  const gstDivisor = 1 + (chSettings?.gstRate ?? 10) / 100;
   const now = new Date();
   const clientMap = new Map(clients.map((c) => [c.id, c]));
 
-  // Aggregate financials per client
+  // Aggregate financials per client (revenue ex-GST)
   const clientFinancials = new Map<
     string,
     { revenue: number; cost: number }
@@ -247,7 +254,7 @@ export async function getClientHealthData(
       (f.type === "retainer" || f.type === "project") &&
       f.source === "hubspot"
     ) {
-      existing.revenue += f.amount;
+      existing.revenue += f.amount / gstDivisor;
     } else if (f.type === "cost") {
       existing.cost += f.amount;
     }
@@ -337,4 +344,126 @@ export async function getTeamUtilizationData(
   members.sort((a, b) => b.utilizationPercent - a.utilizationPercent);
 
   return { members };
+}
+
+export interface SourceDiscrepancy {
+  clientId: string;
+  clientName: string;
+  month: string;
+  hubspotRevenue: number;
+  xeroRevenue: number;
+  difference: number;
+  percentDiff: number;
+}
+
+export interface DiscrepancyReport {
+  totalHubspot: number;
+  totalXero: number;
+  totalDifference: number;
+  byClient: SourceDiscrepancy[];
+  summary: {
+    matched: number;
+    hubspotOnly: number;
+    xeroOnly: number;
+    mismatched: number;
+  };
+}
+
+export async function getSourceDiscrepancy(
+  months = 6
+): Promise<DiscrepancyReport> {
+  const monthRange = getMonthRange(months);
+
+  const [financials, settings] = await Promise.all([
+    db.financialRecord.findMany({
+      where: {
+        month: { in: monthRange },
+        type: { in: ["retainer", "project"] },
+      },
+      include: { client: { select: { name: true } } },
+    }),
+    db.appSettings.findFirst(),
+  ]);
+
+  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
+
+  // Group by client+month, split by source
+  const map = new Map<
+    string,
+    {
+      clientId: string;
+      clientName: string;
+      month: string;
+      hubspot: number;
+      xero: number;
+    }
+  >();
+
+  for (const f of financials) {
+    const key = `${f.clientId}:${f.month}`;
+    const existing = map.get(key) || {
+      clientId: f.clientId,
+      clientName: f.client.name,
+      month: f.month,
+      hubspot: 0,
+      xero: 0,
+    };
+    if (f.source === "hubspot") {
+      existing.hubspot += f.amount / gstDivisor;
+    } else if (f.source === "xero") {
+      existing.xero += f.amount / gstDivisor;
+    }
+    map.set(key, existing);
+  }
+
+  let totalHubspot = 0;
+  let totalXero = 0;
+  let matched = 0;
+  let hubspotOnly = 0;
+  let xeroOnly = 0;
+  let mismatched = 0;
+
+  const byClient: SourceDiscrepancy[] = [];
+
+  for (const entry of map.values()) {
+    totalHubspot += entry.hubspot;
+    totalXero += entry.xero;
+
+    if (entry.hubspot > 0 && entry.xero > 0) {
+      const diff = entry.hubspot - entry.xero;
+      const percentDiff =
+        entry.hubspot > 0 ? (diff / entry.hubspot) * 100 : 0;
+      // Flag if >5% difference
+      if (Math.abs(percentDiff) > 5) {
+        mismatched++;
+        byClient.push({
+          clientId: entry.clientId,
+          clientName: entry.clientName,
+          month: entry.month,
+          hubspotRevenue: Math.round(entry.hubspot),
+          xeroRevenue: Math.round(entry.xero),
+          difference: Math.round(diff),
+          percentDiff: Number(percentDiff.toFixed(1)),
+        });
+      } else {
+        matched++;
+      }
+    } else if (entry.hubspot > 0) {
+      hubspotOnly++;
+    } else if (entry.xero > 0) {
+      xeroOnly++;
+    }
+  }
+
+  byClient.sort(
+    (a, b) => Math.abs(b.difference) - Math.abs(a.difference)
+  );
+
+  return {
+    totalHubspot: Math.round(totalHubspot),
+    totalXero: Math.round(totalXero),
+    totalDifference: Math.round(totalHubspot - totalXero),
+    byClient,
+    summary: { matched, hubspotOnly, xeroOnly, mismatched },
+  };
 }

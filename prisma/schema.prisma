@@ -302,6 +302,7 @@ model AppSettings {
   marginWarning    Float  @default(20.0)
   marginDanger     Float  @default(10.0)
   fiscalYearStart  Int    @default(7) // July
+  gstRate          Float  @default(10.0) // GST percentage (Australia = 10%)
 }
 
 model AuditLog {

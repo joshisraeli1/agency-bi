@@ -7,11 +7,13 @@ import {
   getRevenueByServiceType,
   getClientHealthData,
   getTeamUtilizationData,
+  getSourceDiscrepancy,
 } from "@/lib/analytics/advanced-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
+import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { CommunicationCharts } from "@/components/charts/communication-charts";
 import { MeetingCharts } from "@/components/charts/meeting-charts";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
@@ -24,7 +26,7 @@ interface Props {
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
-  const [data, comms, meetings, ltv, revenueByType, clientHealth, teamUtilization] = await Promise.all([
+  const [data, comms, meetings, ltv, revenueByType, clientHealth, teamUtilization, discrepancy] = await Promise.all([
     getAgencyKPIs(months),
     getCommunicationOverview(months),
     getMeetingOverview(months),
@@ -32,6 +34,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getRevenueByServiceType(months),
     getClientHealthData(months),
     getTeamUtilizationData(months),
+    getSourceDiscrepancy(months),
   ]);
 
   return (
@@ -88,6 +91,18 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         clientHealth={clientHealth}
         teamUtilization={teamUtilization}
       />
+
+      {(discrepancy.totalHubspot > 0 || discrepancy.totalXero > 0) && (
+        <>
+          <div>
+            <h2 className="text-xl font-semibold">HubSpot vs Xero Reconciliation</h2>
+            <p className="text-muted-foreground text-sm mt-1">
+              Revenue comparison between sources (ex GST)
+            </p>
+          </div>
+          <DiscrepancyTable data={discrepancy} />
+        </>
+      )}
 
       {comms.totalMessages > 0 && (
         <>

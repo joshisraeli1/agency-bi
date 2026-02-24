@@ -24,6 +24,10 @@ export async function getRevenueOverview(
     }),
   ]);
 
+  // GST divisor: revenue amounts are GST-inclusive, convert to ex-GST
+  const gstRate = settings?.gstRate ?? 10;
+  const gstDivisor = 1 + gstRate / 100;
+
   // Calculate monthly team salary cost as overhead
   let monthlyTeamCost = 0;
   for (const member of teamMembers) {
@@ -42,10 +46,10 @@ export async function getRevenueOverview(
 
   const marginWarning = settings?.marginWarning ?? 20;
 
-  // Totals — revenue only from HubSpot (source of truth for revenue)
+  // Totals — revenue only from HubSpot (source of truth), converted to ex-GST
   const totalRevenue = financials
     .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-    .reduce((sum, f) => sum + f.amount, 0);
+    .reduce((sum, f) => sum + f.amount / gstDivisor, 0);
 
   const explicitCost = financials
     .filter((f) => f.type === "cost")
@@ -72,24 +76,24 @@ export async function getRevenueOverview(
   const annualizedRevenue = avgMonthlyRevenue * 12;
   const annualizedProfit = (avgMonthlyRevenue - avgMonthlyCost) * 12;
 
-  // Revenue by source
+  // Revenue by source (ex-GST)
   const sourceMap = new Map<string, number>();
   for (const f of financials) {
     if (f.type === "retainer" || f.type === "project") {
       const source = f.source || "unknown";
-      sourceMap.set(source, (sourceMap.get(source) || 0) + f.amount);
+      sourceMap.set(source, (sourceMap.get(source) || 0) + f.amount / gstDivisor);
     }
   }
   const revenueBySource = Array.from(sourceMap.entries())
     .map(([source, revenue]) => ({ source, revenue }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // Monthly trend (includes team salary overhead per month)
+  // Monthly trend (includes team salary overhead per month, revenue ex-GST)
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
     const rev = monthFinancials
       .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount, 0);
+      .reduce((s, f) => s + f.amount / gstDivisor, 0);
     const monthExplicitCost = monthFinancials
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
@@ -97,7 +101,7 @@ export async function getRevenueOverview(
     return { month, revenue: rev, cost, margin: rev - cost };
   });
 
-  // By client
+  // By client (revenue ex-GST)
   const clientRevMap = new Map<
     string,
     { clientId: string; clientName: string; revenue: number; cost: number }
@@ -111,7 +115,7 @@ export async function getRevenueOverview(
       cost: 0,
     };
     if ((f.type === "retainer" || f.type === "project") && f.source === "hubspot") {
-      existing.revenue += f.amount;
+      existing.revenue += f.amount / gstDivisor;
     } else if (f.type === "cost") {
       existing.cost += f.amount;
     }
