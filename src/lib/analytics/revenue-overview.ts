@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getMonthRange } from "@/lib/utils";
+import { getExcludedClientIds } from "./excluded-clients";
 import type { RevenueOverview } from "./types";
 
 export async function getRevenueOverview(
@@ -7,12 +8,8 @@ export async function getRevenueOverview(
 ): Promise<RevenueOverview> {
   const monthRange = getMonthRange(months);
 
-  // Get prospect client IDs so we can exclude them from financials
-  const [prospectClients, financialsRaw, settings, teamMembers] = await Promise.all([
-    db.client.findMany({
-      where: { status: "prospect" },
-      select: { id: true },
-    }),
+  const [excludedIds, financialsRaw, settings, teamMembers] = await Promise.all([
+    getExcludedClientIds(),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
       include: { client: true },
@@ -39,10 +36,8 @@ export async function getRevenueOverview(
     }
   }
 
-  const prospectIds = new Set(prospectClients.map((c) => c.id));
-
-  // Filter out financial records belonging to prospect clients
-  const financials = financialsRaw.filter((f) => !prospectIds.has(f.clientId));
+  // Filter out excluded clients (prospects + legacy)
+  const financials = financialsRaw.filter((f) => !excludedIds.has(f.clientId));
 
   const marginWarning = settings?.marginWarning ?? 20;
 
@@ -91,15 +86,44 @@ export async function getRevenueOverview(
   // Monthly trend (includes team salary overhead per month, revenue ex-GST)
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
-    const rev = monthFinancials
+    const hubspotRevenue = monthFinancials
       .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
       .reduce((s, f) => s + f.amount / gstDivisor, 0);
+    // Xero revenue from ALL records (including synthetic P&L client, unfiltered)
+    const xeroRevenue = financialsRaw
+      .filter((f) => f.month === month && (f.type === "retainer" || f.type === "project") && f.source === "xero")
+      .reduce((s, f) => s + f.amount / gstDivisor, 0);
+    const rev = hubspotRevenue; // HubSpot is source of truth
     const monthExplicitCost = monthFinancials
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
     const cost = monthExplicitCost + monthlyTeamCost;
-    return { month, revenue: rev, cost, margin: rev - cost };
+    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue };
   });
+
+  // Quarterly trend: aggregate monthly into quarters
+  const quarterMap = new Map<string, { hubspotRevenue: number; xeroRevenue: number; revenue: number; cost: number }>();
+  for (const m of monthlyTrend) {
+    const [y, mo] = m.month.split("-").map(Number);
+    const q = Math.ceil(mo / 3);
+    const qKey = `Q${q} ${y}`;
+    const existing = quarterMap.get(qKey) || { hubspotRevenue: 0, xeroRevenue: 0, revenue: 0, cost: 0 };
+    existing.hubspotRevenue += m.hubspotRevenue;
+    existing.xeroRevenue += m.xeroRevenue;
+    existing.revenue += m.revenue;
+    existing.cost += m.cost;
+    quarterMap.set(qKey, existing);
+  }
+  const quarterlyTrend = Array.from(quarterMap.entries())
+    .map(([quarter, d]) => ({
+      quarter,
+      hubspotRevenue: Math.round(d.hubspotRevenue),
+      xeroRevenue: Math.round(d.xeroRevenue),
+      revenue: Math.round(d.revenue),
+      cost: Math.round(d.cost),
+      margin: Math.round(d.revenue - d.cost),
+    }))
+    .sort((a, b) => a.quarter.localeCompare(b.quarter));
 
   // By client (revenue ex-GST)
   const clientRevMap = new Map<
@@ -123,6 +147,7 @@ export async function getRevenueOverview(
   }
 
   const byClient = Array.from(clientRevMap.values())
+    .filter((c) => c.revenue > 0) // exclude clients with no HubSpot revenue (e.g. synthetic Xero P&L client)
     .map((c) => ({
       ...c,
       margin: c.revenue - c.cost,
@@ -152,6 +177,7 @@ export async function getRevenueOverview(
     annualizedProfit,
     revenueBySource,
     monthlyTrend,
+    quarterlyTrend,
     byClient,
     atRiskClients,
   };

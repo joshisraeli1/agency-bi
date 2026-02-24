@@ -11,7 +11,7 @@ import {
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getChartColor } from "./chart-colors";
+import { getChartColor, TOOLTIP_STYLE, TOOLTIP_POSITION } from "./chart-colors";
 
 interface BarChartCardProps {
   title: string;
@@ -65,11 +65,8 @@ export function BarChartCard({
               </>
             )}
             <Tooltip
-              contentStyle={{
-                backgroundColor: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: "8px",
-              }}
+              contentStyle={TOOLTIP_STYLE}
+              wrapperStyle={TOOLTIP_POSITION}
               formatter={formatY ? (value: unknown) => formatY(Number(value)) : undefined}
             />
             {yKeys.length > 1 && <Legend />}

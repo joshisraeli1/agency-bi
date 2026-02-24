@@ -9,6 +9,7 @@ import {
   getTeamUtilizationData,
   getSourceDiscrepancy,
   getIndustryBreakdown,
+  getAvgDealSizeByDivision,
 } from "@/lib/analytics/advanced-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
@@ -27,7 +28,7 @@ interface Props {
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
-  const [data, comms, meetings, ltv, revenueByType, clientHealth, teamUtilization, discrepancy, industryBreakdown] = await Promise.all([
+  const [data, comms, meetings, ltv, revenueByType, clientHealth, teamUtilization, discrepancy, industryBreakdown, avgDealSize] = await Promise.all([
     getAgencyKPIs(months),
     getCommunicationOverview(months),
     getMeetingOverview(months),
@@ -37,6 +38,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getTeamUtilizationData(months),
     getSourceDiscrepancy(months),
     getIndustryBreakdown(),
+    getAvgDealSizeByDivision(months),
   ]);
 
   return (
@@ -93,6 +95,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         clientHealth={clientHealth}
         teamUtilization={teamUtilization}
         industryBreakdown={industryBreakdown}
+        avgDealSize={avgDealSize}
       />
 
       {(discrepancy.totalHubspot > 0 || discrepancy.totalXero > 0) && (

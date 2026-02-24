@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, getEffectiveHourlyRate } from "@/lib/utils";
+import { getExcludedClientIds } from "./excluded-clients";
 
 export interface LTVData {
   clients: {
@@ -23,6 +24,11 @@ export interface LTVData {
     clients: number;
     avgLTV: number;
     avgMonths: number;
+  }[];
+  tenureByCohort: {
+    cohort: string;
+    avgTenureMonths: number;
+    clients: number;
   }[];
 }
 
@@ -60,7 +66,7 @@ export interface TeamUtilizationData {
 }
 
 export async function getLTVData(): Promise<LTVData> {
-  const [clients, financials, settings] = await Promise.all([
+  const [allClients, financials, settings, excludedIds] = await Promise.all([
     db.client.findMany({
       where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
       select: {
@@ -78,7 +84,10 @@ export async function getLTVData(): Promise<LTVData> {
       select: { clientId: true, amount: true },
     }),
     db.appSettings.findFirst(),
+    getExcludedClientIds(),
   ]);
+
+  const clients = allClients.filter((c) => !excludedIds.has(c.id));
 
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
 
@@ -184,7 +193,26 @@ export async function getLTVData(): Promise<LTVData> {
     }))
     .sort((a, b) => b.avgLTV - a.avgLTV);
 
-  return { clients: clientData, byCohort, byIndustry };
+  // Tenure by cohort: avg tenure months per start quarter
+  const tenureCohortMap = new Map<string, { totalMonths: number; clients: number }>();
+  for (const c of clientData) {
+    const q = Math.floor(c.startDate.getMonth() / 3) + 1;
+    const cohort = `Q${q} ${c.startDate.getFullYear()}`;
+    const existing = tenureCohortMap.get(cohort) || { totalMonths: 0, clients: 0 };
+    existing.totalMonths += c.monthsActive;
+    existing.clients++;
+    tenureCohortMap.set(cohort, existing);
+  }
+
+  const tenureByCohort = Array.from(tenureCohortMap.entries())
+    .map(([cohort, data]) => ({
+      cohort,
+      avgTenureMonths: Math.round(data.totalMonths / data.clients),
+      clients: data.clients,
+    }))
+    .sort((a, b) => a.cohort.localeCompare(b.cohort));
+
+  return { clients: clientData, byCohort, byIndustry, tenureByCohort };
 }
 
 export async function getRevenueByServiceType(
@@ -192,11 +220,8 @@ export async function getRevenueByServiceType(
 ): Promise<RevenueByServiceType> {
   const monthRange = getMonthRange(months);
 
-  const [prospectClients, financials, clients, teamMembers, settings] = await Promise.all([
-    db.client.findMany({
-      where: { status: "prospect" },
-      select: { id: true },
-    }),
+  const [excludedIds, financials, clients, teamMembers, settings] = await Promise.all([
+    getExcludedClientIds(),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
     }),
@@ -218,8 +243,7 @@ export async function getRevenueByServiceType(
   ]);
 
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-  const prospectIds = new Set(prospectClients.map((c) => c.id));
-  const filtered = financials.filter((f) => !prospectIds.has(f.clientId));
+  const filtered = financials.filter((f) => !excludedIds.has(f.clientId));
 
   // Build client service allocation lookup
   const clientAlloc = new Map<string, { sm: number; growth: number; content: number; total: number }>();
@@ -447,7 +471,7 @@ export interface IndustryBreakdown {
 }
 
 export async function getIndustryBreakdown(): Promise<IndustryBreakdown> {
-  const [clients, financials, settings] = await Promise.all([
+  const [allClients, financials, settings, excludedIds] = await Promise.all([
     db.client.findMany({
       where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
       select: { id: true, industry: true, status: true },
@@ -457,7 +481,10 @@ export async function getIndustryBreakdown(): Promise<IndustryBreakdown> {
       select: { clientId: true, amount: true },
     }),
     db.appSettings.findFirst(),
+    getExcludedClientIds(),
   ]);
+
+  const clients = allClients.filter((c) => !excludedIds.has(c.id));
 
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
 
@@ -496,7 +523,7 @@ export async function getSourceDiscrepancy(
 ): Promise<DiscrepancyReport> {
   const monthRange = getMonthRange(months);
 
-  const [financials, settings] = await Promise.all([
+  const [allFinancials, settings, excludedIds] = await Promise.all([
     db.financialRecord.findMany({
       where: {
         month: { in: monthRange },
@@ -505,7 +532,10 @@ export async function getSourceDiscrepancy(
       include: { client: { select: { name: true } } },
     }),
     db.appSettings.findFirst(),
+    getExcludedClientIds(),
   ]);
+
+  const financials = allFinancials.filter((f) => !excludedIds.has(f.clientId));
 
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
 
@@ -588,4 +618,97 @@ export async function getSourceDiscrepancy(
     byClient,
     summary: { matched, hubspotOnly, xeroOnly, mismatched },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Avg Deal Size by Division per Month
+// ---------------------------------------------------------------------------
+
+const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
+const EXCLUDED_ROLES = ["Director", "BDM"];
+
+export interface AvgDealSizeByDivision {
+  months: string[];
+  divisions: string[];
+  data: Record<string, Record<string, number>>; // month -> division -> avgDealSize
+}
+
+export async function getAvgDealSizeByDivision(
+  months = 6
+): Promise<AvgDealSizeByDivision> {
+  const monthRange = getMonthRange(months);
+  const startDate = new Date(`${monthRange[0]}-01`);
+
+  const [excludedIds, financials, timeEntries, settings] = await Promise.all([
+    getExcludedClientIds(),
+    db.financialRecord.findMany({
+      where: { month: { in: monthRange } },
+    }),
+    db.timeEntry.findMany({
+      where: { date: { gte: startDate } },
+      include: { teamMember: { select: { division: true, role: true } } },
+    }),
+    db.appSettings.findFirst(),
+  ]);
+
+  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
+  const filteredFinancials = financials.filter((f) => !excludedIds.has(f.clientId));
+
+  // For each month, compute per-client division hours (excluding Directors/BDMs/etc.)
+  const data: Record<string, Record<string, number>> = {};
+  const allDivisions = new Set<string>();
+
+  for (const month of monthRange) {
+    const monthFin = filteredFinancials.filter((f) => f.month === month);
+
+    // Build per-client division hours for this month
+    const clientDivHours = new Map<string, Map<string, number>>();
+    for (const entry of timeEntries) {
+      if (!entry.clientId || toMonthKey(entry.date) !== month) continue;
+      const div = entry.teamMember?.division || "Unassigned";
+      const role = entry.teamMember?.role || "";
+      if (EXCLUDED_DIVISIONS.includes(div) || EXCLUDED_ROLES.includes(role)) continue;
+      if (!clientDivHours.has(entry.clientId)) {
+        clientDivHours.set(entry.clientId, new Map());
+      }
+      const dm = clientDivHours.get(entry.clientId)!;
+      dm.set(div, (dm.get(div) || 0) + entry.hours);
+    }
+
+    // Allocate revenue to divisions proportionally, track unique clients per division
+    const divRevenue = new Map<string, number>();
+    const divClients = new Map<string, Set<string>>();
+
+    for (const fin of monthFin) {
+      if (fin.type !== "retainer" && fin.type !== "project") continue;
+      if (fin.source !== "hubspot") continue;
+      const dh = clientDivHours.get(fin.clientId);
+      if (!dh || dh.size === 0) continue;
+      const totalH = Array.from(dh.values()).reduce((a, b) => a + b, 0);
+      if (totalH === 0) continue;
+
+      for (const [div, hours] of dh) {
+        const proportion = hours / totalH;
+        const revExGst = (fin.amount / gstDivisor) * proportion;
+        divRevenue.set(div, (divRevenue.get(div) || 0) + revExGst);
+        if (!divClients.has(div)) divClients.set(div, new Set());
+        divClients.get(div)!.add(fin.clientId);
+        allDivisions.add(div);
+      }
+    }
+
+    // Compute avg deal size per division
+    const monthData: Record<string, number> = {};
+    for (const [div, rev] of divRevenue) {
+      const clientCount = divClients.get(div)?.size || 1;
+      monthData[div] = Math.round(rev / clientCount);
+    }
+    data[month] = monthData;
+  }
+
+  const divisions = Array.from(allDivisions)
+    .filter((d) => !EXCLUDED_DIVISIONS.includes(d))
+    .sort();
+
+  return { months: monthRange, divisions, data };
 }

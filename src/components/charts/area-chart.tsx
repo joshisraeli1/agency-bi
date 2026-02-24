@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getChartColor } from "./chart-colors";
+import { getChartColor, TOOLTIP_STYLE, TOOLTIP_POSITION } from "./chart-colors";
 
 interface AreaChartCardProps {
   title: string;
@@ -45,11 +45,8 @@ export function AreaChartCard({
             <XAxis dataKey={xKey} className="text-xs" tick={{ fontSize: 12 }} />
             <YAxis className="text-xs" tick={{ fontSize: 12 }} tickFormatter={formatY} />
             <Tooltip
-              contentStyle={{
-                backgroundColor: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: "8px",
-              }}
+              contentStyle={TOOLTIP_STYLE}
+              wrapperStyle={TOOLTIP_POSITION}
               formatter={formatY ? (value: unknown) => formatY(Number(value)) : undefined}
             />
             {yKeys.map((key, i) => (

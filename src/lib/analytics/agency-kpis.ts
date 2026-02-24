@@ -1,12 +1,16 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth } from "@/lib/utils";
+import { getExcludedClientIds } from "./excluded-clients";
 import type { AgencyKPIs } from "./types";
+
+const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
+const EXCLUDED_ROLES = ["Director", "BDM"];
 
 export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const monthRange = getMonthRange(months);
   const startDate = new Date(`${monthRange[0]}-01`);
 
-  const [financials, timeEntries, teamMembers, activeClients, allClients, settings, clients] =
+  const [financials, timeEntries, teamMembers, activeClients, allClients, settings, clients, excludedIds] =
     await Promise.all([
       db.financialRecord.findMany({
         where: { month: { in: monthRange } },
@@ -20,6 +24,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       db.client.count({ where: { status: { not: "prospect" }, hubspotDealId: { not: null } } }),
       db.appSettings.findFirst(),
       db.client.findMany({ select: { id: true, name: true, industry: true } }),
+      getExcludedClientIds(),
     ]);
 
   const productiveHoursPerDay = settings?.productiveHours || 6.5;
@@ -27,12 +32,22 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const availableHoursPerMonth = productiveHoursPerDay * workingDaysPerMonth;
   const totalTeamMembers = teamMembers.length;
 
+  // Filter out excluded clients (prospects + legacy)
+  const filteredFinancials = financials.filter((f) => !excludedIds.has(f.clientId));
+
+  // Helper: check if a time entry's team member should be excluded from division analytics
+  function isDivisionExcluded(entry: { teamMember?: { division?: string | null; role?: string | null } | null }): boolean {
+    const div = entry.teamMember?.division || "Unassigned";
+    const role = entry.teamMember?.role || "";
+    return EXCLUDED_DIVISIONS.includes(div) || EXCLUDED_ROLES.includes(role);
+  }
+
   // Total revenue and cost
-  const totalRevenue = financials
+  const totalRevenue = filteredFinancials
     .filter((f) => f.type === "retainer" || f.type === "project")
     .reduce((sum, f) => sum + f.amount, 0);
 
-  const totalCost = financials
+  const totalCost = filteredFinancials
     .filter((f) => f.type === "cost")
     .reduce((sum, f) => sum + f.amount, 0);
 
@@ -55,9 +70,10 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const clientRetention =
     allClients > 0 ? (activeClients / allClients) * 100 : 0;
 
-  // Hours by division
+  // Hours by division (exclude Directors, BDMs, Unassigned, NA, Sales)
   const divisionMap = new Map<string, number>();
   for (const entry of timeEntries) {
+    if (isDivisionExcluded(entry)) continue;
     const div = entry.teamMember?.division || "Unassigned";
     divisionMap.set(div, (divisionMap.get(div) || 0) + entry.hours);
   }
@@ -68,7 +84,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
 
   // Monthly trend
   const monthlyTrend = monthRange.map((month) => {
-    const monthFinancials = financials.filter((f) => f.month === month);
+    const monthFinancials = filteredFinancials.filter((f) => f.month === month);
     const rev = monthFinancials
       .filter((f) => f.type === "retainer" || f.type === "project")
       .reduce((s, f) => s + f.amount, 0);
@@ -102,6 +118,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const clientDivisionHours = new Map<string, Map<string, number>>();
   for (const entry of timeEntries) {
     if (!entry.clientId) continue;
+    if (isDivisionExcluded(entry)) continue;
     const div = entry.teamMember?.division || "Unassigned";
     if (!clientDivisionHours.has(entry.clientId)) {
       clientDivisionHours.set(entry.clientId, new Map());
@@ -114,7 +131,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const divRevenue = new Map<string, number>();
   const divCost = new Map<string, number>();
 
-  for (const fin of financials) {
+  for (const fin of filteredFinancials) {
     const divHours = clientDivisionHours.get(fin.clientId);
     if (!divHours || divHours.size === 0) continue;
     const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
@@ -149,11 +166,12 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   // Division Margin Over Time: same allocation per month
   const divisionNames = Array.from(allDivisions).sort();
   const divisionMarginTrend = monthRange.map((month) => {
-    const monthFin = financials.filter((f) => f.month === month);
+    const monthFin = filteredFinancials.filter((f) => f.month === month);
     // Per-client division hours for this month only
     const monthClientDivHours = new Map<string, Map<string, number>>();
     for (const entry of timeEntries) {
       if (!entry.clientId || toMonthKey(entry.date) !== month) continue;
+      if (isDivisionExcluded(entry)) continue;
       const div = entry.teamMember?.division || "Unassigned";
       if (!monthClientDivHours.has(entry.clientId)) {
         monthClientDivHours.set(entry.clientId, new Map());
@@ -190,7 +208,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
 
   // Client LTV by Industry
   const industryRevMap = new Map<string, number>();
-  for (const fin of financials) {
+  for (const fin of filteredFinancials) {
     if (fin.type !== "retainer" && fin.type !== "project") continue;
     const client = clientMap.get(fin.clientId);
     const industry = client?.industry || "Unknown";

@@ -13,7 +13,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getChartColor } from "./chart-colors";
+import { getChartColor, TOOLTIP_STYLE, TOOLTIP_POSITION } from "./chart-colors";
 
 interface ScatterChartCardProps {
   title: string;
@@ -52,10 +52,7 @@ function CustomTooltip({
   if (!active || !payload?.[0]) return null;
   const d = payload[0].payload;
   return (
-    <div
-      className="rounded-lg border bg-card p-3 text-sm shadow-md"
-      style={{ border: "1px solid hsl(var(--border))" }}
-    >
+    <div style={TOOLTIP_STYLE}>
       <p className="font-semibold mb-1">{d.name}</p>
       <p>
         {xLabel || "X"}: {formatX ? formatX(d.x) : d.x}
@@ -134,6 +131,7 @@ export function ScatterChartCard({
               />
             )}
             <Tooltip
+              wrapperStyle={TOOLTIP_POSITION}
               content={
                 <CustomTooltip
                   xLabel={xLabel}

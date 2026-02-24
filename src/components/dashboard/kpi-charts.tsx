@@ -10,6 +10,8 @@ interface Props {
   data: AgencyKPIs;
 }
 
+const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
+
 export function KpiCharts({ data }: Props) {
   const trendData = data.monthlyTrend.map((m) => ({
     ...m,
@@ -18,13 +20,17 @@ export function KpiCharts({ data }: Props) {
     margin: Number(m.margin.toFixed(1)),
   }));
 
-  const divisionData = data.hoursByDivision.map((d) => ({
-    name: d.division,
-    hours: Number(d.hours.toFixed(1)),
-  }));
+  const divisionData = data.hoursByDivision
+    .filter((d) => !EXCLUDED_DIVISIONS.includes(d.division))
+    .map((d) => ({
+      name: d.division,
+      hours: Number(d.hours.toFixed(1)),
+    }));
 
   const divisionMarginKeys = data.divisionMarginTrend.length > 0
-    ? Object.keys(data.divisionMarginTrend[0]).filter((k) => k !== "month")
+    ? Object.keys(data.divisionMarginTrend[0]).filter(
+        (k) => k !== "month" && !EXCLUDED_DIVISIONS.includes(k)
+      )
     : [];
 
   const industryData = data.clientLTVByIndustry.map((d) => ({
@@ -32,10 +38,12 @@ export function KpiCharts({ data }: Props) {
     revenue: d.revenue,
   }));
 
-  const ltvDivisionData = data.clientLTVByDivision.map((d) => ({
-    name: d.division,
-    value: d.revenue,
-  }));
+  const ltvDivisionData = data.clientLTVByDivision
+    .filter((d) => !EXCLUDED_DIVISIONS.includes(d.division))
+    .map((d) => ({
+      name: d.division,
+      value: d.revenue,
+    }));
 
   return (
     <div className="space-y-4">
@@ -64,7 +72,7 @@ export function KpiCharts({ data }: Props) {
         {data.marginByDivision.length > 0 && (
           <BarChartCard
             title="Margin by Division"
-            data={data.marginByDivision}
+            data={data.marginByDivision.filter((d) => !EXCLUDED_DIVISIONS.includes(d.division))}
             xKey="division"
             yKeys={["revenue", "cost"]}
             yLabels={["Revenue", "Cost"]}

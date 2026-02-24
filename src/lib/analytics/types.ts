@@ -74,6 +74,16 @@ export interface RevenueOverview {
     revenue: number;
     cost: number;
     margin: number;
+    hubspotRevenue: number;
+    xeroRevenue: number;
+  }[];
+  quarterlyTrend: {
+    quarter: string;
+    hubspotRevenue: number;
+    xeroRevenue: number;
+    revenue: number;
+    cost: number;
+    margin: number;
   }[];
   byClient: {
     clientId: string;

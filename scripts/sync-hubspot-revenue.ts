@@ -160,27 +160,11 @@ async function main() {
     let recordsUpdated = 0;
     let unmatched = 0;
 
-    // Track per-client data for two-pass status determination
-    // A client is "active" only if they have a Closed Won deal with no churn date (or future churn date)
-    const clientHasActiveDeal = new Map<string, boolean>();
-    const clientDealStage = new Map<string, string>();  // latest deal stage label
-    const clientDates = new Map<string, { startDate?: Date; endDate?: Date }>();
-    const clientIndustry = new Map<string, string>();
-
-    for (const deal of revenueDeals) {
-      const props = deal.properties;
-      const dealName = props.dealname ?? "";
-      const amountExGst = props.amount__excl_gst_ ? parseFloat(props.amount__excl_gst_) : null;
-      const startMonth = parseMonth(props.start_date);
-      const churnMonth = parseMonth(props.churn_date);
-      const stage = props.dealstage;
-
-      if (!amountExGst || !startMonth) continue;
-
-      // Match to client
+    // Helper: match a deal to a client by dealId or name
+    function matchDealToClient(deal: HubSpotDeal): string | undefined {
       let clientId = clientByDealId.get(deal.id);
       if (!clientId) {
-        const nameLower = dealName.toLowerCase();
+        const nameLower = (deal.properties.dealname ?? "").toLowerCase();
         clientId = clientByName.get(nameLower);
         if (!clientId) {
           for (const [cName, cId] of clientByName) {
@@ -191,14 +175,70 @@ async function main() {
           }
         }
       }
+      return clientId;
+    }
 
+    // Track per-client data for two-pass status determination
+    const clientHasActiveDeal = new Map<string, boolean>();
+    const clientDealStage = new Map<string, string>();
+    const clientDates = new Map<string, { startDate?: Date; endDate?: Date }>();
+    const clientIndustry = new Map<string, string>();
+
+    // -----------------------------------------------------------------------
+    // Pass 0: Date tracking over ALL deals (not just revenue deals)
+    // Deals without amount or start_date still contribute to tenure via closedate
+    // -----------------------------------------------------------------------
+    console.log("\n📅 Pass 0: Tracking client dates from all deals...");
+    for (const deal of allDeals) {
+      const props = deal.properties;
+      const clientId = matchDealToClient(deal);
+      if (!clientId) continue;
+
+      // Use start_date, falling back to closedate
+      const rawStart = props.start_date || props.closedate;
+      const startDateVal = rawStart ? new Date(rawStart) : null;
+      const endDateVal = props.churn_date ? new Date(props.churn_date) : null;
+
+      const existing = clientDates.get(clientId) || {};
+      if (startDateVal && !isNaN(startDateVal.getTime())) {
+        if (!existing.startDate || startDateVal < existing.startDate) {
+          existing.startDate = startDateVal;
+        }
+      }
+      if (endDateVal && !isNaN(endDateVal.getTime())) {
+        if (!existing.endDate || endDateVal > existing.endDate) {
+          existing.endDate = endDateVal;
+        }
+      }
+      clientDates.set(clientId, existing);
+
+      // Track industry from any deal
+      if (props.industry_type) {
+        clientIndustry.set(clientId, props.industry_type);
+      }
+    }
+    console.log(`   Tracked dates for ${clientDates.size} clients`);
+
+    // -----------------------------------------------------------------------
+    // Pass 1: Revenue generation from Closed Won / Churned deals
+    // -----------------------------------------------------------------------
+    for (const deal of revenueDeals) {
+      const props = deal.properties;
+      const dealName = props.dealname ?? "";
+      const amountExGst = props.amount__excl_gst_ ? parseFloat(props.amount__excl_gst_) : null;
+      const startMonth = parseMonth(props.start_date);
+      const churnMonth = parseMonth(props.churn_date);
+      const stage = props.dealstage;
+
+      if (!amountExGst || !startMonth) continue;
+
+      const clientId = matchDealToClient(deal);
       if (!clientId) {
         unmatched++;
         continue;
       }
 
       // Track whether this client has any active deal
-      // Active = Closed Won + no churn date or churn date in the future
       if (stage === CLOSED_WON_STAGE) {
         const churnDate = props.churn_date ? new Date(props.churn_date) : null;
         const isStillActive = !churnDate || churnDate > nowDate;
@@ -206,7 +246,6 @@ async function main() {
           clientHasActiveDeal.set(clientId, true);
         }
       }
-      // Only mark as NOT active if we haven't already found an active deal
       if (!clientHasActiveDeal.has(clientId)) {
         clientHasActiveDeal.set(clientId, false);
       }
@@ -214,29 +253,6 @@ async function main() {
       // Track deal stage label (latest wins)
       if (stage && STAGE_LABELS[stage]) {
         clientDealStage.set(clientId, STAGE_LABELS[stage]);
-      }
-
-      // Track dates
-      const startDateVal = props.start_date ? new Date(props.start_date) : null;
-      const endDateVal = props.churn_date ? new Date(props.churn_date) : null;
-      const existing = clientDates.get(clientId) || {};
-      if (startDateVal && !isNaN(startDateVal.getTime())) {
-        // Use earliest start date
-        if (!existing.startDate || startDateVal < existing.startDate) {
-          existing.startDate = startDateVal;
-        }
-      }
-      if (endDateVal && !isNaN(endDateVal.getTime())) {
-        // Use latest end date
-        if (!existing.endDate || endDateVal > existing.endDate) {
-          existing.endDate = endDateVal;
-        }
-      }
-      clientDates.set(clientId, existing);
-
-      // Track industry
-      if (props.industry_type) {
-        clientIndustry.set(clientId, props.industry_type);
       }
 
       // Determine end month: churn date if churned/churned-active, otherwise current month
