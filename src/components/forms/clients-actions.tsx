@@ -44,6 +44,7 @@ interface Client {
   notes: string | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
+  hubspotCategory: string | null;
   _count: { timeEntries: number; deliverables: number; aliases: number };
 }
 
@@ -99,7 +100,7 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
         <div>
           <h1 className="text-3xl font-bold">Clients</h1>
           <p className="text-muted-foreground mt-1">
-            {clients.length} clients from all data sources.
+            {clients.length} clients
           </p>
         </div>
         <Button onClick={handleAdd}>
@@ -126,7 +127,7 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                   <TableHead>Tenure</TableHead>
                   <TableHead>Retainer</TableHead>
                   <TableHead>Deal Stage</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>HubSpot Category</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
                   <TableHead className="text-right">Deliverables</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
@@ -164,10 +165,8 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                         : "\u2014"}
                     </TableCell>
                     <TableCell>{client.dealStage || "\u2014"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {client.source}
-                      </Badge>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={client.hubspotCategory || ""}>
+                      {client.hubspotCategory || "\u2014"}
                     </TableCell>
                     <TableCell className="text-right">
                       {client._count.timeEntries}
