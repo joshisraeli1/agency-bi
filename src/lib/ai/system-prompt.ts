@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 export async function getSystemPrompt(): Promise<string> {
   const [settings, clientCount, teamCount] = await Promise.all([
     db.appSettings.findFirst(),
-    db.client.count({ where: { status: { not: "prospect" } } }),
+    db.client.count({ where: { status: { not: "prospect" }, hubspotDealId: { not: null } } }),
     db.teamMember.count(),
   ]);
 

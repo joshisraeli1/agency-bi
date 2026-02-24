@@ -16,8 +16,8 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
         include: { teamMember: true },
       }),
       db.teamMember.findMany({ where: { active: true } }),
-      db.client.count({ where: { status: "active" } }),
-      db.client.count({ where: { status: { not: "prospect" } } }),
+      db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
+      db.client.count({ where: { status: { not: "prospect" }, hubspotDealId: { not: null } } }),
       db.appSettings.findFirst(),
       db.client.findMany({ select: { id: true, name: true, industry: true } }),
     ]);

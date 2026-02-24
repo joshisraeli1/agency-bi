@@ -48,17 +48,23 @@ interface Client {
   _count: { timeEntries: number; deliverables: number; aliases: number };
 }
 
-function formatTenure(startDate: Date | string | null, endDate: Date | string | null): string {
+function formatTenure(startDate: Date | string | null, endDate: Date | string | null, status: string): string {
   if (!startDate) return "\u2014";
   const start = new Date(startDate);
   const end = endDate ? new Date(endDate) : new Date();
   const totalMonths = Math.max(0, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44)));
-  if (totalMonths < 1) return "<1 mo";
-  const years = Math.floor(totalMonths / 12);
-  const months = totalMonths % 12;
-  if (years === 0) return `${months} mo`;
-  if (months === 0) return `${years}y`;
-  return `${years}y ${months}mo`;
+
+  let duration: string;
+  if (totalMonths < 1) duration = "<1 mo";
+  else if (totalMonths < 12) duration = `${totalMonths} mo`;
+  else {
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    duration = months === 0 ? `${years}y` : `${years}y ${months}mo`;
+  }
+
+  if (status === "active") return `Current - ${duration}`;
+  return duration;
 }
 
 const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -157,7 +163,7 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {formatTenure(client.startDate, client.endDate)}
+                      {formatTenure(client.startDate, client.endDate, client.status)}
                     </TableCell>
                     <TableCell>
                       {client.retainerValue
