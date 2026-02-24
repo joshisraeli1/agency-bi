@@ -436,6 +436,61 @@ export interface DiscrepancyReport {
   };
 }
 
+export interface IndustryBreakdown {
+  industries: {
+    industry: string;
+    activeClients: number;
+    churnedClients: number;
+    totalClients: number;
+    totalRevenue: number;
+  }[];
+}
+
+export async function getIndustryBreakdown(): Promise<IndustryBreakdown> {
+  const [clients, financials, settings] = await Promise.all([
+    db.client.findMany({
+      where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
+      select: { id: true, industry: true, status: true },
+    }),
+    db.financialRecord.findMany({
+      where: { type: { in: ["retainer", "project"] }, source: "hubspot" },
+      select: { clientId: true, amount: true },
+    }),
+    db.appSettings.findFirst(),
+  ]);
+
+  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
+
+  // Revenue per client
+  const revenueMap = new Map<string, number>();
+  for (const f of financials) {
+    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount / gstDivisor);
+  }
+
+  // Group by industry
+  const industryMap = new Map<string, { active: number; churned: number; revenue: number }>();
+  for (const c of clients) {
+    const industry = c.industry || "Unknown";
+    const existing = industryMap.get(industry) || { active: 0, churned: 0, revenue: 0 };
+    if (c.status === "active") existing.active++;
+    else existing.churned++;
+    existing.revenue += revenueMap.get(c.id) || 0;
+    industryMap.set(industry, existing);
+  }
+
+  const industries = Array.from(industryMap.entries())
+    .map(([industry, data]) => ({
+      industry,
+      activeClients: data.active,
+      churnedClients: data.churned,
+      totalClients: data.active + data.churned,
+      totalRevenue: Math.round(data.revenue),
+    }))
+    .sort((a, b) => b.totalClients - a.totalClients);
+
+  return { industries };
+}
+
 export async function getSourceDiscrepancy(
   months = 6
 ): Promise<DiscrepancyReport> {

@@ -44,7 +44,6 @@ interface Client {
   notes: string | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
-  hubspotCategory: string | null;
   _count: { timeEntries: number; deliverables: number; aliases: number };
 }
 
@@ -74,12 +73,19 @@ const statusColors: Record<string, "default" | "secondary" | "destructive" | "ou
   prospect: "outline",
 };
 
+type StatusFilter = "active" | "churned" | "all";
+
 export function ClientsActions({ clients }: { clients: Client[] }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
   const [deleteClient, setDeleteClient] = useState<Client | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+
+  const filteredClients = statusFilter === "all"
+    ? clients
+    : clients.filter((c) => c.status === statusFilter);
 
   function handleEdit(client: Client) {
     setEditClient(client);
@@ -100,29 +106,61 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
     router.refresh();
   }
 
+  const activeCount = clients.filter((c) => c.status === "active").length;
+  const churnedCount = clients.filter((c) => c.status === "churned").length;
+
   return (
     <>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Clients</h1>
           <p className="text-muted-foreground mt-1">
-            {clients.length} clients
+            {filteredClients.length} clients
+            {statusFilter !== "all" && ` (${clients.length} total)`}
           </p>
         </div>
-        <Button onClick={handleAdd}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Client
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-md border">
+            <Button
+              variant={statusFilter === "active" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatusFilter("active")}
+              className="rounded-r-none"
+            >
+              Active ({activeCount})
+            </Button>
+            <Button
+              variant={statusFilter === "churned" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatusFilter("churned")}
+              className="rounded-none border-x"
+            >
+              Churned ({churnedCount})
+            </Button>
+            <Button
+              variant={statusFilter === "all" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatusFilter("all")}
+              className="rounded-l-none"
+            >
+              All
+            </Button>
+          </div>
+          <Button onClick={handleAdd}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Client
+          </Button>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>All Clients</CardTitle>
+          <CardTitle>{statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Churned"} Clients</CardTitle>
         </CardHeader>
         <CardContent>
-          {clients.length === 0 ? (
+          {filteredClients.length === 0 ? (
             <p className="text-muted-foreground text-sm py-8 text-center">
-              No clients yet. Add one or sync from Integrations.
+              No {statusFilter === "all" ? "" : statusFilter + " "}clients found.
             </p>
           ) : (
             <Table>
@@ -132,15 +170,14 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                   <TableHead>Status</TableHead>
                   <TableHead>Tenure</TableHead>
                   <TableHead>Retainer</TableHead>
-                  <TableHead>Deal Stage</TableHead>
-                  <TableHead>HubSpot Category</TableHead>
+                  <TableHead>Industry</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
                   <TableHead className="text-right">Deliverables</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {clients.map((client) => (
+                {filteredClients.map((client) => (
                   <TableRow key={client.id}>
                     <TableCell>
                       <div>
@@ -170,9 +207,8 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                         ? formatCurrency(client.retainerValue)
                         : "\u2014"}
                     </TableCell>
-                    <TableCell>{client.dealStage || "\u2014"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={client.hubspotCategory || ""}>
-                      {client.hubspotCategory || "\u2014"}
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={client.industry || ""}>
+                      {client.industry || "\u2014"}
                     </TableCell>
                     <TableCell className="text-right">
                       {client._count.timeEntries}

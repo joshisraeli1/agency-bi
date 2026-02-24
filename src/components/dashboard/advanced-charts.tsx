@@ -9,6 +9,7 @@ import type {
   RevenueByServiceType,
   ClientHealthData,
   TeamUtilizationData,
+  IndustryBreakdown,
 } from "@/lib/analytics/advanced-analytics";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   revenueByType: RevenueByServiceType;
   clientHealth: ClientHealthData;
   teamUtilization: TeamUtilizationData;
+  industryBreakdown: IndustryBreakdown;
 }
 
 export function AdvancedCharts({
@@ -23,6 +25,7 @@ export function AdvancedCharts({
   revenueByType,
   clientHealth,
   teamUtilization,
+  industryBreakdown,
 }: Props) {
   // LTV by cohort
   const cohortData = ltv.byCohort.map((c) => ({
@@ -39,6 +42,15 @@ export function AdvancedCharts({
       name: d.industry,
       avgLTV: d.avgLTV,
       avgMonths: d.avgMonths,
+    }));
+
+  // Industry breakdown
+  const industryData2 = industryBreakdown.industries
+    .filter((d) => d.totalClients > 0)
+    .map((d) => ({
+      name: d.industry,
+      activeClients: d.activeClients,
+      churnedClients: d.churnedClients,
     }));
 
   // Revenue by service type combo chart
@@ -97,6 +109,26 @@ export function AdvancedCharts({
           />
         )}
       </div>
+
+      <div>
+        <h2 className="text-xl font-semibold">Clients by Industry Type</h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          Active and churned client distribution by HubSpot industry type
+        </p>
+      </div>
+
+      {industryData2.length > 0 && (
+        <BarChartCard
+          title="Clients by Industry"
+          data={industryData2}
+          xKey="name"
+          yKeys={["activeClients", "churnedClients"]}
+          yLabels={["Active", "Churned"]}
+          horizontal
+          stacked
+          height={Math.max(300, industryData2.length * 35)}
+        />
+      )}
 
       <div>
         <h2 className="text-xl font-semibold">Revenue & Gross Profit</h2>

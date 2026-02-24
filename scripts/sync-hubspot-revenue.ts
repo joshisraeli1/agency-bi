@@ -35,7 +35,7 @@ async function searchDeals(after?: number): Promise<{ results: HubSpotDeal[]; to
     }],
     properties: [
       "dealname", "amount", "amount__excl_gst_", "dealstage",
-      "start_date", "churn_date", "closedate",
+      "start_date", "churn_date", "closedate", "industry_type",
     ],
     limit: 100,
     sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
@@ -147,10 +147,25 @@ async function main() {
     );
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
 
+    // Stage label lookup
+    const STAGE_LABELS: Record<string, string> = {
+      [CLOSED_WON_STAGE]: "Closed Won (AU)",
+      [CHURNED_STAGE]: "Churned (AU)",
+      [CHURNED_ACTIVE_STAGE]: "Churned Active (AU)",
+    };
+
     const now = currentMonth();
+    const nowDate = new Date();
     let recordsCreated = 0;
     let recordsUpdated = 0;
     let unmatched = 0;
+
+    // Track per-client data for two-pass status determination
+    // A client is "active" only if they have a Closed Won deal with no churn date (or future churn date)
+    const clientHasActiveDeal = new Map<string, boolean>();
+    const clientDealStage = new Map<string, string>();  // latest deal stage label
+    const clientDates = new Map<string, { startDate?: Date; endDate?: Date }>();
+    const clientIndustry = new Map<string, string>();
 
     for (const deal of revenueDeals) {
       const props = deal.properties;
@@ -182,23 +197,50 @@ async function main() {
         continue;
       }
 
-      // Update client startDate/endDate from HubSpot deal dates
-      const startDateVal = props.start_date ? new Date(props.start_date) : null;
-      const endDateVal = props.churn_date ? new Date(props.churn_date) : null;
-      if (startDateVal || endDateVal) {
-        const dateUpdate: Record<string, Date> = {};
-        if (startDateVal && !isNaN(startDateVal.getTime())) dateUpdate.startDate = startDateVal;
-        if (endDateVal && !isNaN(endDateVal.getTime())) dateUpdate.endDate = endDateVal;
-        if (Object.keys(dateUpdate).length > 0) {
-          await db.client.update({
-            where: { id: clientId },
-            data: dateUpdate,
-          });
+      // Track whether this client has any active deal
+      // Active = Closed Won + no churn date or churn date in the future
+      if (stage === CLOSED_WON_STAGE) {
+        const churnDate = props.churn_date ? new Date(props.churn_date) : null;
+        const isStillActive = !churnDate || churnDate > nowDate;
+        if (isStillActive) {
+          clientHasActiveDeal.set(clientId, true);
         }
       }
+      // Only mark as NOT active if we haven't already found an active deal
+      if (!clientHasActiveDeal.has(clientId)) {
+        clientHasActiveDeal.set(clientId, false);
+      }
 
-      // Determine end month: churn date if churned, otherwise current month
-      const isChurned = stage === CHURNED_STAGE;
+      // Track deal stage label (latest wins)
+      if (stage && STAGE_LABELS[stage]) {
+        clientDealStage.set(clientId, STAGE_LABELS[stage]);
+      }
+
+      // Track dates
+      const startDateVal = props.start_date ? new Date(props.start_date) : null;
+      const endDateVal = props.churn_date ? new Date(props.churn_date) : null;
+      const existing = clientDates.get(clientId) || {};
+      if (startDateVal && !isNaN(startDateVal.getTime())) {
+        // Use earliest start date
+        if (!existing.startDate || startDateVal < existing.startDate) {
+          existing.startDate = startDateVal;
+        }
+      }
+      if (endDateVal && !isNaN(endDateVal.getTime())) {
+        // Use latest end date
+        if (!existing.endDate || endDateVal > existing.endDate) {
+          existing.endDate = endDateVal;
+        }
+      }
+      clientDates.set(clientId, existing);
+
+      // Track industry
+      if (props.industry_type) {
+        clientIndustry.set(clientId, props.industry_type);
+      }
+
+      // Determine end month: churn date if churned/churned-active, otherwise current month
+      const isChurned = stage === CHURNED_STAGE || stage === CHURNED_ACTIVE_STAGE;
       const endMonth = isChurned && churnMonth ? churnMonth : now;
 
       // Generate monthly retainer records
@@ -238,6 +280,46 @@ async function main() {
         }
       }
     }
+
+    // -----------------------------------------------------------------------
+    // Pass 2: Set final client status, dealStage, dates, industry
+    // A client is "active" ONLY if they have a Closed Won deal with no past churn date.
+    // All other HubSpot clients are "churned".
+    // -----------------------------------------------------------------------
+    console.log("\n📊 Updating client statuses from HubSpot deal stages...");
+
+    // Get all HubSpot clients
+    const hubspotClients = await db.client.findMany({
+      where: { hubspotDealId: { not: null }, status: { not: "prospect" } },
+      select: { id: true, name: true },
+    });
+
+    let activeCount = 0;
+    let churnedCount = 0;
+
+    for (const client of hubspotClients) {
+      const isActive = clientHasActiveDeal.get(client.id) === true;
+      const update: Record<string, unknown> = {
+        status: isActive ? "active" : "churned",
+      };
+
+      const dealStage = clientDealStage.get(client.id);
+      if (dealStage) update.dealStage = dealStage;
+
+      const dates = clientDates.get(client.id);
+      if (dates?.startDate) update.startDate = dates.startDate;
+      if (dates?.endDate) update.endDate = dates.endDate;
+
+      const industry = clientIndustry.get(client.id);
+      if (industry) update.industry = industry;
+
+      await db.client.update({ where: { id: client.id }, data: update });
+
+      if (isActive) activeCount++;
+      else churnedCount++;
+    }
+
+    console.log(`   Active: ${activeCount}, Churned: ${churnedCount}`);
 
     // Summary
     const totalRevenue = await db.financialRecord.aggregate({

@@ -318,27 +318,31 @@ async function syncClients(db: PrismaClient, items: MondayItem[]) {
     }
 
     if (existing) {
-      // Don't overwrite source on clients that originated from HubSpot
+      // HubSpot is source of truth for status, dealStage, industry, dates.
+      // Monday only provides operational data (retainers, notes, service type).
       const isHubSpotClient = !!existing.hubspotDealId;
       await db.client.update({
         where: { id: existing.id },
         data: {
-          name: item.name,
-          status,
-          industry: service || existing.industry,
+          mondayItemId: item.id,
+          notes,
           website: website || existing.website,
           retainerValue: totalRetainer || existing.retainerValue,
-          dealStage: tier || existing.dealStage,
-          mondayItemId: item.id,
-          ...(isHubSpotClient ? {} : { source: "monday" }),
-          notes,
-          startDate: kickOff || existing.startDate,
-          endDate: renewal || existing.endDate,
           serviceType: service || existing.serviceType,
           smRetainer: smRetainer || existing.smRetainer,
           contentRetainer: contentRetainer || existing.contentRetainer,
           growthRetainer: growthRetainer || existing.growthRetainer,
           productionRetainer: productionRetainer || existing.productionRetainer,
+          // Only set these on non-HubSpot clients — HubSpot owns these fields
+          ...(isHubSpotClient ? {} : {
+            name: item.name,
+            source: "monday",
+            status,
+            industry: service || existing.industry,
+            dealStage: tier || existing.dealStage,
+            startDate: kickOff || existing.startDate,
+            endDate: renewal || existing.endDate,
+          }),
         },
       });
       updated++;
