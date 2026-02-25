@@ -12,15 +12,6 @@ export const TOOLTIP_STYLE: CSSProperties = {
   color: "hsl(var(--popover-foreground))",
 };
 
-/** Forces tooltip wrapper to top-right of chart area */
-export const TOOLTIP_POSITION: CSSProperties = {
-  top: 10,
-  right: 10,
-  left: "auto",
-  transform: "none",
-  transition: "none",
-};
-
 export const CHART_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",

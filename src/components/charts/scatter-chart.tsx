@@ -13,7 +13,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getChartColor, TOOLTIP_STYLE, TOOLTIP_POSITION } from "./chart-colors";
+import { getChartColor, TOOLTIP_STYLE } from "./chart-colors";
 
 interface ScatterChartCardProps {
   title: string;
@@ -131,7 +131,7 @@ export function ScatterChartCard({
               />
             )}
             <Tooltip
-              wrapperStyle={TOOLTIP_POSITION}
+              position={{ x: 0, y: 0 }}
               content={
                 <CustomTooltip
                   xLabel={xLabel}

@@ -9,7 +9,7 @@ import {
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getChartColor, TOOLTIP_STYLE, TOOLTIP_POSITION } from "./chart-colors";
+import { getChartColor, TOOLTIP_STYLE } from "./chart-colors";
 
 interface PieChartCardProps {
   title: string;
@@ -53,7 +53,7 @@ export function PieChartCard({
             </Pie>
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
-              wrapperStyle={TOOLTIP_POSITION}
+              position={{ x: 0, y: 0 }}
               formatter={formatValue ? (value: unknown) => formatValue(Number(value)) : undefined}
             />
             <Legend />
