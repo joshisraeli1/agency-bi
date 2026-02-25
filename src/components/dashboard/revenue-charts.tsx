@@ -13,7 +13,7 @@ interface Props {
 type SourceFilter = "both" | "hubspot" | "xero";
 
 export function RevenueCharts({ data }: Props) {
-  const [source, setSource] = useState<SourceFilter>("both");
+  const [source, setSource] = useState<SourceFilter>("hubspot");
 
   const fmtCurrency = (v: number) => formatCurrency(v);
 
