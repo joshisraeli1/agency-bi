@@ -29,6 +29,7 @@ export async function executeTool(
           source: true,
           startDate: true,
           endDate: true,
+          dealStage: true,
         },
       });
       return clients;
