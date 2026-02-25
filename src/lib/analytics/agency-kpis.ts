@@ -23,7 +23,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
       db.client.count({ where: { status: { not: "prospect" }, hubspotDealId: { not: null } } }),
       db.appSettings.findFirst(),
-      db.client.findMany({ select: { id: true, name: true, industry: true } }),
+      db.client.findMany({ select: { id: true, name: true, industry: true, status: true } }),
       getExcludedClientIds(),
     ]);
 
@@ -31,6 +31,18 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const workingDaysPerMonth = 22;
   const availableHoursPerMonth = productiveHoursPerDay * workingDaysPerMonth;
   const totalTeamMembers = teamMembers.length;
+
+  // Billable members: exclude offshore without a division, Directors, BDMs
+  const billableMembers = teamMembers.filter((m) => {
+    const div = m.division || "Unassigned";
+    const role = m.role || "";
+    return !EXCLUDED_DIVISIONS.includes(div) && !EXCLUDED_ROLES.includes(role);
+  });
+
+  // Full-time billable members for revenue-per-head
+  const fullTimeBillable = billableMembers.filter(
+    (m) => m.employmentType === "full-time"
+  );
 
   // Filter out excluded clients (prospects + legacy)
   const filteredFinancials = financials.filter((f) => !excludedIds.has(f.clientId));
@@ -54,15 +66,15 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const avgMargin =
     totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
   const revenuePerHead =
-    totalTeamMembers > 0 ? totalRevenue / totalTeamMembers : 0;
+    fullTimeBillable.length > 0 ? totalRevenue / fullTimeBillable.length : 0;
 
-  // Utilization
+  // Utilization (only billable members in denominator)
   const billableHours = timeEntries
     .filter((e) => !e.isOverhead)
     .reduce((sum, e) => sum + e.hours, 0);
 
   const totalAvailableHours =
-    totalTeamMembers * availableHoursPerMonth * months;
+    billableMembers.length * availableHoursPerMonth * months;
   const avgUtilization =
     totalAvailableHours > 0 ? (billableHours / totalAvailableHours) * 100 : 0;
 
@@ -99,7 +111,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       .filter((e) => !e.isOverhead)
       .reduce((s, e) => s + e.hours, 0);
 
-    const monthAvail = totalTeamMembers * availableHoursPerMonth;
+    const monthAvail = billableMembers.length * availableHoursPerMonth;
     const util = monthAvail > 0 ? (monthBillable / monthAvail) * 100 : 0;
     const marginPct = rev > 0 ? ((rev - cost) / rev) * 100 : 0;
 
@@ -206,13 +218,14 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     return row;
   });
 
-  // Client LTV by Industry
+  // Client LTV by Industry (active clients only, skip unknown industry)
   const industryRevMap = new Map<string, number>();
   for (const fin of filteredFinancials) {
     if (fin.type !== "retainer" && fin.type !== "project") continue;
     const client = clientMap.get(fin.clientId);
-    const industry = client?.industry || "Unknown";
-    industryRevMap.set(industry, (industryRevMap.get(industry) || 0) + fin.amount);
+    if (!client || client.status !== "active") continue;
+    if (!client.industry) continue;
+    industryRevMap.set(client.industry, (industryRevMap.get(client.industry) || 0) + fin.amount);
   }
   const clientLTVByIndustry = Array.from(industryRevMap.entries())
     .map(([industry, revenue]) => ({ industry, revenue: Math.round(revenue) }))

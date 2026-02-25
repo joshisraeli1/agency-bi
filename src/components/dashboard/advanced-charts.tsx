@@ -91,6 +91,26 @@ export function AdvancedCharts({
   return (
     <div className="space-y-6">
       <div>
+        <h2 className="text-xl font-semibold">Client Health Matrix</h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          Revenue vs margin — bubble size represents months retained
+        </p>
+      </div>
+
+      {healthData.length > 0 && (
+        <ScatterChartCard
+          title="Client Health Matrix"
+          data={healthData}
+          xLabel="Revenue"
+          yLabel="Margin %"
+          zLabel="Months Retained"
+          formatX={fmtCurrency}
+          formatY={(v) => `${v}%`}
+          referenceY={20}
+        />
+      )}
+
+      <div>
         <h2 className="text-xl font-semibold">Client Lifetime Value</h2>
         <p className="text-muted-foreground text-sm mt-1">
           LTV analysis by acquisition cohort and industry
@@ -171,26 +191,6 @@ export function AdvancedCharts({
           stacked
           formatBar={fmtCurrency}
           formatLine={(v) => `${v}%`}
-        />
-      )}
-
-      <div>
-        <h2 className="text-xl font-semibold">Client Health Matrix</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Revenue vs margin — bubble size represents months retained
-        </p>
-      </div>
-
-      {healthData.length > 0 && (
-        <ScatterChartCard
-          title="Client Health Matrix"
-          data={healthData}
-          xLabel="Revenue"
-          yLabel="Margin %"
-          zLabel="Months Retained"
-          formatX={fmtCurrency}
-          formatY={(v) => `${v}%`}
-          referenceY={20}
         />
       )}
 

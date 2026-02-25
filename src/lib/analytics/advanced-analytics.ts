@@ -318,7 +318,7 @@ export async function getClientHealthData(
   const [clients, financials, chSettings] = await Promise.all([
     db.client.findMany({
       where: { status: "active" },
-      select: { id: true, name: true, createdAt: true },
+      select: { id: true, name: true, startDate: true, createdAt: true },
     }),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
@@ -361,10 +361,11 @@ export async function getClientHealthData(
       const fin = clientFinancials.get(c.id)!;
       const margin = fin.revenue - fin.cost;
       const marginPercent = (margin / fin.revenue) * 100;
+      const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
       const monthsRetained = Math.max(
         1,
         Math.round(
-          (now.getTime() - c.createdAt.getTime()) /
+          (now.getTime() - effectiveStart.getTime()) /
             (1000 * 60 * 60 * 24 * 30.44)
         )
       );
