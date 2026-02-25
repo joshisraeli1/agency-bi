@@ -27,6 +27,8 @@ export async function executeTool(
           retainerValue: true,
           industry: true,
           source: true,
+          startDate: true,
+          endDate: true,
         },
       });
       return clients;
