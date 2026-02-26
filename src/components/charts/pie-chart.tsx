@@ -53,7 +53,6 @@ export function PieChartCard({
             </Pie>
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
-              position={{ x: 0, y: 0 }}
               formatter={formatValue ? (value: unknown) => formatValue(Number(value)) : undefined}
             />
             <Legend />

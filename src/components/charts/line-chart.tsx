@@ -45,7 +45,6 @@ export function LineChartCard({
             <YAxis tick={{ fontSize: 12 }} tickFormatter={formatY} />
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
-              position={{ x: 0, y: 0 }}
               formatter={formatY ? (value: unknown) => formatY(Number(value)) : undefined}
             />
             {yKeys.length > 1 && <Legend />}

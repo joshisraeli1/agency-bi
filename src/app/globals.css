@@ -125,3 +125,11 @@
   }
 }
 
+/* Anchor Recharts tooltips to the top-right of each chart */
+.recharts-tooltip-wrapper {
+  top: 8px !important;
+  right: 12px !important;
+  left: auto !important;
+  transform: none !important;
+}
+

@@ -131,7 +131,6 @@ export function ScatterChartCard({
               />
             )}
             <Tooltip
-              position={{ x: 0, y: 0 }}
               content={
                 <CustomTooltip
                   xLabel={xLabel}
