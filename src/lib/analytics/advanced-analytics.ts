@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, getEffectiveHourlyRate } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
+import type { ClientEfficiencyData, XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
   clients: {
@@ -622,94 +623,236 @@ export async function getSourceDiscrepancy(
 }
 
 // ---------------------------------------------------------------------------
-// Avg Deal Size by Division per Month
+// Client Efficiency — bulk query for all active clients
 // ---------------------------------------------------------------------------
 
-const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
-const EXCLUDED_ROLES = ["Director", "BDM"];
+export async function getClientEfficiency(): Promise<ClientEfficiencyData> {
+  const [clients, financials, deliverables, commCounts, meetingSums, excludedIds] =
+    await Promise.all([
+      db.client.findMany({
+        where: { status: "active", hubspotDealId: { not: null } },
+        select: { id: true, name: true },
+      }),
+      db.financialRecord.findMany({
+        where: { type: { in: ["retainer", "project"] } },
+        select: { clientId: true, amount: true },
+      }),
+      db.deliverable.findMany({
+        select: { clientId: true, revisionCount: true },
+      }),
+      db.communicationLog.groupBy({
+        by: ["clientId"],
+        _count: true,
+      }),
+      db.meetingLog.groupBy({
+        by: ["clientId"],
+        _sum: { duration: true },
+      }),
+      getExcludedClientIds(),
+    ]);
 
-export interface AvgDealSizeByDivision {
-  months: string[];
-  divisions: string[];
-  data: Record<string, Record<string, number>>; // month -> division -> avgDealSize
-}
+  const activeClients = clients.filter((c) => !excludedIds.has(c.id));
+  const clientIds = new Set(activeClients.map((c) => c.id));
 
-export async function getAvgDealSizeByDivision(
-  months = 6
-): Promise<AvgDealSizeByDivision> {
-  const monthRange = getMonthRange(months);
-  const startDate = new Date(`${monthRange[0]}-01`);
-
-  const [excludedIds, financials, timeEntries, settings] = await Promise.all([
-    getExcludedClientIds(),
-    db.financialRecord.findMany({
-      where: { month: { in: monthRange } },
-    }),
-    db.timeEntry.findMany({
-      where: { date: { gte: startDate } },
-      include: { teamMember: { select: { division: true, role: true } } },
-    }),
-    db.appSettings.findFirst(),
-  ]);
-
-  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-  const filteredFinancials = financials.filter((f) => !excludedIds.has(f.clientId));
-
-  // For each month, compute per-client division hours (excluding Directors/BDMs/etc.)
-  const data: Record<string, Record<string, number>> = {};
-  const allDivisions = new Set<string>();
-
-  for (const month of monthRange) {
-    const monthFin = filteredFinancials.filter((f) => f.month === month);
-
-    // Build per-client division hours for this month
-    const clientDivHours = new Map<string, Map<string, number>>();
-    for (const entry of timeEntries) {
-      if (!entry.clientId || toMonthKey(entry.date) !== month) continue;
-      const div = entry.teamMember?.division || "Unassigned";
-      const role = entry.teamMember?.role || "";
-      if (EXCLUDED_DIVISIONS.includes(div) || EXCLUDED_ROLES.includes(role)) continue;
-      if (!clientDivHours.has(entry.clientId)) {
-        clientDivHours.set(entry.clientId, new Map());
-      }
-      const dm = clientDivHours.get(entry.clientId)!;
-      dm.set(div, (dm.get(div) || 0) + entry.hours);
-    }
-
-    // Allocate revenue to divisions proportionally, track unique clients per division
-    const divRevenue = new Map<string, number>();
-    const divClients = new Map<string, Set<string>>();
-
-    for (const fin of monthFin) {
-      if (fin.type !== "retainer" && fin.type !== "project") continue;
-      if (fin.source !== "hubspot") continue;
-      const dh = clientDivHours.get(fin.clientId);
-      if (!dh || dh.size === 0) continue;
-      const totalH = Array.from(dh.values()).reduce((a, b) => a + b, 0);
-      if (totalH === 0) continue;
-
-      for (const [div, hours] of dh) {
-        const proportion = hours / totalH;
-        const revExGst = (fin.amount / gstDivisor) * proportion;
-        divRevenue.set(div, (divRevenue.get(div) || 0) + revExGst);
-        if (!divClients.has(div)) divClients.set(div, new Set());
-        divClients.get(div)!.add(fin.clientId);
-        allDivisions.add(div);
-      }
-    }
-
-    // Compute avg deal size per division
-    const monthData: Record<string, number> = {};
-    for (const [div, rev] of divRevenue) {
-      const clientCount = divClients.get(div)?.size || 1;
-      monthData[div] = Math.round(rev / clientCount);
-    }
-    data[month] = monthData;
+  // Revenue per client
+  const revenueMap = new Map<string, number>();
+  for (const f of financials) {
+    if (!clientIds.has(f.clientId)) continue;
+    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
   }
 
-  const divisions = Array.from(allDivisions)
-    .filter((d) => !EXCLUDED_DIVISIONS.includes(d))
-    .sort();
+  // Deliverables + revisions per client
+  const deliverableCountMap = new Map<string, number>();
+  const revisionCountMap = new Map<string, number>();
+  for (const d of deliverables) {
+    if (!d.clientId || !clientIds.has(d.clientId)) continue;
+    deliverableCountMap.set(d.clientId, (deliverableCountMap.get(d.clientId) || 0) + 1);
+    revisionCountMap.set(d.clientId, (revisionCountMap.get(d.clientId) || 0) + d.revisionCount);
+  }
 
-  return { months: monthRange, divisions, data };
+  // Slack messages per client
+  const slackMap = new Map<string, number>();
+  for (const c of commCounts) {
+    slackMap.set(c.clientId, c._count);
+  }
+
+  // Meeting hours per client
+  const meetingMap = new Map<string, number>();
+  for (const m of meetingSums) {
+    if (m.clientId) {
+      meetingMap.set(m.clientId, (m._sum.duration || 0) / 60);
+    }
+  }
+
+  const records = activeClients
+    .map((c) => {
+      const totalRevenue = revenueMap.get(c.id) || 0;
+      const deliverableCount = deliverableCountMap.get(c.id) || 0;
+      const totalRevisions = revisionCountMap.get(c.id) || 0;
+      const meetingHours = meetingMap.get(c.id) || 0;
+      const slackMessages = slackMap.get(c.id) || 0;
+      return {
+        clientId: c.id,
+        clientName: c.name,
+        totalRevenue: Math.round(totalRevenue),
+        deliverableCount,
+        totalRevisions,
+        meetingHours: Number(meetingHours.toFixed(1)),
+        slackMessages,
+        revenuePerDeliverable: deliverableCount > 0 ? Math.round(totalRevenue / deliverableCount) : 0,
+        revenuePerEdit: totalRevisions > 0 ? Math.round(totalRevenue / totalRevisions) : 0,
+      };
+    })
+    .filter((r) => r.deliverableCount > 0);
+
+  const sortedByDeliverable = [...records].sort(
+    (a, b) => b.revenuePerDeliverable - a.revenuePerDeliverable
+  );
+
+  return {
+    topEfficient: sortedByDeliverable.slice(0, 10),
+    bottomEfficient: sortedByDeliverable.slice(-10).reverse(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Xero Margin Trend — monthly revenue vs cost from Xero source
+// ---------------------------------------------------------------------------
+
+export async function getXeroMarginTrend(months = 6): Promise<XeroMarginTrend> {
+  const monthRange = getMonthRange(months);
+
+  const financials = await db.financialRecord.findMany({
+    where: { month: { in: monthRange }, source: "xero" },
+  });
+
+  let totalRevenue = 0;
+  let totalCost = 0;
+
+  const monthlyData = monthRange.map((month) => {
+    const monthFin = financials.filter((f) => f.month === month);
+    const revenue = monthFin
+      .filter((f) => f.type === "retainer" || f.type === "project")
+      .reduce((s, f) => s + f.amount, 0);
+    const cost = monthFin
+      .filter((f) => f.type === "cost")
+      .reduce((s, f) => s + f.amount, 0);
+    const margin = revenue - cost;
+    const marginPercent = revenue > 0 ? Number(((margin / revenue) * 100).toFixed(1)) : 0;
+
+    totalRevenue += revenue;
+    totalCost += cost;
+
+    return {
+      month,
+      revenue: Math.round(revenue),
+      cost: Math.round(cost),
+      margin: Math.round(margin),
+      marginPercent,
+    };
+  });
+
+  const totalMargin = totalRevenue - totalCost;
+  const avgMarginPercent = totalRevenue > 0
+    ? Number(((totalMargin / totalRevenue) * 100).toFixed(1))
+    : 0;
+
+  return {
+    monthlyData,
+    totalRevenue: Math.round(totalRevenue),
+    totalCost: Math.round(totalCost),
+    avgMarginPercent,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// New Client Deal Size — clients by startDate per month
+// ---------------------------------------------------------------------------
+
+export async function getNewClientDealSize(
+  months = 6
+): Promise<NewClientDealSizeData> {
+  const monthRange = getMonthRange(months);
+
+  const [excludedIds, clients, financials] = await Promise.all([
+    getExcludedClientIds(),
+    db.client.findMany({
+      where: {
+        startDate: { not: null },
+        hubspotDealId: { not: null },
+        status: { not: "prospect" },
+      },
+      select: {
+        id: true,
+        name: true,
+        startDate: true,
+        retainerValue: true,
+      },
+    }),
+    db.financialRecord.findMany({
+      where: {
+        month: { in: monthRange },
+        type: { in: ["retainer", "project"] },
+      },
+      select: { clientId: true, month: true, amount: true },
+    }),
+  ]);
+
+  const filteredClients = clients.filter((c) => !excludedIds.has(c.id));
+
+  // First-month revenue per client
+  const firstMonthRevenue = new Map<string, number>();
+  for (const f of financials) {
+    const existing = firstMonthRevenue.get(f.clientId);
+    if (existing === undefined) {
+      firstMonthRevenue.set(f.clientId, f.amount);
+    }
+  }
+
+  // Group by client's first revenue month to find first-month totals
+  const clientFirstMonthRev = new Map<string, Map<string, number>>();
+  for (const f of financials) {
+    if (!clientFirstMonthRev.has(f.clientId)) {
+      clientFirstMonthRev.set(f.clientId, new Map());
+    }
+    const monthMap = clientFirstMonthRev.get(f.clientId)!;
+    monthMap.set(f.month, (monthMap.get(f.month) || 0) + f.amount);
+  }
+
+  const result = monthRange.map((month) => {
+    // Find clients whose startDate falls in this month
+    const newClients = filteredClients.filter((c) => {
+      if (!c.startDate) return false;
+      return toMonthKey(c.startDate) === month;
+    });
+
+    const clientsWithDeal = newClients.map((c) => {
+      // Use retainerValue if available, else first-month revenue
+      let dealSize = c.retainerValue || 0;
+      if (!dealSize) {
+        const monthRevMap = clientFirstMonthRev.get(c.id);
+        if (monthRevMap) {
+          // Get the earliest month's revenue for this client
+          const sortedMonths = Array.from(monthRevMap.keys()).sort();
+          dealSize = sortedMonths.length > 0 ? (monthRevMap.get(sortedMonths[0]) || 0) : 0;
+        }
+      }
+      return {
+        clientId: c.id,
+        clientName: c.name,
+        dealSize: Math.round(dealSize),
+      };
+    });
+
+    const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
+
+    return {
+      month,
+      clients: clientsWithDeal,
+      avgDealSize: clientsWithDeal.length > 0 ? Math.round(totalDealSize / clientsWithDeal.length) : 0,
+      clientCount: clientsWithDeal.length,
+    };
+  });
+
+  return { months: result };
 }

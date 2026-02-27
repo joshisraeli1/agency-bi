@@ -9,12 +9,15 @@ import {
   getTeamUtilizationData,
   getSourceDiscrepancy,
   getIndustryBreakdown,
-  getAvgDealSizeByDivision,
+  getClientEfficiency,
+  getXeroMarginTrend,
+  getNewClientDealSize,
 } from "@/lib/analytics/advanced-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
+import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { CommunicationCharts } from "@/components/charts/communication-charts";
 import { MeetingCharts } from "@/components/charts/meeting-charts";
@@ -28,7 +31,20 @@ interface Props {
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
-  const [data, comms, meetings, ltv, revenueByType, clientHealth, teamUtilization, discrepancy, industryBreakdown, avgDealSize] = await Promise.all([
+  const [
+    data,
+    comms,
+    meetings,
+    ltv,
+    revenueByType,
+    clientHealth,
+    teamUtilization,
+    discrepancy,
+    industryBreakdown,
+    clientEfficiency,
+    xeroMargin,
+    newClientDealSize,
+  ] = await Promise.all([
     getAgencyKPIs(months),
     getCommunicationOverview(months),
     getMeetingOverview(months),
@@ -38,7 +54,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getTeamUtilizationData(months),
     getSourceDiscrepancy(months),
     getIndustryBreakdown(),
-    getAvgDealSizeByDivision(months),
+    getClientEfficiency(),
+    getXeroMarginTrend(months),
+    getNewClientDealSize(months),
   ]);
 
   return (
@@ -53,6 +71,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
+      {/* 1. Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           title="Avg Utilization"
@@ -87,17 +106,29 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         />
       </div>
 
+      {/* 2. Profitability Section (NEW) */}
+      <ProfitabilitySection
+        hubspotProfitability={data.hubspotProfitability}
+        xeroProfitability={data.xeroProfitability}
+        clientEfficiency={clientEfficiency}
+        xeroMargin={xeroMargin}
+      />
+
+      {/* 3. KPI Charts (trimmed) */}
       <KpiCharts data={data} />
 
+      {/* 4. Advanced Charts (reordered) */}
       <AdvancedCharts
         ltv={ltv}
         revenueByType={revenueByType}
         clientHealth={clientHealth}
         teamUtilization={teamUtilization}
         industryBreakdown={industryBreakdown}
-        avgDealSize={avgDealSize}
+        kpiData={data}
+        newClientDealSize={newClientDealSize}
       />
 
+      {/* 5. HubSpot vs Xero Reconciliation */}
       {(discrepancy.totalHubspot > 0 || discrepancy.totalXero > 0) && (
         <>
           <div>
@@ -110,6 +141,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         </>
       )}
 
+      {/* 6. Communication Overhead */}
       {comms.totalMessages > 0 && (
         <>
           <div>
@@ -140,6 +172,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         </>
       )}
 
+      {/* 7. Meeting Overhead */}
       {meetings.totalMeetings > 0 && (
         <>
           <div>

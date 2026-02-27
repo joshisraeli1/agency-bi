@@ -1,6 +1,8 @@
 "use client";
 
 import { BarChartCard } from "@/components/charts/bar-chart";
+import { LineChartCard } from "@/components/charts/line-chart";
+import { PieChartCard } from "@/components/charts/pie-chart";
 import { ComboChartCard } from "@/components/charts/combo-chart";
 import { ScatterChartCard } from "@/components/charts/scatter-chart";
 import { formatMonth, formatCurrency } from "@/lib/utils";
@@ -11,8 +13,10 @@ import type {
   ClientHealthData,
   TeamUtilizationData,
   IndustryBreakdown,
-  AvgDealSizeByDivision,
 } from "@/lib/analytics/advanced-analytics";
+import type { AgencyKPIs, NewClientDealSizeData } from "@/lib/analytics/types";
+
+const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
 
 interface Props {
   ltv: LTVData;
@@ -20,7 +24,8 @@ interface Props {
   clientHealth: ClientHealthData;
   teamUtilization: TeamUtilizationData;
   industryBreakdown: IndustryBreakdown;
-  avgDealSize?: AvgDealSizeByDivision;
+  kpiData: AgencyKPIs;
+  newClientDealSize: NewClientDealSizeData;
 }
 
 export function AdvancedCharts({
@@ -29,8 +34,31 @@ export function AdvancedCharts({
   clientHealth,
   teamUtilization,
   industryBreakdown,
-  avgDealSize,
+  kpiData,
+  newClientDealSize,
 }: Props) {
+  // Client health matrix scatter
+  const healthData = clientHealth.clients.map((c) => ({
+    name: c.clientName,
+    x: c.revenue,
+    y: c.marginPercent,
+    z: c.monthsRetained,
+  }));
+
+  // Client Revenue by Industry (moved from KpiCharts)
+  const industryRevenueData = kpiData.clientLTVByIndustry.map((d) => ({
+    name: d.industry,
+    revenue: d.revenue,
+  }));
+
+  // Client Revenue by Division (moved from KpiCharts)
+  const ltvDivisionData = kpiData.clientLTVByDivision
+    .filter((d) => !EXCLUDED_DIVISIONS.includes(d.division))
+    .map((d) => ({
+      name: d.division,
+      value: d.revenue,
+    }));
+
   // LTV by cohort
   const cohortData = ltv.byCohort.map((c) => ({
     name: c.cohort,
@@ -46,7 +74,7 @@ export function AdvancedCharts({
   }));
 
   // LTV by industry
-  const industryData = ltv.byIndustry
+  const industryLtvData = ltv.byIndustry
     .filter((d) => d.avgLTV > 0)
     .slice(0, 12)
     .map((d) => ({
@@ -55,8 +83,8 @@ export function AdvancedCharts({
       avgMonths: d.avgMonths,
     }));
 
-  // Industry breakdown
-  const industryData2 = industryBreakdown.industries
+  // Industry breakdown (active vs churned)
+  const industryBreakdownData = industryBreakdown.industries
     .filter((d) => d.totalClients > 0)
     .map((d) => ({
       name: d.industry,
@@ -64,18 +92,13 @@ export function AdvancedCharts({
       churnedClients: d.churnedClients,
     }));
 
+  // New client deal size — months with new clients
+  const dealSizeMonths = newClientDealSize.months.filter((m) => m.clientCount > 0);
+
   // Revenue by service type combo chart
   const revenueData = revenueByType.monthlyBreakdown.map((m) => ({
     ...m,
     month: formatMonth(m.month),
-  }));
-
-  // Client health matrix scatter
-  const healthData = clientHealth.clients.map((c) => ({
-    name: c.clientName,
-    x: c.revenue,
-    y: c.marginPercent,
-    z: c.monthsRetained,
   }));
 
   // Team utilization horizontal bar
@@ -86,10 +109,24 @@ export function AdvancedCharts({
     utilization: m.utilizationPercent,
   }));
 
+  // Margin by Division (moved from KpiCharts)
+  const marginByDivisionData = kpiData.marginByDivision.filter(
+    (d) => !EXCLUDED_DIVISIONS.includes(d.division)
+  );
+
+  // Division Margin Over Time (moved from KpiCharts)
+  const divisionMarginKeys =
+    kpiData.divisionMarginTrend.length > 0
+      ? Object.keys(kpiData.divisionMarginTrend[0]).filter(
+          (k) => k !== "month" && !EXCLUDED_DIVISIONS.includes(k)
+        )
+      : [];
+
   const fmtCurrency = (v: number) => formatCurrency(v);
 
   return (
     <div className="space-y-6">
+      {/* 1. Client Health Matrix */}
       <div>
         <h2 className="text-xl font-semibold">Client Health Matrix</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -110,6 +147,30 @@ export function AdvancedCharts({
         />
       )}
 
+      {/* 2. Client Revenue by Industry (moved from KpiCharts) */}
+      {industryRevenueData.length > 0 && (
+        <BarChartCard
+          title="Client Revenue by Industry"
+          data={industryRevenueData}
+          xKey="name"
+          yKeys={["revenue"]}
+          yLabels={["Revenue"]}
+          horizontal
+          formatY={fmtCurrency}
+        />
+      )}
+
+      {/* 3. Client Revenue by Division (moved from KpiCharts) */}
+      {ltvDivisionData.length > 0 && (
+        <PieChartCard
+          title="Client Revenue by Division"
+          data={ltvDivisionData}
+          donut
+          formatValue={fmtCurrency}
+        />
+      )}
+
+      {/* 4. Client Lifetime Value */}
       <div>
         <h2 className="text-xl font-semibold">Client Lifetime Value</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -128,10 +189,10 @@ export function AdvancedCharts({
             formatY={fmtCurrency}
           />
         )}
-        {industryData.length > 0 && (
+        {industryLtvData.length > 0 && (
           <BarChartCard
             title="Avg LTV by Industry"
-            data={industryData}
+            data={industryLtvData}
             xKey="name"
             yKeys={["avgLTV"]}
             yLabels={["Avg LTV"]}
@@ -141,6 +202,7 @@ export function AdvancedCharts({
         )}
       </div>
 
+      {/* 5. Tenure by Cohort */}
       {tenureCohortData.length > 0 && (
         <BarChartCard
           title="Avg Client Tenure by Start Quarter"
@@ -152,6 +214,69 @@ export function AdvancedCharts({
         />
       )}
 
+      {/* 6. New Client Deal Size (FIXED — by startDate, not rolling average) */}
+      {dealSizeMonths.length > 0 && (
+        <>
+          <div>
+            <h2 className="text-xl font-semibold">New Client Deal Size</h2>
+            <p className="text-muted-foreground text-sm mt-1">
+              New clients by start month with their initial deal size
+            </p>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">New Clients by Month</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-3 font-medium">Month</th>
+                      <th className="text-left py-2 px-3 font-medium">Client</th>
+                      <th className="text-right py-2 px-3 font-medium">Deal Size</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dealSizeMonths.map((m) =>
+                      m.clients.map((client, i) => (
+                        <tr
+                          key={`${m.month}-${client.clientId}`}
+                          className="border-b last:border-0"
+                        >
+                          <td className="py-2 px-3 font-medium">
+                            {i === 0 ? formatMonth(m.month) : ""}
+                          </td>
+                          <td className="py-2 px-3">{client.clientName}</td>
+                          <td className="text-right py-2 px-3">
+                            {client.dealSize > 0 ? formatCurrency(client.dealSize) : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                    {/* Summary row per month */}
+                    {dealSizeMonths.map((m) => (
+                      <tr key={`avg-${m.month}`} className="border-t bg-muted/50">
+                        <td className="py-2 px-3 font-semibold">
+                          {formatMonth(m.month)} avg
+                        </td>
+                        <td className="py-2 px-3 text-muted-foreground">
+                          {m.clientCount} client{m.clientCount !== 1 ? "s" : ""}
+                        </td>
+                        <td className="text-right py-2 px-3 font-semibold">
+                          {m.avgDealSize > 0 ? formatCurrency(m.avgDealSize) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* Clients by Industry Type */}
       <div>
         <h2 className="text-xl font-semibold">Clients by Industry Type</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -159,19 +284,20 @@ export function AdvancedCharts({
         </p>
       </div>
 
-      {industryData2.length > 0 && (
+      {industryBreakdownData.length > 0 && (
         <BarChartCard
           title="Clients by Industry"
-          data={industryData2}
+          data={industryBreakdownData}
           xKey="name"
           yKeys={["activeClients", "churnedClients"]}
           yLabels={["Active", "Churned"]}
           horizontal
           stacked
-          height={Math.max(300, industryData2.length * 35)}
+          height={Math.max(300, industryBreakdownData.length * 35)}
         />
       )}
 
+      {/* 7. Revenue & Gross Profit */}
       <div>
         <h2 className="text-xl font-semibold">Revenue & Gross Profit</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -194,6 +320,7 @@ export function AdvancedCharts({
         />
       )}
 
+      {/* 8. Team Utilisation */}
       <div>
         <h2 className="text-xl font-semibold">Team Utilisation</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -215,50 +342,37 @@ export function AdvancedCharts({
         />
       )}
 
-      {avgDealSize && avgDealSize.divisions.length > 0 && (
+      {/* 9. Margin by Division + Division Margin Over Time (moved from KpiCharts) */}
+      {(marginByDivisionData.length > 0 || divisionMarginKeys.length > 0) && (
         <>
           <div>
-            <h2 className="text-xl font-semibold">Avg Deal Size by Division</h2>
+            <h2 className="text-xl font-semibold">Division Margins</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              Average monthly revenue per client by division
+              Revenue vs cost by division and margin trends over time
             </p>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Monthly Avg Deal Size</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 px-3 font-medium">Month</th>
-                      {avgDealSize.divisions.map((div) => (
-                        <th key={div} className="text-right py-2 px-3 font-medium">
-                          {div}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {avgDealSize.months.map((month) => (
-                      <tr key={month} className="border-b last:border-0">
-                        <td className="py-2 px-3 font-medium">{formatMonth(month)}</td>
-                        {avgDealSize.divisions.map((div) => {
-                          const val = avgDealSize.data[month]?.[div];
-                          return (
-                            <td key={div} className="text-right py-2 px-3">
-                              {val ? formatCurrency(val) : "—"}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {marginByDivisionData.length > 0 && (
+              <BarChartCard
+                title="Margin by Division"
+                data={marginByDivisionData}
+                xKey="division"
+                yKeys={["revenue", "cost"]}
+                yLabels={["Revenue", "Cost"]}
+                formatY={fmtCurrency}
+              />
+            )}
+            {divisionMarginKeys.length > 0 && (
+              <LineChartCard
+                title="Division Margin Over Time"
+                data={kpiData.divisionMarginTrend}
+                xKey="month"
+                yKeys={divisionMarginKeys}
+                yLabels={divisionMarginKeys}
+                formatY={(v) => `${v}%`}
+              />
+            )}
+          </div>
         </>
       )}
     </div>

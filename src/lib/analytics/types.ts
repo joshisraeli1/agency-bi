@@ -135,6 +135,59 @@ export interface AgencyKPIs {
     division: string;
     revenue: number;
   }[];
+  hubspotProfitability: DivisionProfitabilityRow[];
+  xeroProfitability: DivisionProfitabilityRow[];
+}
+
+export interface DivisionProfitabilityRow {
+  division: string;
+  revenue: number;
+  cost: number;
+  ratio: number;
+  marginPercent: number;
+}
+
+export interface ClientEfficiencyRecord {
+  clientId: string;
+  clientName: string;
+  totalRevenue: number;
+  deliverableCount: number;
+  totalRevisions: number;
+  meetingHours: number;
+  slackMessages: number;
+  revenuePerDeliverable: number;
+  revenuePerEdit: number;
+}
+
+export interface ClientEfficiencyData {
+  topEfficient: ClientEfficiencyRecord[];
+  bottomEfficient: ClientEfficiencyRecord[];
+}
+
+export interface XeroMarginTrend {
+  monthlyData: {
+    month: string;
+    revenue: number;
+    cost: number;
+    margin: number;
+    marginPercent: number;
+  }[];
+  totalRevenue: number;
+  totalCost: number;
+  avgMarginPercent: number;
+}
+
+export interface NewClientDealSizeData {
+  months: {
+    month: string;
+    clients: {
+      clientId: string;
+      clientName: string;
+      dealSize: number;
+    }[];
+    avgDealSize: number;
+    clientCount: number;
+  }[];
 }
 
 export interface CommunicationOverview {

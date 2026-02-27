@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, formatMonth } from "@/lib/utils";
+import { getMonthRange, toMonthKey, formatMonth, getEffectiveHourlyRate } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import type { AgencyKPIs } from "./types";
+import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
 const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
 const EXCLUDED_ROLES = ["Director", "BDM"];
@@ -236,6 +236,90 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .map(([division, revenue]) => ({ division, revenue: Math.round(revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
+  // ── HubSpot Profitability (HubSpot revenue + team salary costs) ──
+  const hubspotDivRevenue = new Map<string, number>();
+  for (const fin of filteredFinancials) {
+    if (fin.source !== "hubspot") continue;
+    if (fin.type !== "retainer" && fin.type !== "project") continue;
+    const divHours = clientDivisionHours.get(fin.clientId);
+    if (!divHours || divHours.size === 0) continue;
+    const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
+    if (totalH === 0) continue;
+    for (const [div, hours] of divHours) {
+      const proportion = hours / totalH;
+      hubspotDivRevenue.set(div, (hubspotDivRevenue.get(div) || 0) + fin.amount * proportion);
+    }
+  }
+
+  // Team salary cost per division (hours × effective hourly rate)
+  const teamMemberRateMap = new Map<string, number>();
+  for (const m of teamMembers) {
+    const rate = getEffectiveHourlyRate(m);
+    if (rate) teamMemberRateMap.set(m.id, rate);
+  }
+
+  const hubspotDivCost = new Map<string, number>();
+  for (const entry of timeEntries) {
+    if (isDivisionExcluded(entry)) continue;
+    if (!entry.teamMemberId) continue;
+    const div = entry.teamMember?.division || "Unassigned";
+    const rate = teamMemberRateMap.get(entry.teamMemberId) || 0;
+    hubspotDivCost.set(div, (hubspotDivCost.get(div) || 0) + entry.hours * rate);
+  }
+
+  const hubspotDivisions = new Set([...hubspotDivRevenue.keys(), ...hubspotDivCost.keys()]);
+  const hubspotProfitability: DivisionProfitabilityRow[] = Array.from(hubspotDivisions)
+    .map((division) => {
+      const rev = hubspotDivRevenue.get(division) || 0;
+      const cost = hubspotDivCost.get(division) || 0;
+      const margin = rev - cost;
+      return {
+        division,
+        revenue: Math.round(rev),
+        cost: Math.round(cost),
+        ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
+        marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
+      };
+    })
+    .filter((d) => d.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // ── Xero Profitability (Xero revenue + Xero costs incl. contractors) ──
+  const xeroDivRevenue = new Map<string, number>();
+  const xeroDivCost = new Map<string, number>();
+  for (const fin of filteredFinancials) {
+    if (fin.source !== "xero") continue;
+    const divHours = clientDivisionHours.get(fin.clientId);
+    if (!divHours || divHours.size === 0) continue;
+    const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
+    if (totalH === 0) continue;
+    for (const [div, hours] of divHours) {
+      const proportion = hours / totalH;
+      if (fin.type === "retainer" || fin.type === "project") {
+        xeroDivRevenue.set(div, (xeroDivRevenue.get(div) || 0) + fin.amount * proportion);
+      } else if (fin.type === "cost") {
+        xeroDivCost.set(div, (xeroDivCost.get(div) || 0) + fin.amount * proportion);
+      }
+    }
+  }
+
+  const xeroDivisions = new Set([...xeroDivRevenue.keys(), ...xeroDivCost.keys()]);
+  const xeroProfitability: DivisionProfitabilityRow[] = Array.from(xeroDivisions)
+    .map((division) => {
+      const rev = xeroDivRevenue.get(division) || 0;
+      const cost = xeroDivCost.get(division) || 0;
+      const margin = rev - cost;
+      return {
+        division,
+        revenue: Math.round(rev),
+        cost: Math.round(cost),
+        ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
+        marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
+      };
+    })
+    .filter((d) => d.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
   return {
     avgUtilization,
     avgMargin,
@@ -250,5 +334,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     divisionMarginTrend,
     clientLTVByIndustry,
     clientLTVByDivision,
+    hubspotProfitability,
+    xeroProfitability,
   };
 }
