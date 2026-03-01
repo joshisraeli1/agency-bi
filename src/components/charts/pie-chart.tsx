@@ -53,6 +53,8 @@ export function PieChartCard({
             </Pie>
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
+              isAnimationActive={false}
+              allowEscapeViewBox={{ x: true, y: true }}
               formatter={formatValue ? (value: unknown) => formatValue(Number(value)) : undefined}
             />
             <Legend />

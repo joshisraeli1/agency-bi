@@ -46,6 +46,8 @@ export function AreaChartCard({
             <YAxis className="text-xs" tick={{ fontSize: 12 }} tickFormatter={formatY} />
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
+              isAnimationActive={false}
+              allowEscapeViewBox={{ x: true, y: true }}
               formatter={formatY ? (value: unknown) => formatY(Number(value)) : undefined}
             />
             {yKeys.map((key, i) => (

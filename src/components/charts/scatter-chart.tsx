@@ -131,6 +131,8 @@ export function ScatterChartCard({
               />
             )}
             <Tooltip
+              isAnimationActive={false}
+              allowEscapeViewBox={{ x: true, y: true }}
               content={
                 <CustomTooltip
                   xLabel={xLabel}

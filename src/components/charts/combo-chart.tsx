@@ -65,6 +65,9 @@ export function ComboChartCard({
             />
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
+              isAnimationActive={false}
+              allowEscapeViewBox={{ x: true, y: true }}
+              cursor={{ fill: "rgba(0,0,0,0.05)" }}
               formatter={(value: unknown, name?: string) => {
                 const v = Number(value);
                 if (name === (lineLabel || lineKey)) {
