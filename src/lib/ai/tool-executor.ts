@@ -30,6 +30,7 @@ export async function executeTool(
           startDate: true,
           endDate: true,
           dealStage: true,
+          serviceType: true,
         },
       });
       return clients;

@@ -8,61 +8,61 @@ datasource db {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
+  id             String     @id @default(cuid())
+  email          String     @unique
   name           String
   passwordHash   String
-  role           String   @default("admin") // admin | viewer
+  role           String     @default("admin") // admin | viewer
   totpSecret     String?
-  totpEnabled    Boolean  @default(false)
-  failedAttempts Int      @default(0)
+  totpEnabled    Boolean    @default(false)
+  failedAttempts Int        @default(0)
   lockedUntil    DateTime?
   lastLoginAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
   auditLogs      AuditLog[]
 }
 
 model Client {
-  id               String   @id @default(cuid())
-  name             String
-  status           String   @default("active") // active | paused | churned | prospect
-  industry         String?
-  website          String?
-  retainerValue    Float?
-  dealStage        String?
-  hubspotDealId    String?  @unique
-  hubspotCompanyId String?  @unique
-  mondayItemId     String?
-  sheetsRowIndex   Int?
-  xeroContactId    String?  @unique
-  source           String   // hubspot | monday | sheets | manual
-  notes            String?
-  startDate        DateTime?
-  endDate          DateTime?
-  serviceType      String?
-  smRetainer       Float?
-  contentRetainer  Float?
-  growthRetainer   Float?
+  id                 String    @id @default(cuid())
+  name               String
+  status             String    @default("active") // active | paused | churned | prospect
+  industry           String?
+  website            String?
+  retainerValue      Float?
+  dealStage          String?
+  hubspotDealId      String?   @unique
+  hubspotCompanyId   String?   @unique
+  mondayItemId       String?
+  sheetsRowIndex     Int?
+  xeroContactId      String?   @unique
+  source             String // hubspot | monday | sheets | manual
+  notes              String?
+  startDate          DateTime?
+  endDate            DateTime?
+  serviceType        String?
+  smRetainer         Float?
+  contentRetainer    Float?
+  growthRetainer     Float?
   productionRetainer Float?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  aliases              ClientAlias[]
-  divisions            Division[]
-  financialRecords     FinancialRecord[]
-  timeEntries          TimeEntry[]
-  deliverables         Deliverable[]
-  clientAssignments    ClientAssignment[]
-  communicationLogs    CommunicationLog[]
-  meetingLogs          MeetingLog[]
+  aliases           ClientAlias[]
+  divisions         Division[]
+  financialRecords  FinancialRecord[]
+  timeEntries       TimeEntry[]
+  deliverables      Deliverable[]
+  clientAssignments ClientAssignment[]
+  communicationLogs CommunicationLog[]
+  meetingLogs       MeetingLog[]
 }
 
 model ClientAlias {
   id         String   @id @default(cuid())
   clientId   String
   alias      String
-  source     String   // hubspot | monday | sheets
+  source     String // hubspot | monday | sheets
   externalId String?
   createdAt  DateTime @default(now())
 
@@ -88,7 +88,7 @@ model Division {
 model DivisionExpense {
   id         String   @id @default(cuid())
   divisionId String
-  month      String   // YYYY-MM
+  month      String // YYYY-MM
   category   String
   amount     Float
   createdAt  DateTime @default(now())
@@ -101,7 +101,7 @@ model DivisionExpense {
 model DivisionTarget {
   id         String   @id @default(cuid())
   divisionId String
-  month      String   // YYYY-MM
+  month      String // YYYY-MM
   metric     String
   target     Float
   actual     Float?
@@ -113,51 +113,51 @@ model DivisionTarget {
 }
 
 model Package {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  tier        String?
-  description String?
+  id            String   @id @default(cuid())
+  name          String   @unique
+  tier          String?
+  description   String?
   hoursIncluded Float?
-  monthlyRate Float?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  monthlyRate   Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model TeamMember {
-  id              String   @id @default(cuid())
-  name            String
-  email           String?  @unique
-  role            String?
-  division        String?
-  location        String?
-  employmentType  String?  // full-time | part-time | contractor
-  costType        String?  // salary | hourly
-  annualSalary    Float?
-  hourlyRate      Float?
-  weeklyHours     Float?
-  mondayUserId    String?  @unique
-  sheetsRowIndex  Int?
-  slackUserId     String?  @unique
-  source          String   // monday | sheets | manual
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  email          String?  @unique
+  role           String?
+  division       String?
+  location       String?
+  employmentType String? // full-time | part-time | contractor
+  costType       String? // salary | hourly
+  annualSalary   Float?
+  hourlyRate     Float?
+  weeklyHours    Float?
+  mondayUserId   String?  @unique
+  sheetsRowIndex Int?
+  slackUserId    String?  @unique
+  source         String // monday | sheets | manual
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  timeEntries             TimeEntry[]
-  deliverableAssignments  DeliverableAssignment[]
-  clientAssignments       ClientAssignment[]
+  timeEntries            TimeEntry[]
+  deliverableAssignments DeliverableAssignment[]
+  clientAssignments      ClientAssignment[]
 }
 
 model FinancialRecord {
   id          String   @id @default(cuid())
   clientId    String
-  month       String   // YYYY-MM
-  type        String   // retainer | project | cost | hours
+  month       String // YYYY-MM
+  type        String // retainer | project | cost | hours
   category    String?
   amount      Float
   hours       Float?
   description String?
-  source      String   // hubspot | sheets | manual
+  source      String // hubspot | sheets | manual
   externalId  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -178,7 +178,7 @@ model TimeEntry {
   mondayBoardId String?
   isIncomplete  Boolean  @default(false)
   isOverhead    Boolean  @default(false)
-  source        String   // monday | manual
+  source        String // monday | manual
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -189,30 +189,30 @@ model TimeEntry {
 }
 
 model Deliverable {
-  id             String   @id @default(cuid())
-  clientId       String?
-  name           String
-  editCode       String?
-  status         String?
-  dueDate        DateTime?
-  completedDate  DateTime?
-  revisionCount  Int      @default(0)
-  mondayItemId   String?  @unique
-  mondayBoardId  String?
-  source         String   // monday | manual
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String    @id @default(cuid())
+  clientId      String?
+  name          String
+  editCode      String?
+  status        String?
+  dueDate       DateTime?
+  completedDate DateTime?
+  revisionCount Int       @default(0)
+  mondayItemId  String?   @unique
+  mondayBoardId String?
+  source        String // monday | manual
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   client      Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   assignments DeliverableAssignment[]
 }
 
 model DeliverableAssignment {
-  id             String   @id @default(cuid())
-  deliverableId  String
-  teamMemberId   String?
-  role           String   // editor | animator | designer | reviewer
-  assignedAt     DateTime @default(now())
+  id            String   @id @default(cuid())
+  deliverableId String
+  teamMemberId  String?
+  role          String // editor | animator | designer | reviewer
+  assignedAt    DateTime @default(now())
 
   deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
   teamMember  TeamMember? @relation(fields: [teamMemberId], references: [id], onDelete: SetNull)
@@ -221,14 +221,14 @@ model DeliverableAssignment {
 }
 
 model ClientAssignment {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   clientId     String
   teamMemberId String
-  role         String   // account_manager | creative_lead | editor
-  isPrimary    Boolean  @default(false)
+  role         String // account_manager | creative_lead | editor
+  isPrimary    Boolean   @default(false)
   startDate    DateTime?
   endDate      DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   teamMember TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
@@ -237,36 +237,36 @@ model ClientAssignment {
 }
 
 model CommunicationLog {
-  id        String   @id @default(cuid())
-  clientId  String
-  type      String   // email | slack | call | meeting
-  subject   String?
-  summary   String?
-  date      DateTime
-  source    String   // gmail | slack | manual
+  id         String   @id @default(cuid())
+  clientId   String
+  type       String // email | slack | call | meeting
+  subject    String?
+  summary    String?
+  date       DateTime
+  source     String // gmail | slack | manual
   externalId String?
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model MeetingLog {
-  id        String   @id @default(cuid())
-  clientId  String?
-  title     String
-  date      DateTime
-  duration  Int?     // minutes
-  summary   String?
-  source    String   // calendar | manual
+  id         String   @id @default(cuid())
+  clientId   String?
+  title      String
+  date       DateTime
+  duration   Int? // minutes
+  summary    String?
+  source     String // calendar | manual
   externalId String?
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   client    Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
   attendees MeetingAttendee[]
 }
 
 model MeetingAttendee {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   meetingId String
   email     String
   name      String?
@@ -277,39 +277,39 @@ model MeetingAttendee {
 }
 
 model DataImport {
-  id            String   @id @default(cuid())
-  provider      String   // monday | hubspot | sheets | xero | slack | gmail | calendar
-  syncType      String   // full | incremental
-  status        String   @default("running") // running | completed | failed
-  recordsFound  Int      @default(0)
-  recordsSynced Int      @default(0)
-  recordsFailed Int      @default(0)
-  errorLog      String?  // JSON array of errors
-  startedAt     DateTime @default(now())
+  id            String    @id @default(cuid())
+  provider      String // monday | hubspot | sheets | xero | slack | gmail | calendar
+  syncType      String // full | incremental
+  status        String    @default("running") // running | completed | failed
+  recordsFound  Int       @default(0)
+  recordsSynced Int       @default(0)
+  recordsFailed Int       @default(0)
+  errorLog      String? // JSON array of errors
+  startedAt     DateTime  @default(now())
   completedAt   DateTime?
   triggeredBy   String?
 }
 
 model IntegrationConfig {
-  id          String   @id @default(cuid())
-  provider    String   @unique
-  enabled     Boolean  @default(false)
-  configJson  String   @default("{}") // Encrypted JSON blob
-  lastSyncAt  DateTime?
+  id             String    @id @default(cuid())
+  provider       String    @unique
+  enabled        Boolean   @default(false)
+  configJson     String    @default("{}") // Encrypted JSON blob
+  lastSyncAt     DateTime?
   lastSyncStatus String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model AppSettings {
-  id               String @id @default(cuid())
-  agencyName       String @default("Swan Studio")
-  currency         String @default("AUD")
-  productiveHours  Float  @default(6.5)
-  marginWarning    Float  @default(20.0)
-  marginDanger     Float  @default(10.0)
-  fiscalYearStart  Int    @default(7) // July
-  gstRate          Float  @default(10.0) // GST percentage (Australia = 10%)
+  id              String @id @default(cuid())
+  agencyName      String @default("Swan Studio")
+  currency        String @default("AUD")
+  productiveHours Float  @default(6.5)
+  marginWarning   Float  @default(20.0)
+  marginDanger    Float  @default(10.0)
+  fiscalYearStart Int    @default(7) // July
+  gstRate         Float  @default(10.0) // GST percentage (Australia = 10%)
 }
 
 model AuditLog {
@@ -318,7 +318,7 @@ model AuditLog {
   action    String
   entity    String?
   entityId  String?
-  details   String?  // JSON
+  details   String? // JSON
   ipAddress String?
   createdAt DateTime @default(now())
 
@@ -345,10 +345,10 @@ model ChatSession {
 model ChatMessage {
   id        String   @id @default(cuid())
   sessionId String
-  role      String   // user | assistant | system
+  role      String // user | assistant | system
   content   String
-  chartData String?  // JSON for inline chart rendering
-  toolCalls String?  // JSON array of tool calls made
+  chartData String? // JSON for inline chart rendering
+  toolCalls String? // JSON array of tool calls made
   createdAt DateTime @default(now())
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
