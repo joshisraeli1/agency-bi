@@ -3,16 +3,13 @@
 import { BarChartCard } from "@/components/charts/bar-chart";
 import { PieChartCard } from "@/components/charts/pie-chart";
 import { ComboChartCard } from "@/components/charts/combo-chart";
-import { StatCard } from "@/components/charts/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatMonth, formatCurrency } from "@/lib/utils";
-import type { DivisionProfitabilityRow, ClientEfficiencyData, XeroMarginTrend } from "@/lib/analytics/types";
-import { Clock, MessageSquare } from "lucide-react";
+import type { DivisionProfitabilityRow, XeroMarginTrend } from "@/lib/analytics/types";
 
 interface Props {
   hubspotProfitability: DivisionProfitabilityRow[];
   xeroProfitability: DivisionProfitabilityRow[];
-  clientEfficiency: ClientEfficiencyData;
   xeroMargin: XeroMarginTrend;
 }
 
@@ -138,40 +135,8 @@ function DivisionSummaryBlock({
 export function ProfitabilitySection({
   hubspotProfitability,
   xeroProfitability,
-  clientEfficiency,
   xeroMargin,
 }: Props) {
-  // Client efficiency — revenue per deliverable
-  const topByDeliverable = clientEfficiency.topEfficient.map((c) => ({
-    name: c.clientName,
-    value: c.revenuePerDeliverable,
-  }));
-
-  const bottomByDeliverable = clientEfficiency.bottomEfficient.map((c) => ({
-    name: c.clientName,
-    value: c.revenuePerDeliverable,
-  }));
-
-  // Client efficiency — revenue per edit
-  const topByEdit = clientEfficiency.topEfficient
-    .filter((c) => c.revenuePerEdit > 0)
-    .map((c) => ({
-      name: c.clientName,
-      value: c.revenuePerEdit,
-    }));
-
-  const bottomByEdit = clientEfficiency.bottomEfficient
-    .filter((c) => c.revenuePerEdit > 0)
-    .map((c) => ({
-      name: c.clientName,
-      value: c.revenuePerEdit,
-    }));
-
-  // Overhead context stats
-  const allClients = [...clientEfficiency.topEfficient, ...clientEfficiency.bottomEfficient];
-  const totalMeetingHours = allClients.reduce((s, c) => s + c.meetingHours, 0);
-  const totalSlackMessages = allClients.reduce((s, c) => s + c.slackMessages, 0);
-
   // Xero margin trend
   const marginData = xeroMargin.monthlyData.map((m) => ({
     ...m,
@@ -193,76 +158,6 @@ export function ProfitabilitySection({
         subtitle="Xero revenue vs actual costs including contractor and content creator expenses"
         data={xeroProfitability}
       />
-
-      {/* Client Efficiency Rankings */}
-      {(topByDeliverable.length > 0 || bottomByDeliverable.length > 0) && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">Client Efficiency</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Revenue per deliverable and per edit — top and bottom 10 clients
-            </p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {topByDeliverable.length > 0 && (
-              <BarChartCard
-                title="Revenue / Deliverable (Top 10)"
-                data={topByDeliverable}
-                xKey="name"
-                yKeys={["value"]}
-                yLabels={["Revenue / Deliverable"]}
-                horizontal
-                formatY={(v) => formatCurrency(v)}
-              />
-            )}
-            {bottomByDeliverable.length > 0 && (
-              <BarChartCard
-                title="Revenue / Deliverable (Bottom 10)"
-                data={bottomByDeliverable}
-                xKey="name"
-                yKeys={["value"]}
-                yLabels={["Revenue / Deliverable"]}
-                horizontal
-                formatY={(v) => formatCurrency(v)}
-              />
-            )}
-            {topByEdit.length > 0 && (
-              <BarChartCard
-                title="Revenue / Edit (Top 10)"
-                data={topByEdit}
-                xKey="name"
-                yKeys={["value"]}
-                yLabels={["Revenue / Edit"]}
-                horizontal
-                formatY={(v) => formatCurrency(v)}
-              />
-            )}
-            {bottomByEdit.length > 0 && (
-              <BarChartCard
-                title="Revenue / Edit (Bottom 10)"
-                data={bottomByEdit}
-                xKey="name"
-                yKeys={["value"]}
-                yLabels={["Revenue / Edit"]}
-                horizontal
-                formatY={(v) => formatCurrency(v)}
-              />
-            )}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <StatCard
-              title="Total Meeting Hours (Top & Bottom 10)"
-              value={`${totalMeetingHours.toFixed(1)}h`}
-              icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-            />
-            <StatCard
-              title="Total Slack Messages (Top & Bottom 10)"
-              value={String(totalSlackMessages)}
-              icon={<MessageSquare className="h-4 w-4 text-muted-foreground" />}
-            />
-          </div>
-        </>
-      )}
 
       {/* Xero Margin Over Time */}
       {marginData.length > 0 && xeroMargin.totalRevenue > 0 && (

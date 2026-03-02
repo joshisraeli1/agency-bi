@@ -9,15 +9,24 @@ import {
   getTeamUtilizationData,
   getSourceDiscrepancy,
   getIndustryBreakdown,
-  getClientEfficiency,
   getXeroMarginTrend,
   getNewClientDealSize,
 } from "@/lib/analytics/advanced-analytics";
+import {
+  getTimesheetClientMargin,
+  getHolisticClientMargin,
+  getMonthlyChurn,
+  getRevenuePerAsset,
+} from "@/lib/analytics/margin-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
+import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-section";
+import { RevenuePerAssetSection } from "@/components/dashboard/revenue-per-asset-section";
+import { HolisticMarginSection } from "@/components/dashboard/holistic-margin-section";
+import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { CommunicationCharts } from "@/components/charts/communication-charts";
 import { MeetingCharts } from "@/components/charts/meeting-charts";
@@ -41,9 +50,12 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     teamUtilization,
     discrepancy,
     industryBreakdown,
-    clientEfficiency,
     xeroMargin,
     newClientDealSize,
+    timesheetMargin,
+    holisticMargin,
+    monthlyChurn,
+    revenuePerAsset,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getCommunicationOverview(months),
@@ -54,9 +66,12 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getTeamUtilizationData(months),
     getSourceDiscrepancy(months),
     getIndustryBreakdown(),
-    getClientEfficiency(),
     getXeroMarginTrend(months),
     getNewClientDealSize(months),
+    getTimesheetClientMargin(months),
+    getHolisticClientMargin(months),
+    getMonthlyChurn(12),
+    getRevenuePerAsset(),
   ]);
 
   return (
@@ -106,18 +121,29 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         />
       </div>
 
-      {/* 2. Profitability Section (NEW) */}
+      {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection
         hubspotProfitability={data.hubspotProfitability}
         xeroProfitability={data.xeroProfitability}
-        clientEfficiency={clientEfficiency}
         xeroMargin={xeroMargin}
       />
 
-      {/* 3. KPI Charts (trimmed) */}
+      {/* 3. Timesheet-Based Client Margin */}
+      <TimesheetMarginSection data={timesheetMargin} />
+
+      {/* 4. Revenue Per Deliverable */}
+      <RevenuePerAssetSection data={revenuePerAsset} />
+
+      {/* 5. Holistic Client Margin */}
+      <HolisticMarginSection data={holisticMargin} />
+
+      {/* 6. Monthly Churn Rate */}
+      <ChurnRateSection data={monthlyChurn} />
+
+      {/* 7. KPI Charts (pushed down — Utilization & Margin Trend, Hours by Division) */}
       <KpiCharts data={data} />
 
-      {/* 4. Advanced Charts (reordered) */}
+      {/* 8. Advanced Charts */}
       <AdvancedCharts
         ltv={ltv}
         revenueByType={revenueByType}
@@ -128,7 +154,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         newClientDealSize={newClientDealSize}
       />
 
-      {/* 5. HubSpot vs Xero Reconciliation */}
+      {/* 9. HubSpot vs Xero Reconciliation */}
       {(discrepancy.totalHubspot > 0 || discrepancy.totalXero > 0) && (
         <>
           <div>
@@ -141,7 +167,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         </>
       )}
 
-      {/* 6. Communication Overhead */}
+      {/* 10. Communication Overhead */}
       {comms.totalMessages > 0 && (
         <>
           <div>
@@ -172,7 +198,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         </>
       )}
 
-      {/* 7. Meeting Overhead */}
+      {/* 11. Meeting Overhead */}
       {meetings.totalMeetings > 0 && (
         <>
           <div>

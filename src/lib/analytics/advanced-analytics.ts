@@ -774,7 +774,7 @@ export async function getNewClientDealSize(
 ): Promise<NewClientDealSizeData> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, clients, financials] = await Promise.all([
+  const [excludedIds, clients, financials, timeEntries] = await Promise.all([
     getExcludedClientIds(),
     db.client.findMany({
       where: {
@@ -796,17 +796,44 @@ export async function getNewClientDealSize(
       },
       select: { clientId: true, month: true, amount: true },
     }),
+    db.timeEntry.findMany({
+      where: { clientId: { not: null }, isOverhead: false },
+      select: {
+        clientId: true,
+        hours: true,
+        teamMember: { select: { division: true } },
+      },
+    }),
   ]);
 
   const filteredClients = clients.filter((c) => !excludedIds.has(c.id));
 
-  // First-month revenue per client
-  const firstMonthRevenue = new Map<string, number>();
-  for (const f of financials) {
-    const existing = firstMonthRevenue.get(f.clientId);
-    if (existing === undefined) {
-      firstMonthRevenue.set(f.clientId, f.amount);
+  // Primary division per client: most hours wins
+  const clientDivisionHours = new Map<string, Map<string, number>>();
+  for (const e of timeEntries) {
+    if (!e.clientId || !e.teamMember?.division) continue;
+    if (!clientDivisionHours.has(e.clientId)) {
+      clientDivisionHours.set(e.clientId, new Map());
     }
+    const divMap = clientDivisionHours.get(e.clientId)!;
+    divMap.set(
+      e.teamMember.division,
+      (divMap.get(e.teamMember.division) || 0) + e.hours
+    );
+  }
+
+  function getPrimaryDivision(clientId: string): string {
+    const divMap = clientDivisionHours.get(clientId);
+    if (!divMap || divMap.size === 0) return "Unknown";
+    let maxDiv = "Unknown";
+    let maxHours = 0;
+    for (const [div, hours] of divMap) {
+      if (hours > maxHours) {
+        maxHours = hours;
+        maxDiv = div;
+      }
+    }
+    return maxDiv;
   }
 
   // Group by client's first revenue month to find first-month totals
@@ -818,6 +845,8 @@ export async function getNewClientDealSize(
     const monthMap = clientFirstMonthRev.get(f.clientId)!;
     monthMap.set(f.month, (monthMap.get(f.month) || 0) + f.amount);
   }
+
+  const allClientsWithDeal: { division: string; dealSize: number }[] = [];
 
   const result = monthRange.map((month) => {
     // Find clients whose startDate falls in this month
@@ -837,10 +866,13 @@ export async function getNewClientDealSize(
           dealSize = sortedMonths.length > 0 ? (monthRevMap.get(sortedMonths[0]) || 0) : 0;
         }
       }
+      const division = getPrimaryDivision(c.id);
+      allClientsWithDeal.push({ division, dealSize: Math.round(dealSize) });
       return {
         clientId: c.id,
         clientName: c.name,
         dealSize: Math.round(dealSize),
+        division,
       };
     });
 
@@ -854,5 +886,23 @@ export async function getNewClientDealSize(
     };
   });
 
-  return { months: result };
+  // By division summary
+  const divisionMap = new Map<string, { totalDealSize: number; count: number }>();
+  for (const c of allClientsWithDeal) {
+    if (c.dealSize <= 0) continue;
+    const existing = divisionMap.get(c.division) || { totalDealSize: 0, count: 0 };
+    existing.totalDealSize += c.dealSize;
+    existing.count++;
+    divisionMap.set(c.division, existing);
+  }
+
+  const byDivision = Array.from(divisionMap.entries())
+    .map(([division, data]) => ({
+      division,
+      avgDealSize: Math.round(data.totalDealSize / data.count),
+      clientCount: data.count,
+    }))
+    .sort((a, b) => b.avgDealSize - a.avgDealSize);
+
+  return { months: result, byDivision };
 }

@@ -220,7 +220,7 @@ export function AdvancedCharts({
           <div>
             <h2 className="text-xl font-semibold">New Client Deal Size</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              New clients by start month with their initial deal size
+              New clients by start month with their initial deal size and primary division
             </p>
           </div>
           <Card>
@@ -234,6 +234,7 @@ export function AdvancedCharts({
                     <tr className="border-b">
                       <th className="text-left py-2 px-3 font-medium">Month</th>
                       <th className="text-left py-2 px-3 font-medium">Client</th>
+                      <th className="text-left py-2 px-3 font-medium">Division</th>
                       <th className="text-right py-2 px-3 font-medium">Deal Size</th>
                     </tr>
                   </thead>
@@ -248,6 +249,7 @@ export function AdvancedCharts({
                             {i === 0 ? formatMonth(m.month) : ""}
                           </td>
                           <td className="py-2 px-3">{client.clientName}</td>
+                          <td className="py-2 px-3 text-muted-foreground">{client.division}</td>
                           <td className="text-right py-2 px-3">
                             {client.dealSize > 0 ? formatCurrency(client.dealSize) : "—"}
                           </td>
@@ -263,6 +265,7 @@ export function AdvancedCharts({
                         <td className="py-2 px-3 text-muted-foreground">
                           {m.clientCount} client{m.clientCount !== 1 ? "s" : ""}
                         </td>
+                        <td />
                         <td className="text-right py-2 px-3 font-semibold">
                           {m.avgDealSize > 0 ? formatCurrency(m.avgDealSize) : "—"}
                         </td>
@@ -273,6 +276,20 @@ export function AdvancedCharts({
               </div>
             </CardContent>
           </Card>
+
+          {newClientDealSize.byDivision.length > 0 && (
+            <BarChartCard
+              title="Avg Deal Size by Division"
+              data={newClientDealSize.byDivision.map((d) => ({
+                name: d.division,
+                avgDealSize: d.avgDealSize,
+              }))}
+              xKey="name"
+              yKeys={["avgDealSize"]}
+              yLabels={["Avg Deal Size"]}
+              formatY={fmtCurrency}
+            />
+          )}
         </>
       )}
 

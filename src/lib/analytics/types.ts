@@ -184,7 +184,13 @@ export interface NewClientDealSizeData {
       clientId: string;
       clientName: string;
       dealSize: number;
+      division: string;
     }[];
+    avgDealSize: number;
+    clientCount: number;
+  }[];
+  byDivision: {
+    division: string;
     avgDealSize: number;
     clientCount: number;
   }[];
@@ -225,4 +231,76 @@ export interface MeetingOverview {
     hours: number;
   }[];
   unattributedCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Margin Analytics Types
+// ---------------------------------------------------------------------------
+
+export interface TimesheetClientMarginRow {
+  clientId: string;
+  clientName: string;
+  revenue: number;
+  timeCost: number;
+  hours: number;
+  margin: number;
+  marginPercent: number;
+}
+
+export interface TimesheetClientMarginData {
+  clients: TimesheetClientMarginRow[];
+  totalRevenue: number;
+  totalTimeCost: number;
+  totalHours: number;
+  avgMarginPercent: number;
+}
+
+export interface HolisticClientMarginRow {
+  clientId: string;
+  clientName: string;
+  revenue: number;
+  timeCost: number;
+  meetingCost: number;
+  commCost: number;
+  creatorCount: number;
+  totalCost: number;
+  margin: number;
+  marginPercent: number;
+}
+
+export interface HolisticClientMarginData {
+  clients: HolisticClientMarginRow[];
+  totalRevenue: number;
+  totalCost: number;
+  avgMarginPercent: number;
+  blendedHourlyRate: number;
+}
+
+export interface MonthlyChurnRow {
+  month: string;
+  activeAtStart: number;
+  churned: number;
+  churnPercent: number;
+  churnedRevenue: number;
+}
+
+export interface MonthlyChurnData {
+  months: MonthlyChurnRow[];
+  avgChurnPercent: number;
+  totalChurned: number;
+}
+
+export interface RevenuePerAssetRow {
+  clientId: string;
+  clientName: string;
+  revenue: number;
+  deliverableCount: number;
+  revenuePerDeliverable: number;
+}
+
+export interface RevenuePerAssetData {
+  clients: RevenuePerAssetRow[];
+  totalRevenue: number;
+  totalDeliverables: number;
+  avgRevenuePerDeliverable: number;
 }

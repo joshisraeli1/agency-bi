@@ -125,7 +125,7 @@ export function ScatterChartCard({
             {referenceY !== undefined && (
               <ReferenceLine
                 y={referenceY}
-                stroke="hsl(var(--destructive))"
+                stroke="var(--destructive)"
                 strokeDasharray="5 5"
                 label={{ value: `${referenceY}%`, fontSize: 11 }}
               />

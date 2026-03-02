@@ -2,14 +2,14 @@ import type { CSSProperties } from "react";
 
 /** Shared tooltip content styles — high contrast, visible above chart data */
 export const TOOLTIP_STYLE: CSSProperties = {
-  backgroundColor: "hsl(var(--popover))",
-  border: "1px solid hsl(var(--border))",
+  backgroundColor: "var(--popover)",
+  border: "1px solid var(--border)",
   borderRadius: "8px",
   boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
   fontSize: "13px",
   padding: "8px 12px",
   lineHeight: "1.5",
-  color: "hsl(var(--popover-foreground))",
+  color: "var(--popover-foreground)",
 };
 
 export const CHART_COLORS = [
