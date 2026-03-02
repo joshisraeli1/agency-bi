@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, getEffectiveHourlyRate } from "@/lib/utils";
+import { getMonthRange, toMonthKey, formatMonth, getEffectiveHourlyRate } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type {
   TimesheetClientMarginData,
@@ -34,7 +34,7 @@ export async function getTimesheetClientMargin(
           type: { in: ["retainer", "project"] },
           source: "hubspot",
         },
-        select: { clientId: true, amount: true },
+        select: { clientId: true, amount: true, month: true },
       }),
       db.timeEntry.findMany({
         where: {
@@ -45,6 +45,7 @@ export async function getTimesheetClientMargin(
         select: {
           clientId: true,
           hours: true,
+          date: true,
           teamMember: {
             select: {
               costType: true,
@@ -119,7 +120,28 @@ export async function getTimesheetClientMargin(
       ? Number(((totalMargin / totalRevenue) * 100).toFixed(1))
       : 0;
 
-  return { clients: rows, totalRevenue, totalTimeCost, totalHours, avgMarginPercent };
+  // Monthly trend: revenue and time cost per month
+  const monthlyTrend = monthRange.map((month) => {
+    const monthRev = financials
+      .filter((f) => f.month === month && clientIds.has(f.clientId))
+      .reduce((s, f) => s + f.amount / gstDivisor, 0);
+    const monthTimeCost = timeEntries
+      .filter((e) => e.clientId && clientIds.has(e.clientId) && toMonthKey(e.date) === month)
+      .reduce((s, e) => {
+        const rate = e.teamMember ? getEffectiveHourlyRate(e.teamMember) : null;
+        return s + (rate ? e.hours * rate : 0);
+      }, 0);
+    const margin = monthRev - monthTimeCost;
+    const marginPercent = monthRev > 0 ? Number(((margin / monthRev) * 100).toFixed(1)) : 0;
+    return {
+      month: formatMonth(month),
+      revenue: Math.round(monthRev),
+      timeCost: Math.round(monthTimeCost),
+      marginPercent,
+    };
+  });
+
+  return { clients: rows, totalRevenue, totalTimeCost, totalHours, avgMarginPercent, monthlyTrend };
 }
 
 // ---------------------------------------------------------------------------

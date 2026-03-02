@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChartCard } from "@/components/charts/bar-chart";
+import { ComboChartCard } from "@/components/charts/combo-chart";
 import { StatCard } from "@/components/charts/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -33,13 +34,15 @@ export function TimesheetMarginSection({ data }: Props) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
-          title="Total Revenue"
+          title="HubSpot Revenue (ex-GST)"
           value={formatCurrency(data.totalRevenue)}
+          description={`${data.monthlyTrend.length} months`}
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
-          title="Total Time Cost"
+          title="Timesheet Cost"
           value={formatCurrency(data.totalTimeCost)}
+          description="Hours x hourly rate"
           icon={<Clock className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
@@ -48,6 +51,21 @@ export function TimesheetMarginSection({ data }: Props) {
           icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
+
+      {data.monthlyTrend.length > 0 && (
+        <ComboChartCard
+          title="Monthly Revenue & Timesheet Cost"
+          data={data.monthlyTrend}
+          xKey="month"
+          barKeys={["revenue", "timeCost"]}
+          barLabels={["Revenue", "Timesheet Cost"]}
+          lineKey="marginPercent"
+          lineLabel="Margin %"
+          stacked={false}
+          formatBar={(v) => formatCurrency(v)}
+          formatLine={(v) => `${v}%`}
+        />
+      )}
 
       <Card>
         <CardHeader>

@@ -17,10 +17,12 @@ function DivisionSummaryBlock({
   title,
   subtitle,
   data,
+  showPieChart = true,
 }: {
   title: string;
   subtitle: string;
   data: DivisionProfitabilityRow[];
+  showPieChart?: boolean;
 }) {
   if (data.length === 0) return null;
 
@@ -112,13 +114,15 @@ function DivisionSummaryBlock({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PieChartCard
-          title="Revenue Breakdown"
-          data={pieData}
-          donut
-          formatValue={(v) => formatCurrency(v)}
-        />
+      <div className={`grid grid-cols-1 ${showPieChart ? "lg:grid-cols-2" : ""} gap-4`}>
+        {showPieChart && (
+          <PieChartCard
+            title="Revenue Breakdown"
+            data={pieData}
+            donut
+            formatValue={(v) => formatCurrency(v)}
+          />
+        )}
         <BarChartCard
           title="Division Margins"
           data={marginBarData}
@@ -157,6 +161,7 @@ export function ProfitabilitySection({
         title="Profitability by Division (Xero)"
         subtitle="Xero revenue vs actual costs including contractor and content creator expenses"
         data={xeroProfitability}
+        showPieChart={false}
       />
 
       {/* Xero Margin Over Time */}

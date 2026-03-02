@@ -365,7 +365,7 @@ export function AdvancedCharts({
           <div>
             <h2 className="text-xl font-semibold">Division Margins</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              Revenue vs cost by division and margin trends over time
+              HubSpot revenue allocated by time tracked per division vs team salary costs
             </p>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

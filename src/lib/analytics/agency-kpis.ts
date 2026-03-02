@@ -145,7 +145,15 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
 
   for (const fin of filteredFinancials) {
     const divHours = clientDivisionHours.get(fin.clientId);
-    if (!divHours || divHours.size === 0) continue;
+    if (!divHours || divHours.size === 0) {
+      // No time entries — assign to "Unallocated" so revenue isn't silently dropped
+      if (fin.type === "retainer" || fin.type === "project") {
+        divRevenue.set("Unallocated", (divRevenue.get("Unallocated") || 0) + fin.amount);
+      } else if (fin.type === "cost") {
+        divCost.set("Unallocated", (divCost.get("Unallocated") || 0) + fin.amount);
+      }
+      continue;
+    }
     const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
     if (totalH === 0) continue;
 
@@ -196,7 +204,14 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     const mDivCost = new Map<string, number>();
     for (const fin of monthFin) {
       const dh = monthClientDivHours.get(fin.clientId);
-      if (!dh || dh.size === 0) continue;
+      if (!dh || dh.size === 0) {
+        if (fin.type === "retainer" || fin.type === "project") {
+          mDivRev.set("Unallocated", (mDivRev.get("Unallocated") || 0) + fin.amount);
+        } else if (fin.type === "cost") {
+          mDivCost.set("Unallocated", (mDivCost.get("Unallocated") || 0) + fin.amount);
+        }
+        continue;
+      }
       const totalH = Array.from(dh.values()).reduce((a, b) => a + b, 0);
       if (totalH === 0) continue;
       for (const [div, hours] of dh) {
@@ -242,7 +257,10 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     if (fin.source !== "hubspot") continue;
     if (fin.type !== "retainer" && fin.type !== "project") continue;
     const divHours = clientDivisionHours.get(fin.clientId);
-    if (!divHours || divHours.size === 0) continue;
+    if (!divHours || divHours.size === 0) {
+      hubspotDivRevenue.set("Unallocated", (hubspotDivRevenue.get("Unallocated") || 0) + fin.amount);
+      continue;
+    }
     const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
     if (totalH === 0) continue;
     for (const [div, hours] of divHours) {
@@ -290,7 +308,14 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   for (const fin of filteredFinancials) {
     if (fin.source !== "xero") continue;
     const divHours = clientDivisionHours.get(fin.clientId);
-    if (!divHours || divHours.size === 0) continue;
+    if (!divHours || divHours.size === 0) {
+      if (fin.type === "retainer" || fin.type === "project") {
+        xeroDivRevenue.set("Unallocated", (xeroDivRevenue.get("Unallocated") || 0) + fin.amount);
+      } else if (fin.type === "cost") {
+        xeroDivCost.set("Unallocated", (xeroDivCost.get("Unallocated") || 0) + fin.amount);
+      }
+      continue;
+    }
     const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
     if (totalH === 0) continue;
     for (const [div, hours] of divHours) {

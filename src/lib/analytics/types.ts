@@ -253,6 +253,12 @@ export interface TimesheetClientMarginData {
   totalTimeCost: number;
   totalHours: number;
   avgMarginPercent: number;
+  monthlyTrend: {
+    month: string;
+    revenue: number;
+    timeCost: number;
+    marginPercent: number;
+  }[];
 }
 
 export interface HolisticClientMarginRow {
