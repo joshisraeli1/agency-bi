@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, formatMonth, getEffectiveHourlyRate } from "@/lib/utils";
+import { getMonthRange, toMonthKey, formatMonth } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
