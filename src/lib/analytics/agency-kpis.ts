@@ -54,10 +54,11 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     return EXCLUDED_DIVISIONS.includes(div) || EXCLUDED_ROLES.includes(role);
   }
 
-  // Total revenue and cost
+  // Total revenue (HubSpot only, ex-GST) — matches overview page
+  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
   const totalRevenue = filteredFinancials
-    .filter((f) => f.type === "retainer" || f.type === "project")
-    .reduce((sum, f) => sum + f.amount, 0);
+    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
+    .reduce((sum, f) => sum + f.amount / gstDivisor, 0);
 
   const totalCost = filteredFinancials
     .filter((f) => f.type === "cost")
