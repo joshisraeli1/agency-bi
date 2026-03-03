@@ -328,7 +328,7 @@ export function AdvancedCharts({
           data={revenueData}
           xKey="month"
           barKeys={["socialMedia", "adsManagement", "contentDelivery"]}
-          barLabels={["Social Media Management", "Ads Management", "Content Delivery"]}
+          barLabels={["Organic Social", "Paid Media", "Ad Creative"]}
           lineKey="marginPercent"
           lineLabel="Margin %"
           stacked
@@ -365,7 +365,7 @@ export function AdvancedCharts({
           <div>
             <h2 className="text-xl font-semibold">Division Margins</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              HubSpot revenue allocated by time tracked per division vs team salary costs
+              Revenue vs cost margins by division
             </p>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

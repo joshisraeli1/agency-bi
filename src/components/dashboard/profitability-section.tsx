@@ -152,17 +152,11 @@ export function ProfitabilitySection({
       {/* HubSpot Profitability (revenue from HubSpot + team salary costs) */}
       <DivisionSummaryBlock
         title="Profitability by Division (HubSpot)"
-        subtitle="HubSpot revenue vs team salary costs — based on time tracked per division"
+        subtitle="Client retainer revenue vs team salary costs by division"
         data={hubspotProfitability}
       />
 
-      {/* Xero Profitability (revenue + costs from Xero, incl. contractors) */}
-      <DivisionSummaryBlock
-        title="Profitability by Division (Xero)"
-        subtitle="Xero revenue vs actual costs including contractor and content creator expenses"
-        data={xeroProfitability}
-        showPieChart={false}
-      />
+      {/* Xero Profitability — hidden, awaiting P&L upload with division breakdowns */}
 
       {/* Xero Margin Over Time */}
       {marginData.length > 0 && xeroMargin.totalRevenue > 0 && (

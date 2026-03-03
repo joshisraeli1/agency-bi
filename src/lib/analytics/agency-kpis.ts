@@ -23,7 +23,13 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
       db.client.count({ where: { status: { not: "prospect" }, hubspotDealId: { not: null } } }),
       db.appSettings.findFirst(),
-      db.client.findMany({ select: { id: true, name: true, industry: true, status: true } }),
+      db.client.findMany({
+        select: {
+          id: true, name: true, industry: true, status: true,
+          hubspotDealId: true, contentRetainer: true, smRetainer: true,
+          growthRetainer: true, productionRetainer: true,
+        },
+      }),
       getExcludedClientIds(),
     ]);
 
@@ -146,15 +152,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
 
   for (const fin of filteredFinancials) {
     const divHours = clientDivisionHours.get(fin.clientId);
-    if (!divHours || divHours.size === 0) {
-      // No time entries — assign to "Unallocated" so revenue isn't silently dropped
-      if (fin.type === "retainer" || fin.type === "project") {
-        divRevenue.set("Unallocated", (divRevenue.get("Unallocated") || 0) + fin.amount);
-      } else if (fin.type === "cost") {
-        divCost.set("Unallocated", (divCost.get("Unallocated") || 0) + fin.amount);
-      }
-      continue;
-    }
+    if (!divHours || divHours.size === 0) continue;
     const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
     if (totalH === 0) continue;
 
@@ -205,14 +203,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     const mDivCost = new Map<string, number>();
     for (const fin of monthFin) {
       const dh = monthClientDivHours.get(fin.clientId);
-      if (!dh || dh.size === 0) {
-        if (fin.type === "retainer" || fin.type === "project") {
-          mDivRev.set("Unallocated", (mDivRev.get("Unallocated") || 0) + fin.amount);
-        } else if (fin.type === "cost") {
-          mDivCost.set("Unallocated", (mDivCost.get("Unallocated") || 0) + fin.amount);
-        }
-        continue;
-      }
+      if (!dh || dh.size === 0) continue;
       const totalH = Array.from(dh.values()).reduce((a, b) => a + b, 0);
       if (totalH === 0) continue;
       for (const [div, hours] of dh) {
@@ -252,38 +243,48 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .map(([division, revenue]) => ({ division, revenue: Math.round(revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // ── HubSpot Profitability (HubSpot revenue + team salary costs) ──
+  // ── HubSpot Profitability (client retainer fields + team salary costs) ──
+  // Division name mapping: team division → spreadsheet name
+  const TEAM_DIV_MAP: Record<string, string> = {
+    "Content Delivery (Paid)": "Ad Creative",
+    "Social Media Management": "Organic Social",
+    "Ads Management": "Paid Media",
+    "Production": "Production",
+  };
+
+  // Revenue: sum per-division retainer fields for active HubSpot clients
   const hubspotDivRevenue = new Map<string, number>();
-  for (const fin of filteredFinancials) {
-    if (fin.source !== "hubspot") continue;
-    if (fin.type !== "retainer" && fin.type !== "project") continue;
-    const divHours = clientDivisionHours.get(fin.clientId);
-    if (!divHours || divHours.size === 0) {
-      hubspotDivRevenue.set("Unallocated", (hubspotDivRevenue.get("Unallocated") || 0) + fin.amount);
-      continue;
-    }
-    const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
-    if (totalH === 0) continue;
-    for (const [div, hours] of divHours) {
-      const proportion = hours / totalH;
-      hubspotDivRevenue.set(div, (hubspotDivRevenue.get(div) || 0) + fin.amount * proportion);
+  for (const c of clients) {
+    if (c.status !== "active" || !c.hubspotDealId) continue;
+    if (excludedIds.has(c.id)) continue;
+    const retainers: [number | null | undefined, string][] = [
+      [c.contentRetainer, "Ad Creative"],
+      [c.smRetainer, "Organic Social"],
+      [c.growthRetainer, "Paid Media"],
+      [c.productionRetainer, "Production"],
+    ];
+    for (const [val, divName] of retainers) {
+      if (val && val > 0) {
+        hubspotDivRevenue.set(divName, (hubspotDivRevenue.get(divName) || 0) + val);
+      }
     }
   }
 
-  // Team salary cost per division (hours × effective hourly rate)
-  const teamMemberRateMap = new Map<string, number>();
-  for (const m of teamMembers) {
-    const rate = getEffectiveHourlyRate(m);
-    if (rate) teamMemberRateMap.set(m.id, rate);
-  }
-
+  // Cost: monthly salary per billable team member, grouped by mapped division
   const hubspotDivCost = new Map<string, number>();
-  for (const entry of timeEntries) {
-    if (isDivisionExcluded(entry)) continue;
-    if (!entry.teamMemberId) continue;
-    const div = entry.teamMember?.division || "Unassigned";
-    const rate = teamMemberRateMap.get(entry.teamMemberId) || 0;
-    hubspotDivCost.set(div, (hubspotDivCost.get(div) || 0) + entry.hours * rate);
+  for (const m of billableMembers) {
+    const div = m.division || "Unassigned";
+    const mappedDiv = TEAM_DIV_MAP[div];
+    if (!mappedDiv) continue; // skip divisions not in the spreadsheet mapping
+    let monthlyCost = 0;
+    if (m.annualSalary) {
+      monthlyCost = m.annualSalary / 12;
+    } else if (m.hourlyRate && m.weeklyHours) {
+      monthlyCost = m.hourlyRate * m.weeklyHours * 52 / 12;
+    }
+    if (monthlyCost > 0) {
+      hubspotDivCost.set(mappedDiv, (hubspotDivCost.get(mappedDiv) || 0) + monthlyCost);
+    }
   }
 
   const hubspotDivisions = new Set([...hubspotDivRevenue.keys(), ...hubspotDivCost.keys()]);
@@ -300,51 +301,11 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
       };
     })
-    .filter((d) => d.revenue > 0)
+    .filter((d) => d.revenue > 0 || d.cost > 0)
     .sort((a, b) => b.revenue - a.revenue);
 
-  // ── Xero Profitability (Xero revenue + Xero costs incl. contractors) ──
-  const xeroDivRevenue = new Map<string, number>();
-  const xeroDivCost = new Map<string, number>();
-  for (const fin of filteredFinancials) {
-    if (fin.source !== "xero") continue;
-    const divHours = clientDivisionHours.get(fin.clientId);
-    if (!divHours || divHours.size === 0) {
-      if (fin.type === "retainer" || fin.type === "project") {
-        xeroDivRevenue.set("Unallocated", (xeroDivRevenue.get("Unallocated") || 0) + fin.amount);
-      } else if (fin.type === "cost") {
-        xeroDivCost.set("Unallocated", (xeroDivCost.get("Unallocated") || 0) + fin.amount);
-      }
-      continue;
-    }
-    const totalH = Array.from(divHours.values()).reduce((a, b) => a + b, 0);
-    if (totalH === 0) continue;
-    for (const [div, hours] of divHours) {
-      const proportion = hours / totalH;
-      if (fin.type === "retainer" || fin.type === "project") {
-        xeroDivRevenue.set(div, (xeroDivRevenue.get(div) || 0) + fin.amount * proportion);
-      } else if (fin.type === "cost") {
-        xeroDivCost.set(div, (xeroDivCost.get(div) || 0) + fin.amount * proportion);
-      }
-    }
-  }
-
-  const xeroDivisions = new Set([...xeroDivRevenue.keys(), ...xeroDivCost.keys()]);
-  const xeroProfitability: DivisionProfitabilityRow[] = Array.from(xeroDivisions)
-    .map((division) => {
-      const rev = xeroDivRevenue.get(division) || 0;
-      const cost = xeroDivCost.get(division) || 0;
-      const margin = rev - cost;
-      return {
-        division,
-        revenue: Math.round(rev),
-        cost: Math.round(cost),
-        ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
-        marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
-      };
-    })
-    .filter((d) => d.revenue > 0)
-    .sort((a, b) => b.revenue - a.revenue);
+  // ── Xero Profitability — removed, awaiting P&L upload with division breakdowns ──
+  const xeroProfitability: DivisionProfitabilityRow[] = [];
 
   return {
     avgUtilization,

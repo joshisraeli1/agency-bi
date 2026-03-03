@@ -1,10 +1,18 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { BarChartCard } from "@/components/charts/bar-chart";
 import { ComboChartCard } from "@/components/charts/combo-chart";
 import { StatCard } from "@/components/charts/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatCurrency, formatPercent, formatMonth } from "@/lib/utils";
 import type { TimesheetClientMarginData } from "@/lib/analytics/types";
 import { DollarSign, Clock, TrendingUp } from "lucide-react";
 
@@ -13,10 +21,54 @@ interface Props {
 }
 
 export function TimesheetMarginSection({ data }: Props) {
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+
+  // Extract unique months from the client rows
+  const availableMonths = useMemo(() => {
+    const months = [...new Set(data.clients.map((c) => c.month))].sort();
+    return months;
+  }, [data.clients]);
+
+  // Filter clients by selected month, or aggregate across all months
+  const filteredClients = useMemo(() => {
+    if (selectedMonth === "all") {
+      // Aggregate per client across all months (original behavior)
+      const agg = new Map<string, { clientId: string; clientName: string; revenue: number; timeCost: number; hours: number }>();
+      for (const c of data.clients) {
+        const existing = agg.get(c.clientId);
+        if (existing) {
+          existing.revenue += c.revenue;
+          existing.timeCost += c.timeCost;
+          existing.hours += c.hours;
+        } else {
+          agg.set(c.clientId, { clientId: c.clientId, clientName: c.clientName, revenue: c.revenue, timeCost: c.timeCost, hours: c.hours });
+        }
+      }
+      return Array.from(agg.values())
+        .map((c) => {
+          const margin = c.revenue - c.timeCost;
+          const marginPercent = c.revenue > 0 ? Number(((margin / c.revenue) * 100).toFixed(1)) : 0;
+          return { ...c, month: "all", margin, marginPercent, hours: Number(c.hours.toFixed(1)) };
+        })
+        .filter((r) => r.revenue > 0 || r.timeCost > 0)
+        .sort((a, b) => a.marginPercent - b.marginPercent);
+    }
+    return data.clients
+      .filter((c) => c.month === selectedMonth)
+      .sort((a, b) => a.marginPercent - b.marginPercent);
+  }, [data.clients, selectedMonth]);
+
+  // Compute totals from filtered rows
+  const totalRevenue = filteredClients.reduce((s, r) => s + r.revenue, 0);
+  const totalTimeCost = filteredClients.reduce((s, r) => s + r.timeCost, 0);
+  const totalHours = filteredClients.reduce((s, r) => s + r.hours, 0);
+  const totalMargin = totalRevenue - totalTimeCost;
+  const avgMarginPercent = totalRevenue > 0 ? Number(((totalMargin / totalRevenue) * 100).toFixed(1)) : 0;
+
   if (data.clients.length === 0) return null;
 
   // Worst 15 clients by margin % for the bar chart
-  const worstMarginData = data.clients
+  const worstMarginData = filteredClients
     .slice(0, 15)
     .map((c) => ({
       name: c.clientName,
@@ -25,34 +77,49 @@ export function TimesheetMarginSection({ data }: Props) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Timesheet-Based Client Margin</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          HubSpot revenue (ex-GST) vs time-tracked cost (hours x hourly rate)
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Timesheet-Based Client Margin</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            HubSpot revenue (ex-GST) vs time-tracked cost (hours x hourly rate)
+          </p>
+        </div>
+        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="All months" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All months</SelectItem>
+            {availableMonths.map((m) => (
+              <SelectItem key={m} value={m}>
+                {formatMonth(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
           title="HubSpot Revenue (ex-GST)"
-          value={formatCurrency(data.totalRevenue)}
-          description={`${data.monthlyTrend.length} months`}
+          value={formatCurrency(totalRevenue)}
+          description={selectedMonth === "all" ? `${availableMonths.length} months` : formatMonth(selectedMonth)}
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Timesheet Cost"
-          value={formatCurrency(data.totalTimeCost)}
+          value={formatCurrency(totalTimeCost)}
           description="Hours x hourly rate"
           icon={<Clock className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Avg Margin"
-          value={formatPercent(data.avgMarginPercent)}
+          value={formatPercent(avgMarginPercent)}
           icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
 
-      {data.monthlyTrend.length > 0 && (
+      {selectedMonth === "all" && data.monthlyTrend.length > 0 && (
         <ComboChartCard
           title="Monthly Revenue & Timesheet Cost"
           data={data.monthlyTrend}
@@ -85,8 +152,8 @@ export function TimesheetMarginSection({ data }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.clients.map((c) => (
-                  <tr key={c.clientId} className="border-b last:border-0">
+                {filteredClients.map((c) => (
+                  <tr key={`${c.clientId}-${c.month}`} className="border-b last:border-0">
                     <td className="py-2 px-3">{c.clientName}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.revenue)}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.timeCost)}</td>
@@ -106,19 +173,19 @@ export function TimesheetMarginSection({ data }: Props) {
                 <tr className="border-t bg-muted/50">
                   <td className="py-2 px-3 font-semibold">Total</td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {formatCurrency(data.totalRevenue)}
+                    {formatCurrency(totalRevenue)}
                   </td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {formatCurrency(data.totalTimeCost)}
+                    {formatCurrency(totalTimeCost)}
                   </td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {data.totalHours.toFixed(0)}h
+                    {totalHours.toFixed(0)}h
                   </td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {formatCurrency(data.totalRevenue - data.totalTimeCost)}
+                    {formatCurrency(totalMargin)}
                   </td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {data.avgMarginPercent}%
+                    {avgMarginPercent}%
                   </td>
                 </tr>
               </tbody>

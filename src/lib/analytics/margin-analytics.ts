@@ -63,51 +63,50 @@ export async function getTimesheetClientMargin(
   const clientIds = new Set(activeClients.map((c) => c.id));
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
 
-  // Revenue per client (ex-GST)
-  const revenueMap = new Map<string, number>();
+  // Revenue per client per month (ex-GST)
+  const revenueByClientMonth = new Map<string, number>();
   for (const f of financials) {
     if (!clientIds.has(f.clientId)) continue;
-    revenueMap.set(
-      f.clientId,
-      (revenueMap.get(f.clientId) || 0) + f.amount / gstDivisor
-    );
+    const key = `${f.clientId}|${f.month}`;
+    revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount / gstDivisor);
   }
 
-  // Time cost per client
-  const timeCostMap = new Map<string, number>();
-  const hoursMap = new Map<string, number>();
+  // Time cost per client per month
+  const timeCostByClientMonth = new Map<string, number>();
+  const hoursByClientMonth = new Map<string, number>();
   for (const e of timeEntries) {
     if (!e.clientId || !clientIds.has(e.clientId)) continue;
+    const month = toMonthKey(e.date);
+    const key = `${e.clientId}|${month}`;
     const rate = e.teamMember ? getEffectiveHourlyRate(e.teamMember) : null;
     if (rate) {
-      timeCostMap.set(
-        e.clientId,
-        (timeCostMap.get(e.clientId) || 0) + e.hours * rate
-      );
+      timeCostByClientMonth.set(key, (timeCostByClientMonth.get(key) || 0) + e.hours * rate);
     }
-    hoursMap.set(
-      e.clientId,
-      (hoursMap.get(e.clientId) || 0) + e.hours
-    );
+    hoursByClientMonth.set(key, (hoursByClientMonth.get(key) || 0) + e.hours);
   }
 
+  // Build per-month rows for each client
   const rows = activeClients
-    .map((c) => {
-      const revenue = revenueMap.get(c.id) || 0;
-      const timeCost = timeCostMap.get(c.id) || 0;
-      const hours = hoursMap.get(c.id) || 0;
-      const margin = revenue - timeCost;
-      const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
-      return {
-        clientId: c.id,
-        clientName: c.name,
-        revenue: Math.round(revenue),
-        timeCost: Math.round(timeCost),
-        hours: Number(hours.toFixed(1)),
-        margin: Math.round(margin),
-        marginPercent: Number(marginPercent.toFixed(1)),
-      };
-    })
+    .flatMap((c) =>
+      monthRange.map((month) => {
+        const key = `${c.id}|${month}`;
+        const revenue = revenueByClientMonth.get(key) || 0;
+        const timeCost = timeCostByClientMonth.get(key) || 0;
+        const hours = hoursByClientMonth.get(key) || 0;
+        const margin = revenue - timeCost;
+        const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
+        return {
+          clientId: c.id,
+          clientName: c.name,
+          month,
+          revenue: Math.round(revenue),
+          timeCost: Math.round(timeCost),
+          hours: Number(hours.toFixed(1)),
+          margin: Math.round(margin),
+          marginPercent: Number(marginPercent.toFixed(1)),
+        };
+      })
+    )
     .filter((r) => r.revenue > 0 || r.timeCost > 0)
     .sort((a, b) => a.marginPercent - b.marginPercent);
 

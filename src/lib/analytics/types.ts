@@ -240,6 +240,7 @@ export interface MeetingOverview {
 export interface TimesheetClientMarginRow {
   clientId: string;
   clientName: string;
+  month: string; // YYYY-MM
   revenue: number;
   timeCost: number;
   hours: number;
