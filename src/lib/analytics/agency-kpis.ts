@@ -20,13 +20,14 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
         include: { teamMember: true },
       }),
       db.teamMember.findMany({ where: { active: true } }),
-      db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
-      db.client.count({ where: { status: { not: "prospect" }, hubspotDealId: { not: null } } }),
+      db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
+      db.client.count({ where: { status: { not: "prospect" }, OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
       db.appSettings.findFirst(),
       db.client.findMany({
         select: {
           id: true, name: true, industry: true, status: true,
-          hubspotDealId: true, contentRetainer: true, smRetainer: true,
+          hubspotDealId: true, hubspotCompanyId: true, retainerValue: true,
+          contentRetainer: true, smRetainer: true,
           growthRetainer: true, productionRetainer: true,
         },
       }),
@@ -60,11 +61,11 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     return EXCLUDED_DIVISIONS.includes(div) || EXCLUDED_ROLES.includes(role);
   }
 
-  // Total revenue (HubSpot only, ex-GST) — matches overview page
+  // Total revenue: sum of active client retainerValue (monthly)
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-  const totalRevenue = filteredFinancials
-    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-    .reduce((sum, f) => sum + f.amount / gstDivisor, 0);
+  const totalRevenue = clients
+    .filter((c) => c.status === "active" && (c.hubspotDealId || c.hubspotCompanyId) && !excludedIds.has(c.id))
+    .reduce((sum, c) => sum + (c.retainerValue || 0), 0);
 
   const totalCost = filteredFinancials
     .filter((f) => f.type === "cost")
@@ -255,7 +256,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   // Revenue: sum per-division retainer fields for active HubSpot clients
   const hubspotDivRevenue = new Map<string, number>();
   for (const c of clients) {
-    if (c.status !== "active" || !c.hubspotDealId) continue;
+    if (c.status !== "active" || !(c.hubspotDealId || c.hubspotCompanyId)) continue;
     if (excludedIds.has(c.id)) continue;
     const retainers: [number | null | undefined, string][] = [
       [c.contentRetainer, "Ad Creative"],

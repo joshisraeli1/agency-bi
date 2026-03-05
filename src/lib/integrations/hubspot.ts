@@ -11,6 +11,7 @@ interface HubSpotPaging {
 interface HubSpotDealProperties {
   dealname: string;
   amount: string | null;
+  amount__excl_gst_: string | null;
   dealstage: string | null;
   closedate: string | null;
   pipeline: string | null;
@@ -115,7 +116,7 @@ export async function* fetchDeals(
   pipelineId?: string
 ): AsyncGenerator<HubSpotDeal[], void, unknown> {
   let after: string | undefined;
-  const properties = "dealname,amount,dealstage,closedate,pipeline,hs_object_id";
+  const properties = "dealname,amount,amount__excl_gst_,dealstage,closedate,pipeline,hs_object_id";
 
   do {
     const params: Record<string, string> = {

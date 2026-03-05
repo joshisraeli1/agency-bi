@@ -36,17 +36,23 @@ async function getHubSpotConfig(): Promise<HubSpotConfig> {
     where: { provider: "hubspot" },
   });
 
-  if (!config || !config.configJson || config.configJson === "{}") {
-    throw new Error("HubSpot integration is not configured");
+  if (config?.configJson && config.configJson !== "{}") {
+    const decrypted = decryptJson<HubSpotConfig>(config.configJson);
+    if (decrypted.accessToken) {
+      return decrypted;
+    }
   }
 
-  const decrypted = decryptJson<HubSpotConfig>(config.configJson);
-
-  if (!decrypted.accessToken) {
-    throw new Error("HubSpot access token is not configured");
+  // Fall back to env vars
+  const envToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (envToken) {
+    return {
+      accessToken: envToken,
+      pipelineId: process.env.HUBSPOT_PIPELINE_ID,
+    };
   }
 
-  return decrypted;
+  throw new Error("HubSpot integration is not configured");
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +89,11 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
         const amount = deal.properties.amount
           ? parseFloat(deal.properties.amount)
           : null;
+        // Use ex-GST amount for retainerValue when available
+        const amountExGst = deal.properties.amount__excl_gst_
+          ? parseFloat(deal.properties.amount__excl_gst_)
+          : null;
+        const retainerAmount = amountExGst ?? amount;
         const dealStage = deal.properties.dealstage;
 
         if (!dealName) {
@@ -106,14 +117,14 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
               hubspotCompanyId: companyAssocId,
               hubspotDealId: dealId,
               dealStage: dealStage ?? undefined,
-              retainerValue: amount ?? undefined,
+              retainerValue: retainerAmount ?? undefined,
               source: "hubspot",
               status: dealStageToStatus(dealStage),
             },
             update: {
               // Only update status/retainerValue if this deal is "closed won"
               ...(dealStageToStatus(dealStage) === "active"
-                ? { retainerValue: amount ?? undefined, dealStage: dealStage ?? undefined }
+                ? { retainerValue: retainerAmount ?? undefined, dealStage: dealStage ?? undefined }
                 : {}),
             },
           });
@@ -125,14 +136,14 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
               name: dealName,
               hubspotDealId: dealId,
               dealStage: dealStage ?? undefined,
-              retainerValue: amount ?? undefined,
+              retainerValue: retainerAmount ?? undefined,
               source: "hubspot",
               status: dealStageToStatus(dealStage),
             },
             update: {
               name: dealName,
               dealStage: dealStage ?? undefined,
-              retainerValue: amount ?? undefined,
+              retainerValue: retainerAmount ?? undefined,
             },
           });
         }
