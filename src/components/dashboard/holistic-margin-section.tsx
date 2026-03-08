@@ -1,9 +1,16 @@
 "use client";
 
-import { BarChartCard } from "@/components/charts/bar-chart";
+import { useState, useMemo } from "react";
 import { StatCard } from "@/components/charts/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatCurrency, formatPercent, formatMonth } from "@/lib/utils";
 import type { HolisticClientMarginData } from "@/lib/analytics/types";
 import { DollarSign, TrendingUp, Calculator } from "lucide-react";
 
@@ -12,38 +19,109 @@ interface Props {
 }
 
 export function HolisticMarginSection({ data }: Props) {
-  if (data.clients.length === 0) return null;
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
 
-  const marginChartData = data.clients
-    .slice(0, 20)
-    .map((c) => ({
-      name: c.clientName,
-      marginPercent: c.marginPercent,
-    }));
+  const availableMonths = useMemo(() => {
+    const months = [...new Set(data.clients.map((c) => c.month))].sort();
+    return months;
+  }, [data.clients]);
+
+  const filteredClients = useMemo(() => {
+    if (selectedMonth === "all") {
+      // Aggregate per client across all months
+      const agg = new Map<
+        string,
+        {
+          clientId: string;
+          clientName: string;
+          revenue: number;
+          timeCost: number;
+          meetingCost: number;
+          commCost: number;
+          creatorCount: number;
+        }
+      >();
+      for (const c of data.clients) {
+        const existing = agg.get(c.clientId);
+        if (existing) {
+          existing.revenue += c.revenue;
+          existing.timeCost += c.timeCost;
+          existing.meetingCost += c.meetingCost;
+          existing.commCost += c.commCost;
+          existing.creatorCount = Math.max(existing.creatorCount, c.creatorCount);
+        } else {
+          agg.set(c.clientId, {
+            clientId: c.clientId,
+            clientName: c.clientName,
+            revenue: c.revenue,
+            timeCost: c.timeCost,
+            meetingCost: c.meetingCost,
+            commCost: c.commCost,
+            creatorCount: c.creatorCount,
+          });
+        }
+      }
+      return Array.from(agg.values())
+        .map((c) => {
+          const totalCost = c.timeCost + c.meetingCost + c.commCost;
+          const margin = c.revenue - totalCost;
+          const marginPercent = c.revenue > 0 ? Number(((margin / c.revenue) * 100).toFixed(1)) : 0;
+          return { ...c, month: "all", totalCost, margin, marginPercent };
+        })
+        .filter((r) => r.revenue > 0 || r.totalCost > 0)
+        .sort((a, b) => a.marginPercent - b.marginPercent);
+    }
+    return data.clients
+      .filter((c) => c.month === selectedMonth)
+      .sort((a, b) => a.marginPercent - b.marginPercent);
+  }, [data.clients, selectedMonth]);
+
+  const totalRevenue = filteredClients.reduce((s, r) => s + r.revenue, 0);
+  const totalCost = filteredClients.reduce((s, r) => s + r.totalCost, 0);
+  const totalMargin = totalRevenue - totalCost;
+  const avgMarginPercent = totalRevenue > 0 ? Number(((totalMargin / totalRevenue) * 100).toFixed(1)) : 0;
+
+  if (data.clients.length === 0) return null;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Holistic Client Margin</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Revenue vs comprehensive cost (time + meetings + communications)
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Holistic Client Margin</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            Revenue vs comprehensive cost (time + meetings + communications)
+          </p>
+        </div>
+        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="All months" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All months</SelectItem>
+            {availableMonths.map((m) => (
+              <SelectItem key={m} value={m}>
+                {formatMonth(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Revenue"
-          value={formatCurrency(data.totalRevenue)}
+          value={formatCurrency(totalRevenue)}
+          description={selectedMonth === "all" ? `${availableMonths.length} months` : formatMonth(selectedMonth)}
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Total Holistic Cost"
-          value={formatCurrency(data.totalCost)}
+          value={formatCurrency(totalCost)}
           icon={<Calculator className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Avg Margin"
-          value={formatPercent(data.avgMarginPercent)}
+          value={formatPercent(avgMarginPercent)}
           icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
@@ -74,8 +152,8 @@ export function HolisticMarginSection({ data }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.clients.map((c) => (
-                  <tr key={c.clientId} className="border-b last:border-0">
+                {filteredClients.map((c) => (
+                  <tr key={`${c.clientId}-${c.month}`} className="border-b last:border-0">
                     <td className="py-2 px-3">{c.clientName}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.revenue)}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.timeCost)}</td>
@@ -93,14 +171,14 @@ export function HolisticMarginSection({ data }: Props) {
                 <tr className="border-t bg-muted/50">
                   <td className="py-2 px-3 font-semibold">Total</td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {formatCurrency(data.totalRevenue)}
+                    {formatCurrency(totalRevenue)}
                   </td>
                   <td colSpan={4} />
                   <td className="text-right py-2 px-3 font-semibold">
-                    {formatCurrency(data.totalCost)}
+                    {formatCurrency(totalCost)}
                   </td>
                   <td className="text-right py-2 px-3 font-semibold">
-                    {data.avgMarginPercent}%
+                    {avgMarginPercent}%
                   </td>
                 </tr>
               </tbody>
@@ -108,16 +186,6 @@ export function HolisticMarginSection({ data }: Props) {
           </div>
         </CardContent>
       </Card>
-
-      <BarChartCard
-        title="Holistic Margin by Client"
-        data={marginChartData}
-        xKey="name"
-        yKeys={["marginPercent"]}
-        yLabels={["Margin %"]}
-        horizontal
-        formatY={(v) => `${v}%`}
-      />
     </div>
   );
 }

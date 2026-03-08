@@ -265,6 +265,7 @@ export interface TimesheetClientMarginData {
 export interface HolisticClientMarginRow {
   clientId: string;
   clientName: string;
+  month: string; // YYYY-MM
   revenue: number;
   timeCost: number;
   meetingCost: number;

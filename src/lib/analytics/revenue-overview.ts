@@ -8,6 +8,9 @@ export async function getRevenueOverview(
 ): Promise<RevenueOverview> {
   const monthRange = getMonthRange(months);
 
+  const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
+  const EXCLUDED_ROLES = ["Director", "BDM"];
+
   const [excludedIds, financialsRaw, settings, teamMembers] = await Promise.all([
     getExcludedClientIds(),
     db.financialRecord.findMany({
@@ -17,7 +20,7 @@ export async function getRevenueOverview(
     db.appSettings.findFirst(),
     db.teamMember.findMany({
       where: { active: true },
-      select: { annualSalary: true, hourlyRate: true, weeklyHours: true, costType: true },
+      select: { annualSalary: true, hourlyRate: true, weeklyHours: true, costType: true, division: true, role: true },
     }),
   ]);
 
@@ -25,9 +28,15 @@ export async function getRevenueOverview(
   const gstRate = settings?.gstRate ?? 10;
   const gstDivisor = 1 + gstRate / 100;
 
-  // Calculate monthly team salary cost as overhead
+  // Calculate monthly team salary cost as overhead (billable members only)
+  const billableMembers = teamMembers.filter((m) => {
+    const div = m.division || "Unassigned";
+    const role = m.role || "";
+    return !EXCLUDED_DIVISIONS.includes(div) && !EXCLUDED_ROLES.includes(role);
+  });
+
   let monthlyTeamCost = 0;
-  for (const member of teamMembers) {
+  for (const member of billableMembers) {
     if (member.annualSalary) {
       monthlyTeamCost += member.annualSalary / 12;
     } else if (member.hourlyRate) {

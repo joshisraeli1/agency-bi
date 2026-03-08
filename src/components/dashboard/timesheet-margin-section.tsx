@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { BarChartCard } from "@/components/charts/bar-chart";
 import { ComboChartCard } from "@/components/charts/combo-chart";
 import { StatCard } from "@/components/charts/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,14 +65,6 @@ export function TimesheetMarginSection({ data }: Props) {
   const avgMarginPercent = totalRevenue > 0 ? Number(((totalMargin / totalRevenue) * 100).toFixed(1)) : 0;
 
   if (data.clients.length === 0) return null;
-
-  // Worst 15 clients by margin % for the bar chart
-  const worstMarginData = filteredClients
-    .slice(0, 15)
-    .map((c) => ({
-      name: c.clientName,
-      marginPercent: c.marginPercent,
-    }));
 
   return (
     <div className="space-y-6">
@@ -194,15 +185,6 @@ export function TimesheetMarginSection({ data }: Props) {
         </CardContent>
       </Card>
 
-      <BarChartCard
-        title="Worst Margin Clients (Bottom 15)"
-        data={worstMarginData}
-        xKey="name"
-        yKeys={["marginPercent"]}
-        yLabels={["Margin %"]}
-        horizontal
-        formatY={(v) => `${v}%`}
-      />
     </div>
   );
 }

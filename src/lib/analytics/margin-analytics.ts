@@ -158,8 +158,8 @@ export async function getHolisticClientMargin(
     clients,
     financials,
     timeEntries,
-    meetingSums,
-    commCounts,
+    meetingLogs,
+    commLogs,
     deliverableAssignments,
     teamMembers,
     settings,
@@ -175,7 +175,7 @@ export async function getHolisticClientMargin(
         type: { in: ["retainer", "project"] },
         source: "hubspot",
       },
-      select: { clientId: true, amount: true },
+      select: { clientId: true, amount: true, month: true },
     }),
     db.timeEntry.findMany({
       where: {
@@ -186,6 +186,7 @@ export async function getHolisticClientMargin(
       select: {
         clientId: true,
         hours: true,
+        date: true,
         teamMember: {
           select: {
             costType: true,
@@ -196,15 +197,13 @@ export async function getHolisticClientMargin(
         },
       },
     }),
-    db.meetingLog.groupBy({
-      by: ["clientId"],
+    db.meetingLog.findMany({
       where: { date: { gte: startDate }, clientId: { not: null } },
-      _sum: { duration: true },
+      select: { clientId: true, date: true, duration: true },
     }),
-    db.communicationLog.groupBy({
-      by: ["clientId"],
+    db.communicationLog.findMany({
       where: { date: { gte: startDate } },
-      _count: true,
+      select: { clientId: true, date: true },
     }),
     db.deliverableAssignment.findMany({
       where: {
@@ -245,45 +244,46 @@ export async function getHolisticClientMargin(
   }
   const blendedHourlyRate = rateCount > 0 ? totalRate / rateCount : 50;
 
-  // Revenue per client (ex-GST)
-  const revenueMap = new Map<string, number>();
+  // Revenue per client per month (ex-GST)
+  const revenueByClientMonth = new Map<string, number>();
   for (const f of financials) {
     if (!clientIds.has(f.clientId)) continue;
-    revenueMap.set(
-      f.clientId,
-      (revenueMap.get(f.clientId) || 0) + f.amount / gstDivisor
-    );
+    const key = `${f.clientId}|${f.month}`;
+    revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount / gstDivisor);
   }
 
-  // Time cost per client
-  const timeCostMap = new Map<string, number>();
+  // Time cost per client per month
+  const timeCostByClientMonth = new Map<string, number>();
   for (const e of timeEntries) {
     if (!e.clientId || !clientIds.has(e.clientId)) continue;
+    const month = toMonthKey(e.date);
+    const key = `${e.clientId}|${month}`;
     const rate = e.teamMember ? getEffectiveHourlyRate(e.teamMember) : null;
     if (rate) {
-      timeCostMap.set(
-        e.clientId,
-        (timeCostMap.get(e.clientId) || 0) + e.hours * rate
-      );
+      timeCostByClientMonth.set(key, (timeCostByClientMonth.get(key) || 0) + e.hours * rate);
     }
   }
 
-  // Meeting cost per client (meeting hours × blended rate)
-  const meetingCostMap = new Map<string, number>();
-  for (const m of meetingSums) {
+  // Meeting cost per client per month
+  const meetingCostByClientMonth = new Map<string, number>();
+  for (const m of meetingLogs) {
     if (!m.clientId || !clientIds.has(m.clientId)) continue;
-    const hours = (m._sum.duration || 0) / 60;
-    meetingCostMap.set(m.clientId, hours * blendedHourlyRate);
+    const month = toMonthKey(m.date);
+    const key = `${m.clientId}|${month}`;
+    const hours = (m.duration || 0) / 60;
+    meetingCostByClientMonth.set(key, (meetingCostByClientMonth.get(key) || 0) + hours * blendedHourlyRate);
   }
 
-  // Comms cost per client (count × blended rate × 0.05h per message)
-  const commCostMap = new Map<string, number>();
-  for (const c of commCounts) {
+  // Comms cost per client per month
+  const commCostByClientMonth = new Map<string, number>();
+  for (const c of commLogs) {
     if (!clientIds.has(c.clientId)) continue;
-    commCostMap.set(c.clientId, c._count * blendedHourlyRate * 0.05);
+    const month = toMonthKey(c.date);
+    const key = `${c.clientId}|${month}`;
+    commCostByClientMonth.set(key, (commCostByClientMonth.get(key) || 0) + blendedHourlyRate * 0.05);
   }
 
-  // Creator count per client (distinct teamMemberIds)
+  // Creator count per client (not monthly — stays as total)
   const creatorMap = new Map<string, Set<string>>();
   for (const a of deliverableAssignments) {
     const cId = a.deliverable.clientId;
@@ -292,29 +292,34 @@ export async function getHolisticClientMargin(
     if (a.teamMemberId) creatorMap.get(cId)!.add(a.teamMemberId);
   }
 
+  // Build per-month rows for each client
   const rows = activeClients
-    .map((c) => {
-      const revenue = revenueMap.get(c.id) || 0;
-      const timeCost = timeCostMap.get(c.id) || 0;
-      const meetingCost = meetingCostMap.get(c.id) || 0;
-      const commCost = commCostMap.get(c.id) || 0;
-      const creatorCount = creatorMap.get(c.id)?.size || 0;
-      const totalCost = timeCost + meetingCost + commCost;
-      const margin = revenue - totalCost;
-      const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
-      return {
-        clientId: c.id,
-        clientName: c.name,
-        revenue: Math.round(revenue),
-        timeCost: Math.round(timeCost),
-        meetingCost: Math.round(meetingCost),
-        commCost: Math.round(commCost),
-        creatorCount,
-        totalCost: Math.round(totalCost),
-        margin: Math.round(margin),
-        marginPercent: Number(marginPercent.toFixed(1)),
-      };
-    })
+    .flatMap((c) =>
+      monthRange.map((month) => {
+        const key = `${c.id}|${month}`;
+        const revenue = revenueByClientMonth.get(key) || 0;
+        const timeCost = timeCostByClientMonth.get(key) || 0;
+        const meetingCost = meetingCostByClientMonth.get(key) || 0;
+        const commCost = commCostByClientMonth.get(key) || 0;
+        const creatorCount = creatorMap.get(c.id)?.size || 0;
+        const totalCost = timeCost + meetingCost + commCost;
+        const margin = revenue - totalCost;
+        const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
+        return {
+          clientId: c.id,
+          clientName: c.name,
+          month,
+          revenue: Math.round(revenue),
+          timeCost: Math.round(timeCost),
+          meetingCost: Math.round(meetingCost),
+          commCost: Math.round(commCost),
+          creatorCount,
+          totalCost: Math.round(totalCost),
+          margin: Math.round(margin),
+          marginPercent: Number(marginPercent.toFixed(1)),
+        };
+      })
+    )
     .filter((r) => r.revenue > 0 || r.totalCost > 0)
     .sort((a, b) => a.marginPercent - b.marginPercent);
 

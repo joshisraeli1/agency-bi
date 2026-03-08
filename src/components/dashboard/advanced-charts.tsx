@@ -66,13 +66,6 @@ export function AdvancedCharts({
     clients: c.clients,
   }));
 
-  // Tenure by cohort
-  const tenureCohortData = ltv.tenureByCohort.map((c) => ({
-    name: c.cohort,
-    avgTenure: c.avgTenureMonths,
-    clients: c.clients,
-  }));
-
   // LTV by industry
   const industryLtvData = ltv.byIndustry
     .filter((d) => d.avgLTV > 0)
@@ -201,18 +194,6 @@ export function AdvancedCharts({
           />
         )}
       </div>
-
-      {/* 5. Tenure by Cohort */}
-      {tenureCohortData.length > 0 && (
-        <BarChartCard
-          title="Avg Client Tenure by Start Quarter"
-          data={tenureCohortData}
-          xKey="name"
-          yKeys={["avgTenure"]}
-          yLabels={["Avg Tenure"]}
-          formatY={(v) => `${v}mo`}
-        />
-      )}
 
       {/* 6. New Client Deal Size (FIXED — by startDate, not rolling average) */}
       {dealSizeMonths.length > 0 && (
