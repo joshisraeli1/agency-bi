@@ -61,15 +61,22 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     return EXCLUDED_DIVISIONS.includes(div) || EXCLUDED_ROLES.includes(role);
   }
 
-  // Total revenue: sum of active client retainerValue (monthly)
+  // Total revenue: sum of HubSpot financial records over the period (ex-GST)
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-  const totalRevenue = clients
-    .filter((c) => c.status === "active" && (c.hubspotDealId || c.hubspotCompanyId) && !excludedIds.has(c.id))
-    .reduce((sum, c) => sum + (c.retainerValue || 0), 0);
+  const totalRevenue = filteredFinancials
+    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
+    .reduce((sum, f) => sum + f.amount / gstDivisor, 0);
 
-  const totalCost = filteredFinancials
-    .filter((f) => f.type === "cost")
-    .reduce((sum, f) => sum + f.amount, 0);
+  // Cost: billable team salary cost over the period
+  let monthlyBillableSalaryCost = 0;
+  for (const m of billableMembers) {
+    if (m.annualSalary) {
+      monthlyBillableSalaryCost += m.annualSalary / 12;
+    } else if (m.hourlyRate && m.weeklyHours) {
+      monthlyBillableSalaryCost += m.hourlyRate * m.weeklyHours * 52 / 12;
+    }
+  }
+  const totalCost = monthlyBillableSalaryCost * months;
 
   const avgMargin =
     totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
