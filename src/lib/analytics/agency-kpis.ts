@@ -27,8 +27,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
         select: {
           id: true, name: true, industry: true, status: true,
           hubspotDealId: true, hubspotCompanyId: true, retainerValue: true,
-          contentRetainer: true, smRetainer: true,
-          growthRetainer: true, productionRetainer: true,
+          contentPackageType: true,
         },
       }),
       getExcludedClientIds(),
@@ -260,21 +259,25 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     "Production": "Production",
   };
 
-  // Revenue: sum per-division retainer fields for active HubSpot clients
+  // Revenue: allocate each active HubSpot client's retainerValue to division(s) based on contentPackageType
   const hubspotDivRevenue = new Map<string, number>();
   for (const c of clients) {
     if (c.status !== "active" || !(c.hubspotDealId || c.hubspotCompanyId)) continue;
     if (excludedIds.has(c.id)) continue;
-    const retainers: [number | null | undefined, string][] = [
-      [c.contentRetainer, "Ad Creative"],
-      [c.smRetainer, "Organic Social"],
-      [c.growthRetainer, "Paid Media"],
-      [c.productionRetainer, "Production"],
-    ];
-    for (const [val, divName] of retainers) {
-      if (val && val > 0) {
-        hubspotDivRevenue.set(divName, (hubspotDivRevenue.get(divName) || 0) + val);
-      }
+    const rv = c.retainerValue ?? 0;
+    if (rv <= 0) continue;
+    const pkg = (c.contentPackageType || "").toLowerCase();
+    if (pkg === "social media" || pkg === "social media management") {
+      hubspotDivRevenue.set("Organic Social", (hubspotDivRevenue.get("Organic Social") || 0) + rv);
+    } else if (pkg === "social and ads management") {
+      hubspotDivRevenue.set("Organic Social", (hubspotDivRevenue.get("Organic Social") || 0) + rv * 0.5);
+      hubspotDivRevenue.set("Paid Media", (hubspotDivRevenue.get("Paid Media") || 0) + rv * 0.5);
+    } else if (pkg === "meta ads" || pkg === "ads management") {
+      hubspotDivRevenue.set("Paid Media", (hubspotDivRevenue.get("Paid Media") || 0) + rv);
+    } else {
+      // Content Only, Full Suite, One-off, Content Delivery Paid/Organic,
+      // Content +, Legacy Urban Swan Package, Other, null — all map to Ad Creative
+      hubspotDivRevenue.set("Ad Creative", (hubspotDivRevenue.get("Ad Creative") || 0) + rv);
     }
   }
 

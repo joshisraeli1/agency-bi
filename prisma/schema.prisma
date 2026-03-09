@@ -41,6 +41,7 @@ model Client {
   startDate          DateTime?
   endDate            DateTime?
   serviceType        String?
+  contentPackageType String?
   smRetainer         Float?
   contentRetainer    Float?
   growthRetainer     Float?

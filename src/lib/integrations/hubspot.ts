@@ -16,6 +16,7 @@ interface HubSpotDealProperties {
   closedate: string | null;
   pipeline: string | null;
   hs_object_id: string;
+  content_package_type: string | null;
 }
 
 interface HubSpotCompanyProperties {
@@ -116,7 +117,7 @@ export async function* fetchDeals(
   pipelineId?: string
 ): AsyncGenerator<HubSpotDeal[], void, unknown> {
   let after: string | undefined;
-  const properties = "dealname,amount,amount__excl_gst_,dealstage,closedate,pipeline,hs_object_id";
+  const properties = "dealname,amount,amount__excl_gst_,dealstage,closedate,pipeline,hs_object_id,content_package_type";
 
   do {
     const params: Record<string, string> = {

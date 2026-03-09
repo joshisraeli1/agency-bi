@@ -230,10 +230,7 @@ export async function getRevenueByServiceType(
       where: { hubspotDealId: { not: null } },
       select: {
         id: true,
-        smRetainer: true,
-        contentRetainer: true,
-        growthRetainer: true,
-        productionRetainer: true,
+        contentPackageType: true,
       },
     }),
     db.teamMember.findMany({
@@ -246,12 +243,23 @@ export async function getRevenueByServiceType(
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
   const filtered = financials.filter((f) => !excludedIds.has(f.clientId));
 
-  // Build client service allocation lookup
+  // Build client service allocation lookup based on contentPackageType
+  // Returns proportions for: sm (Organic Social), growth (Paid Media), content (Ad Creative)
   const clientAlloc = new Map<string, { sm: number; growth: number; content: number; total: number }>();
   for (const c of clients) {
-    const sm = c.smRetainer ?? 0;
-    const growth = c.growthRetainer ?? 0;
-    const content = (c.contentRetainer ?? 0) + (c.productionRetainer ?? 0);
+    const pkg = (c.contentPackageType || "").toLowerCase();
+    let sm = 0, growth = 0, content = 0;
+    if (pkg === "social media" || pkg === "social media management") {
+      sm = 1;
+    } else if (pkg === "social and ads management") {
+      sm = 0.5; growth = 0.5;
+    } else if (pkg === "meta ads" || pkg === "ads management") {
+      growth = 1;
+    } else {
+      // Content Only, Full Suite, One-off, Content Delivery Paid/Organic,
+      // Content +, Legacy Urban Swan Package, Other, null → Ad Creative
+      content = 1;
+    }
     const total = sm + growth + content;
     clientAlloc.set(c.id, { sm, growth, content, total });
   }

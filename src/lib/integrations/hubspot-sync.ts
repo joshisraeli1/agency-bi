@@ -95,6 +95,7 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
           : null;
         const retainerAmount = amountExGst ?? amount;
         const dealStage = deal.properties.dealstage;
+        const contentPackageType = deal.properties.content_package_type || null;
 
         if (!dealName) {
           errors.push(`Deal ${dealId}: missing deal name, skipped`);
@@ -118,13 +119,14 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
               hubspotDealId: dealId,
               dealStage: dealStage ?? undefined,
               retainerValue: retainerAmount ?? undefined,
+              contentPackageType: contentPackageType ?? undefined,
               source: "hubspot",
               status: dealStageToStatus(dealStage),
             },
             update: {
               // Only update status/retainerValue if this deal is "closed won"
               ...(dealStageToStatus(dealStage) === "active"
-                ? { retainerValue: retainerAmount ?? undefined, dealStage: dealStage ?? undefined }
+                ? { retainerValue: retainerAmount ?? undefined, dealStage: dealStage ?? undefined, contentPackageType: contentPackageType ?? undefined }
                 : {}),
             },
           });
@@ -137,6 +139,7 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
               hubspotDealId: dealId,
               dealStage: dealStage ?? undefined,
               retainerValue: retainerAmount ?? undefined,
+              contentPackageType: contentPackageType ?? undefined,
               source: "hubspot",
               status: dealStageToStatus(dealStage),
             },
@@ -144,6 +147,7 @@ export class DealsSyncAdapter implements SyncAdapter<HubSpotDeal> {
               name: dealName,
               dealStage: dealStage ?? undefined,
               retainerValue: retainerAmount ?? undefined,
+              contentPackageType: contentPackageType ?? undefined,
             },
           });
         }
