@@ -9,7 +9,7 @@ export async function getClientProfitability(
   const monthRange = getMonthRange(months);
   const startDate = new Date(`${monthRange[0]}-01`);
 
-  const [client, financials, timeEntries, deliverables, slackCount, meetingCount, meetingHoursAgg] = await Promise.all([
+  const [client, financials, timeEntries] = await Promise.all([
     db.client.findUniqueOrThrow({
       where: { id: clientId },
     }),
@@ -25,12 +25,6 @@ export async function getClientProfitability(
         teamMember: true,
       },
     }),
-    db.deliverable.findMany({
-      where: { clientId },
-    }),
-    db.communicationLog.count({ where: { clientId } }),
-    db.meetingLog.count({ where: { clientId } }),
-    db.meetingLog.aggregate({ where: { clientId }, _sum: { duration: true } }),
   ]);
 
   const totalRevenue = financials
@@ -88,17 +82,6 @@ export async function getClientProfitability(
     return { month, revenue: rev, cost, margin: rev - cost };
   });
 
-  // Deliverable stats
-  const byStatus: Record<string, number> = {};
-  let mondayRevisions = 0;
-  for (const d of deliverables) {
-    const status = d.status || "unknown";
-    byStatus[status] = (byStatus[status] || 0) + 1;
-    mondayRevisions += d.revisionCount || 0;
-  }
-
-  const calendarHours = (meetingHoursAgg._sum.duration || 0) / 60;
-
   return {
     clientId: client.id,
     clientName: client.name,
@@ -112,12 +95,5 @@ export async function getClientProfitability(
     effectiveRate: totalHours > 0 ? totalRevenue / totalHours : 0,
     teamBreakdown: Array.from(teamMap.values()),
     monthlyTrend,
-    deliverableStats: { total: deliverables.length, byStatus },
-    overheadIndicators: {
-      slackMessages: slackCount,
-      mondayRevisions,
-      calendarMeetings: meetingCount,
-      calendarHours,
-    },
   };
 }

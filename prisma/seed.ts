@@ -61,14 +61,10 @@ async function main() {
     }
 
     // ── Clean up business data for idempotent re-runs ───────────────
-    await prisma.deliverableAssignment.deleteMany({});
-    await prisma.deliverable.deleteMany({});
     await prisma.clientAssignment.deleteMany({});
     await prisma.timeEntry.deleteMany({});
     await prisma.financialRecord.deleteMany({});
     await prisma.dataImport.deleteMany({});
-    await prisma.communicationLog.deleteMany({});
-    await prisma.meetingLog.deleteMany({});
     await prisma.teamMember.deleteMany({});
     await prisma.client.deleteMany({});
 
@@ -300,84 +296,6 @@ async function main() {
       }
     }
     console.log(`  Created ${entryCount} time entries`);
-
-    // ── Deliverables (20) ───────────────────────────────────────────
-    const delDefs = [
-      // in_progress (5)
-      { name: "VM Dealer Network Video",        ci: 0, status: "in_progress", rev: 0 },
-      { name: "TN Onboarding Tutorial Series",  ci: 2, status: "in_progress", rev: 0 },
-      { name: "FB Recipe Video Series",         ci: 4, status: "in_progress", rev: 0 },
-      { name: "Apex Workout Series — Jan",      ci: 5, status: "in_progress", rev: 0 },
-      { name: "Apex App Promo",                 ci: 5, status: "in_progress", rev: 1 },
-      // review (4)
-      { name: "Bloom Influencer Collab Edit",   ci: 1, status: "review",     rev: 2 },
-      { name: "TN Webinar Opening Sequence",    ci: 2, status: "review",     rev: 1 },
-      { name: "FB Packaging Reveal",            ci: 4, status: "review",     rev: 1 },
-      { name: "Apex Social Ads — Q1",           ci: 5, status: "review",     rev: 3 },
-      // completed (6)
-      { name: "Bloom Instagram Reels — Q4",     ci: 1, status: "completed",  rev: 1 },
-      { name: "TN Annual Report Animation",     ci: 2, status: "completed",  rev: 1 },
-      { name: "CR Virtual Tour Template",       ci: 3, status: "completed",  rev: 2 },
-      { name: "Apex Trainer Intro Videos",      ci: 5, status: "completed",  rev: 2 },
-      { name: "WT Destination Montage",         ci: 6, status: "completed",  rev: 2 },
-      { name: "WT Booking Platform Video",      ci: 6, status: "completed",  rev: 1 },
-      // delivered (5)
-      { name: "VM Brand Sizzle Reel",           ci: 0, status: "delivered",  rev: 2 },
-      { name: "VM Monthly Social Pack — Oct",   ci: 0, status: "delivered",  rev: 1 },
-      { name: "Bloom Product Launch Video",     ci: 1, status: "delivered",  rev: 3 },
-      { name: "TN SaaS Demo Video",             ci: 2, status: "delivered",  rev: 4 },
-      { name: "CR Property Showcase — Nov",     ci: 3, status: "delivered",  rev: 1 },
-    ];
-
-    const deliverables = [];
-    for (let di = 0; di < delDefs.length; di++) {
-      const dd = delDefs[di];
-      const dueDate = new Date("2025-09-15");
-      dueDate.setDate(dueDate.getDate() + ((di * 11) % 170));
-
-      deliverables.push(
-        await prisma.deliverable.create({
-          data: {
-            clientId: clients[dd.ci].id,
-            name: dd.name,
-            status: dd.status,
-            revisionCount: dd.rev,
-            dueDate,
-            completedDate: ["completed", "delivered"].includes(dd.status)
-              ? new Date(dueDate.getTime() - 2 * 86400000)
-              : null,
-            source: "manual",
-          },
-        })
-      );
-    }
-    console.log(`  Created ${deliverables.length} deliverables`);
-
-    // ── Deliverable assignments (1–3 per deliverable) ───────────────
-    const daRoles = ["editor", "animator", "designer", "reviewer"];
-    const cpIndices = [0, 1, 2, 3, 6, 7, 8, 9]; // creative + production members
-    let daCount = 0;
-
-    for (let di = 0; di < deliverables.length; di++) {
-      const numAssign = 1 + (di % 3); // cycles 1, 2, 3
-      const used = new Set<number>();
-
-      for (let ai = 0; ai < numAssign; ai++) {
-        const idx = cpIndices[(di * 3 + ai * 5) % cpIndices.length];
-        if (used.has(idx)) continue;
-        used.add(idx);
-
-        await prisma.deliverableAssignment.create({
-          data: {
-            deliverableId: deliverables[di].id,
-            teamMemberId: members[idx].id,
-            role: daRoles[(di + ai) % daRoles.length],
-          },
-        });
-        daCount++;
-      }
-    }
-    console.log(`  Created ${daCount} deliverable assignments`);
 
     // ── Data imports (2 completed) ──────────────────────────────────
     const now = new Date();

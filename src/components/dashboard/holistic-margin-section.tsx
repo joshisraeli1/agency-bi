@@ -36,9 +36,6 @@ export function HolisticMarginSection({ data }: Props) {
           clientName: string;
           revenue: number;
           timeCost: number;
-          meetingCost: number;
-          commCost: number;
-          creatorCount: number;
         }
       >();
       for (const c of data.clients) {
@@ -46,24 +43,18 @@ export function HolisticMarginSection({ data }: Props) {
         if (existing) {
           existing.revenue += c.revenue;
           existing.timeCost += c.timeCost;
-          existing.meetingCost += c.meetingCost;
-          existing.commCost += c.commCost;
-          existing.creatorCount = Math.max(existing.creatorCount, c.creatorCount);
         } else {
           agg.set(c.clientId, {
             clientId: c.clientId,
             clientName: c.clientName,
             revenue: c.revenue,
             timeCost: c.timeCost,
-            meetingCost: c.meetingCost,
-            commCost: c.commCost,
-            creatorCount: c.creatorCount,
           });
         }
       }
       return Array.from(agg.values())
         .map((c) => {
-          const totalCost = c.timeCost + c.meetingCost + c.commCost;
+          const totalCost = c.timeCost;
           const margin = c.revenue - totalCost;
           const marginPercent = c.revenue > 0 ? Number(((margin / c.revenue) * 100).toFixed(1)) : 0;
           return { ...c, month: "all", totalCost, margin, marginPercent };
@@ -89,7 +80,7 @@ export function HolisticMarginSection({ data }: Props) {
         <div>
           <h2 className="text-xl font-semibold">Holistic Client Margin</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Revenue vs comprehensive cost (time + meetings + communications)
+            Revenue vs time-based cost per client
           </p>
         </div>
         <Select value={selectedMonth} onValueChange={setSelectedMonth}>
@@ -115,7 +106,7 @@ export function HolisticMarginSection({ data }: Props) {
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
-          title="Total Holistic Cost"
+          title="Total Cost"
           value={formatCurrency(totalCost)}
           icon={<Calculator className="h-4 w-4 text-muted-foreground" />}
         />
@@ -134,7 +125,7 @@ export function HolisticMarginSection({ data }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Holistic Cost Breakdown</CardTitle>
+          <CardTitle className="text-base">Cost Breakdown</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -144,9 +135,6 @@ export function HolisticMarginSection({ data }: Props) {
                   <th className="text-left py-2 px-3 font-medium">Client</th>
                   <th className="text-right py-2 px-3 font-medium">Revenue</th>
                   <th className="text-right py-2 px-3 font-medium">Time Cost</th>
-                  <th className="text-right py-2 px-3 font-medium">Meeting Cost</th>
-                  <th className="text-right py-2 px-3 font-medium">Comm Cost</th>
-                  <th className="text-right py-2 px-3 font-medium">Creators</th>
                   <th className="text-right py-2 px-3 font-medium">Total Cost</th>
                   <th className="text-right py-2 px-3 font-medium">Margin %</th>
                 </tr>
@@ -157,9 +145,6 @@ export function HolisticMarginSection({ data }: Props) {
                     <td className="py-2 px-3">{c.clientName}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.revenue)}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.timeCost)}</td>
-                    <td className="text-right py-2 px-3">{formatCurrency(c.meetingCost)}</td>
-                    <td className="text-right py-2 px-3">{formatCurrency(c.commCost)}</td>
-                    <td className="text-right py-2 px-3">{c.creatorCount}</td>
                     <td className="text-right py-2 px-3">{formatCurrency(c.totalCost)}</td>
                     <td
                       className={`text-right py-2 px-3 font-medium ${c.marginPercent < 0 ? "text-red-600" : ""}`}
@@ -173,7 +158,7 @@ export function HolisticMarginSection({ data }: Props) {
                   <td className="text-right py-2 px-3 font-semibold">
                     {formatCurrency(totalRevenue)}
                   </td>
-                  <td colSpan={4} />
+                  <td colSpan={1} />
                   <td className="text-right py-2 px-3 font-semibold">
                     {formatCurrency(totalCost)}
                   </td>

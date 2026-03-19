@@ -25,7 +25,7 @@ export async function getSystemPrompt(): Promise<string> {
 - All revenue figures are ex-GST (exclusive of Goods & Services Tax).
 - HubSpot is the single source of truth for client revenue and profitability.
 - Client counts reflect only HubSpot-linked clients (excludes Monday-only duplicates).
-- Operational data (time tracking, creatives, campaigns, Slack, Calendar) comes from Monday.com and other integrations.
+- Operational data (time tracking) comes from Monday.com.
 
 ## Available Data
 You have access to tools that can query:
@@ -33,7 +33,6 @@ You have access to tools that can query:
 - **Financial Records**: monthly revenue (retainer/project) ex-GST from HubSpot, costs, hours by client
 - **Time Entries**: individual time logs by team member and client
 - **Team Members**: names, roles, divisions, rates, employment types
-- **Deliverables**: creative assets with statuses, revisions, assignments
 - **Analytics**: pre-computed profitability, utilization, revenue, and KPI analyses
 
 ## Guidelines

@@ -1,7 +1,5 @@
 import { Suspense } from "react";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
-import { getCommunicationOverview } from "@/lib/analytics/communication-overhead";
-import { getMeetingOverview } from "@/lib/analytics/meeting-overhead";
 import {
   getLTVData,
   getRevenueByServiceType,
@@ -16,7 +14,6 @@ import {
   getTimesheetClientMargin,
   getHolisticClientMargin,
   getMonthlyChurn,
-  getRevenuePerAsset,
 } from "@/lib/analytics/margin-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
@@ -24,14 +21,11 @@ import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-section";
-import { RevenuePerAssetSection } from "@/components/dashboard/revenue-per-asset-section";
 import { HolisticMarginSection } from "@/components/dashboard/holistic-margin-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
-import { CommunicationCharts } from "@/components/charts/communication-charts";
-import { MeetingCharts } from "@/components/charts/meeting-charts";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Target, TrendingUp, DollarSign, Users, Building, UserCheck, MessageSquare, CalendarDays, Clock } from "lucide-react";
+import { Target, TrendingUp, DollarSign, Building, UserCheck } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -42,8 +36,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
   const months = parseInt(monthsParam || "6", 10);
   const [
     data,
-    comms,
-    meetings,
     ltv,
     revenueByType,
     clientHealth,
@@ -55,11 +47,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     timesheetMargin,
     holisticMargin,
     monthlyChurn,
-    revenuePerAsset,
   ] = await Promise.all([
     getAgencyKPIs(months),
-    getCommunicationOverview(months),
-    getMeetingOverview(months),
     getLTVData(),
     getRevenueByServiceType(months),
     getClientHealthData(months),
@@ -71,7 +60,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getTimesheetClientMargin(months),
     getHolisticClientMargin(months),
     getMonthlyChurn(12),
-    getRevenuePerAsset(),
   ]);
 
   return (
@@ -131,19 +119,16 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       {/* 3. Timesheet-Based Client Margin */}
       <TimesheetMarginSection data={timesheetMargin} />
 
-      {/* 4. Revenue Per Deliverable */}
-      <RevenuePerAssetSection data={revenuePerAsset} />
-
-      {/* 5. Holistic Client Margin */}
+      {/* 4. Holistic Client Margin */}
       <HolisticMarginSection data={holisticMargin} />
 
-      {/* 6. Monthly Churn Rate */}
+      {/* 5. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
 
-      {/* 7. KPI Charts (pushed down — Utilization & Margin Trend, Hours by Division) */}
+      {/* 6. KPI Charts (Utilization & Margin Trend, Hours by Division) */}
       <KpiCharts data={data} />
 
-      {/* 8. Advanced Charts */}
+      {/* 7. Advanced Charts */}
       <AdvancedCharts
         ltv={ltv}
         revenueByType={revenueByType}
@@ -154,7 +139,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         newClientDealSize={newClientDealSize}
       />
 
-      {/* 9. HubSpot vs Xero Reconciliation */}
+      {/* 8. HubSpot vs Xero Reconciliation */}
       {(discrepancy.totalHubspot > 0 || discrepancy.totalXero > 0) && (
         <>
           <div>
@@ -164,69 +149,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
             </p>
           </div>
           <DiscrepancyTable data={discrepancy} />
-        </>
-      )}
-
-      {/* 10. Communication Overhead */}
-      {comms.totalMessages > 0 && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">Communication Overhead</h2>
-            <p className="text-muted-foreground text-sm mt-1">Slack message analytics</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard
-              title="Total Messages"
-              value={String(comms.totalMessages)}
-              icon={<MessageSquare className="h-4 w-4 text-muted-foreground" />}
-            />
-            <StatCard
-              title="Clients Contacted"
-              value={String(comms.totalClients)}
-              description={`${comms.unattributedCount} unattributed`}
-              icon={<Users className="h-4 w-4 text-muted-foreground" />}
-            />
-            <StatCard
-              title="Avg Messages / Client"
-              value={comms.avgMessagesPerClient.toFixed(1)}
-              icon={<MessageSquare className="h-4 w-4 text-muted-foreground" />}
-            />
-          </div>
-
-          <CommunicationCharts data={comms} />
-        </>
-      )}
-
-      {/* 11. Meeting Overhead */}
-      {meetings.totalMeetings > 0 && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">Meeting Overhead</h2>
-            <p className="text-muted-foreground text-sm mt-1">Google Calendar meeting analytics</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard
-              title="Total Meetings"
-              value={String(meetings.totalMeetings)}
-              icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
-            />
-            <StatCard
-              title="Meeting Hours"
-              value={`${meetings.totalHours}h`}
-              description={`${meetings.unattributedCount} unattributed`}
-              icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-            />
-            <StatCard
-              title="Avg Duration"
-              value={`${meetings.avgDuration} min`}
-              description={`${meetings.totalClients} clients`}
-              icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
-            />
-          </div>
-
-          <MeetingCharts data={meetings} />
         </>
       )}
     </div>

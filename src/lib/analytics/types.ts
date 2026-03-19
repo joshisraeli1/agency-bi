@@ -21,16 +21,6 @@ export interface ClientProfitability {
     cost: number;
     margin: number;
   }[];
-  deliverableStats: {
-    total: number;
-    byStatus: Record<string, number>;
-  };
-  overheadIndicators: {
-    slackMessages: number;
-    mondayRevisions: number;
-    calendarMeetings: number;
-    calendarHours: number;
-  };
 }
 
 export interface TeamMemberUtilization {
@@ -147,23 +137,6 @@ export interface DivisionProfitabilityRow {
   marginPercent: number;
 }
 
-export interface ClientEfficiencyRecord {
-  clientId: string;
-  clientName: string;
-  totalRevenue: number;
-  deliverableCount: number;
-  totalRevisions: number;
-  meetingHours: number;
-  slackMessages: number;
-  revenuePerDeliverable: number;
-  revenuePerEdit: number;
-}
-
-export interface ClientEfficiencyData {
-  topEfficient: ClientEfficiencyRecord[];
-  bottomEfficient: ClientEfficiencyRecord[];
-}
-
 export interface XeroMarginTrend {
   monthlyData: {
     month: string;
@@ -194,43 +167,6 @@ export interface NewClientDealSizeData {
     avgDealSize: number;
     clientCount: number;
   }[];
-}
-
-export interface CommunicationOverview {
-  totalMessages: number;
-  totalClients: number;
-  avgMessagesPerClient: number;
-  topClients: {
-    clientId: string;
-    clientName: string;
-    messageCount: number;
-    latestDate: Date;
-  }[];
-  monthlyTrend: {
-    month: string;
-    count: number;
-  }[];
-  unattributedCount: number;
-}
-
-export interface MeetingOverview {
-  totalMeetings: number;
-  totalHours: number;
-  totalClients: number;
-  avgMeetingsPerClient: number;
-  avgDuration: number; // minutes
-  topClients: {
-    clientId: string;
-    clientName: string;
-    meetingCount: number;
-    totalHours: number;
-  }[];
-  monthlyTrend: {
-    month: string;
-    count: number;
-    hours: number;
-  }[];
-  unattributedCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,9 +204,6 @@ export interface HolisticClientMarginRow {
   month: string; // YYYY-MM
   revenue: number;
   timeCost: number;
-  meetingCost: number;
-  commCost: number;
-  creatorCount: number;
   totalCost: number;
   margin: number;
   marginPercent: number;
@@ -296,19 +229,4 @@ export interface MonthlyChurnData {
   months: MonthlyChurnRow[];
   avgChurnPercent: number;
   totalChurned: number;
-}
-
-export interface RevenuePerAssetRow {
-  clientId: string;
-  clientName: string;
-  revenue: number;
-  deliverableCount: number;
-  revenuePerDeliverable: number;
-}
-
-export interface RevenuePerAssetData {
-  clients: RevenuePerAssetRow[];
-  totalRevenue: number;
-  totalDeliverables: number;
-  avgRevenuePerDeliverable: number;
 }

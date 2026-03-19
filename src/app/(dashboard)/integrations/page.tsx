@@ -7,7 +7,7 @@ const integrationMeta: Record<
 > = {
   monday: {
     name: "Monday.com",
-    description: "Time tracking, deliverables, and project management",
+    description: "Time tracking, clients, and project management",
     configUrl: "/integrations/monday",
   },
   hubspot: {
@@ -24,21 +24,6 @@ const integrationMeta: Record<
     name: "Xero",
     description: "Invoices, expenses, and financial data",
     configUrl: "/integrations/xero",
-  },
-  slack: {
-    name: "Slack",
-    description: "Client communication logs and team activity",
-    configUrl: "/integrations/slack",
-  },
-  gmail: {
-    name: "Gmail",
-    description: "Client email communication tracking",
-    configUrl: "/integrations/gmail",
-  },
-  calendar: {
-    name: "Google Calendar",
-    description: "Meeting logs and client meeting tracking",
-    configUrl: "/integrations/calendar",
   },
 };
 

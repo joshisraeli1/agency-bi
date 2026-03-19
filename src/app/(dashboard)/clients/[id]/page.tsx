@@ -10,7 +10,7 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, DollarSign, Clock, TrendingUp, Users, MessageSquare, CalendarDays, LayoutList } from "lucide-react";
+import { ArrowLeft, DollarSign, Clock, TrendingUp, Users } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -28,8 +28,6 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
   } catch {
     notFound();
   }
-
-  const oh = data.overheadIndicators;
 
   return (
     <div className="space-y-6">
@@ -75,7 +73,6 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
         <StatCard
           title="Team Members"
           value={String(data.teamBreakdown.length)}
-          description={`${data.deliverableStats.total} deliverables`}
           icon={<Users className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
@@ -101,46 +98,6 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
                   </span>
                 </div>
               ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {(oh.slackMessages > 0 || oh.mondayRevisions > 0 || oh.calendarMeetings > 0) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Overhead Indicators</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  Slack Messages
-                </div>
-                <div className="text-2xl font-bold">{oh.slackMessages}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <LayoutList className="h-3.5 w-3.5" />
-                  Creative Revisions
-                </div>
-                <div className="text-2xl font-bold">{oh.mondayRevisions}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  Meetings
-                </div>
-                <div className="text-2xl font-bold">{oh.calendarMeetings}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  Meeting Hours
-                </div>
-                <div className="text-2xl font-bold">{oh.calendarHours.toFixed(1)}h</div>
-              </div>
             </div>
           </CardContent>
         </Card>

@@ -2,7 +2,6 @@
 
 import { LineChartCard } from "@/components/charts/line-chart";
 import { BarChartCard } from "@/components/charts/bar-chart";
-import { PieChartCard } from "@/components/charts/pie-chart";
 import { formatMonth, formatCurrency } from "@/lib/utils";
 import type { ClientProfitability } from "@/lib/analytics/types";
 
@@ -21,10 +20,6 @@ export function ClientProfitabilityCharts({ data }: Props) {
     hours: Number(t.hours.toFixed(1)),
     cost: Number(t.cost.toFixed(0)),
   }));
-
-  const statusData = Object.entries(data.deliverableStats.byStatus).map(
-    ([name, value]) => ({ name, value })
-  );
 
   const fmtCurrency = (v: number) => formatCurrency(v);
 
@@ -47,12 +42,6 @@ export function ClientProfitabilityCharts({ data }: Props) {
         horizontal
         formatY={(v) => `${v}h`}
       />
-      {statusData.length > 0 && (
-        <PieChartCard
-          title="Deliverables by Status"
-          data={statusData}
-        />
-      )}
     </div>
   );
 }

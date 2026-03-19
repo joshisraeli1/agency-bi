@@ -16,7 +16,7 @@ import XLSX from "xlsx";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const FILE = "/Users/joshuaisraeli/Downloads/The_Urban_Swan_Pty_Ltd_-_Profit_and_Loss.xlsx";
+const FILE = "/Users/joshuaisraeli/Downloads/The_Urban_Swan_Pty_Ltd_-_Profit_and_Loss (1).xlsx";
 
 function createDb(): PrismaClient {
   const url = process.env.DATABASE_URL!;

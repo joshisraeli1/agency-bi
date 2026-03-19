@@ -53,10 +53,7 @@ model Client {
   divisions         Division[]
   financialRecords  FinancialRecord[]
   timeEntries       TimeEntry[]
-  deliverables      Deliverable[]
   clientAssignments ClientAssignment[]
-  communicationLogs CommunicationLog[]
-  meetingLogs       MeetingLog[]
 }
 
 model ClientAlias {
@@ -138,14 +135,12 @@ model TeamMember {
   weeklyHours    Float?
   mondayUserId   String?  @unique
   sheetsRowIndex Int?
-  slackUserId    String?  @unique
   source         String // monday | sheets | manual
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   timeEntries            TimeEntry[]
-  deliverableAssignments DeliverableAssignment[]
   clientAssignments      ClientAssignment[]
 }
 
@@ -189,38 +184,6 @@ model TimeEntry {
   @@unique([mondayItemId, teamMemberId, date])
 }
 
-model Deliverable {
-  id            String    @id @default(cuid())
-  clientId      String?
-  name          String
-  editCode      String?
-  status        String?
-  dueDate       DateTime?
-  completedDate DateTime?
-  revisionCount Int       @default(0)
-  mondayItemId  String?   @unique
-  mondayBoardId String?
-  source        String // monday | manual
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  client      Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  assignments DeliverableAssignment[]
-}
-
-model DeliverableAssignment {
-  id            String   @id @default(cuid())
-  deliverableId String
-  teamMemberId  String?
-  role          String // editor | animator | designer | reviewer
-  assignedAt    DateTime @default(now())
-
-  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
-  teamMember  TeamMember? @relation(fields: [teamMemberId], references: [id], onDelete: SetNull)
-
-  @@unique([deliverableId, teamMemberId, role])
-}
-
 model ClientAssignment {
   id           String    @id @default(cuid())
   clientId     String
@@ -235,46 +198,6 @@ model ClientAssignment {
   teamMember TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, teamMemberId, role])
-}
-
-model CommunicationLog {
-  id         String   @id @default(cuid())
-  clientId   String
-  type       String // email | slack | call | meeting
-  subject    String?
-  summary    String?
-  date       DateTime
-  source     String // gmail | slack | manual
-  externalId String?
-  createdAt  DateTime @default(now())
-
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-}
-
-model MeetingLog {
-  id         String   @id @default(cuid())
-  clientId   String?
-  title      String
-  date       DateTime
-  duration   Int? // minutes
-  summary    String?
-  source     String // calendar | manual
-  externalId String?
-  createdAt  DateTime @default(now())
-
-  client    Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  attendees MeetingAttendee[]
-}
-
-model MeetingAttendee {
-  id        String  @id @default(cuid())
-  meetingId String
-  email     String
-  name      String?
-
-  meeting MeetingLog @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-
-  @@unique([meetingId, email])
 }
 
 model DataImport {

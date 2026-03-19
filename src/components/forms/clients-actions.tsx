@@ -44,7 +44,7 @@ interface Client {
   notes: string | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
-  _count: { timeEntries: number; deliverables: number; aliases: number };
+  _count: { timeEntries: number; aliases: number };
 }
 
 function formatTenure(startDate: Date | string | null, endDate: Date | string | null, status: string): string {
@@ -172,7 +172,6 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                   <TableHead>Retainer</TableHead>
                   <TableHead>Industry</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
-                  <TableHead className="text-right">Deliverables</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -212,9 +211,6 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                     </TableCell>
                     <TableCell className="text-right">
                       {client._count.timeEntries}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {client._count.deliverables}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -273,7 +269,7 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
             <DialogTitle>Delete Client</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete &quot;{deleteClient?.name}&quot;? This will also
-              delete all related financial records, time entries, and deliverables.
+              delete all related financial records and time entries.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

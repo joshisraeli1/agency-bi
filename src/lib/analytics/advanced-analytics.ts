@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, getEffectiveHourlyRate } from "@/lib/utils";
+import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import type { ClientEfficiencyData, XeroMarginTrend, NewClientDealSizeData } from "./types";
+import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
   clients: {
@@ -627,99 +627,6 @@ export async function getSourceDiscrepancy(
     totalDifference: Math.round(totalHubspot - totalXero),
     byClient,
     summary: { matched, hubspotOnly, xeroOnly, mismatched },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Client Efficiency — bulk query for all active clients
-// ---------------------------------------------------------------------------
-
-export async function getClientEfficiency(): Promise<ClientEfficiencyData> {
-  const [clients, financials, deliverables, commCounts, meetingSums, excludedIds] =
-    await Promise.all([
-      db.client.findMany({
-        where: { status: "active", hubspotDealId: { not: null } },
-        select: { id: true, name: true },
-      }),
-      db.financialRecord.findMany({
-        where: { type: { in: ["retainer", "project"] } },
-        select: { clientId: true, amount: true },
-      }),
-      db.deliverable.findMany({
-        select: { clientId: true, revisionCount: true },
-      }),
-      db.communicationLog.groupBy({
-        by: ["clientId"],
-        _count: true,
-      }),
-      db.meetingLog.groupBy({
-        by: ["clientId"],
-        _sum: { duration: true },
-      }),
-      getExcludedClientIds(),
-    ]);
-
-  const activeClients = clients.filter((c) => !excludedIds.has(c.id));
-  const clientIds = new Set(activeClients.map((c) => c.id));
-
-  // Revenue per client
-  const revenueMap = new Map<string, number>();
-  for (const f of financials) {
-    if (!clientIds.has(f.clientId)) continue;
-    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
-  }
-
-  // Deliverables + revisions per client
-  const deliverableCountMap = new Map<string, number>();
-  const revisionCountMap = new Map<string, number>();
-  for (const d of deliverables) {
-    if (!d.clientId || !clientIds.has(d.clientId)) continue;
-    deliverableCountMap.set(d.clientId, (deliverableCountMap.get(d.clientId) || 0) + 1);
-    revisionCountMap.set(d.clientId, (revisionCountMap.get(d.clientId) || 0) + d.revisionCount);
-  }
-
-  // Slack messages per client
-  const slackMap = new Map<string, number>();
-  for (const c of commCounts) {
-    slackMap.set(c.clientId, c._count);
-  }
-
-  // Meeting hours per client
-  const meetingMap = new Map<string, number>();
-  for (const m of meetingSums) {
-    if (m.clientId) {
-      meetingMap.set(m.clientId, (m._sum.duration || 0) / 60);
-    }
-  }
-
-  const records = activeClients
-    .map((c) => {
-      const totalRevenue = revenueMap.get(c.id) || 0;
-      const deliverableCount = deliverableCountMap.get(c.id) || 0;
-      const totalRevisions = revisionCountMap.get(c.id) || 0;
-      const meetingHours = meetingMap.get(c.id) || 0;
-      const slackMessages = slackMap.get(c.id) || 0;
-      return {
-        clientId: c.id,
-        clientName: c.name,
-        totalRevenue: Math.round(totalRevenue),
-        deliverableCount,
-        totalRevisions,
-        meetingHours: Number(meetingHours.toFixed(1)),
-        slackMessages,
-        revenuePerDeliverable: deliverableCount > 0 ? Math.round(totalRevenue / deliverableCount) : 0,
-        revenuePerEdit: totalRevisions > 0 ? Math.round(totalRevenue / totalRevisions) : 0,
-      };
-    })
-    .filter((r) => r.deliverableCount > 0);
-
-  const sortedByDeliverable = [...records].sort(
-    (a, b) => b.revenuePerDeliverable - a.revenuePerDeliverable
-  );
-
-  return {
-    topEfficient: sortedByDeliverable.slice(0, 10),
-    bottomEfficient: sortedByDeliverable.slice(-10).reverse(),
   };
 }
 

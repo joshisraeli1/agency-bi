@@ -11,7 +11,7 @@ export async function GET() {
     orderBy: { name: "asc" },
     include: {
       _count: {
-        select: { timeEntries: true, deliverableAssignments: true },
+        select: { timeEntries: true },
       },
     },
   });

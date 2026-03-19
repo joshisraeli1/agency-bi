@@ -18,24 +18,6 @@ export async function POST() {
     // Delete in dependency order (children first)
     const results: Record<string, number> = {};
 
-    // Meeting attendees → meeting logs
-    const { count: attendees } = await db.meetingAttendee.deleteMany({});
-    results.meetingAttendees = attendees;
-
-    const { count: meetings } = await db.meetingLog.deleteMany({});
-    results.meetingLogs = meetings;
-
-    // Communication logs
-    const { count: comms } = await db.communicationLog.deleteMany({});
-    results.communicationLogs = comms;
-
-    // Deliverable assignments → deliverables
-    const { count: delAssign } = await db.deliverableAssignment.deleteMany({});
-    results.deliverableAssignments = delAssign;
-
-    const { count: deliverables } = await db.deliverable.deleteMany({});
-    results.deliverables = deliverables;
-
     // Client assignments
     const { count: clientAssign } = await db.clientAssignment.deleteMany({});
     results.clientAssignments = clientAssign;

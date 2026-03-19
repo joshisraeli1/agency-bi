@@ -5,7 +5,6 @@ import type {
   TimesheetClientMarginData,
   HolisticClientMarginData,
   MonthlyChurnData,
-  RevenuePerAssetData,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -144,7 +143,7 @@ export async function getTimesheetClientMargin(
 }
 
 // ---------------------------------------------------------------------------
-// Holistic Client Margin — time + meetings + comms + creators
+// Holistic Client Margin — time-based cost only (simplified)
 // ---------------------------------------------------------------------------
 
 export async function getHolisticClientMargin(
@@ -158,9 +157,6 @@ export async function getHolisticClientMargin(
     clients,
     financials,
     timeEntries,
-    meetingLogs,
-    commLogs,
-    deliverableAssignments,
     teamMembers,
     settings,
   ] = await Promise.all([
@@ -195,25 +191,6 @@ export async function getHolisticClientMargin(
             weeklyHours: true,
           },
         },
-      },
-    }),
-    db.meetingLog.findMany({
-      where: { date: { gte: startDate }, clientId: { not: null } },
-      select: { clientId: true, date: true, duration: true },
-    }),
-    db.communicationLog.findMany({
-      where: { date: { gte: startDate } },
-      select: { clientId: true, date: true },
-    }),
-    db.deliverableAssignment.findMany({
-      where: {
-        deliverable: {
-          client: { status: "active", hubspotDealId: { not: null } },
-        },
-      },
-      select: {
-        teamMemberId: true,
-        deliverable: { select: { clientId: true } },
       },
     }),
     db.teamMember.findMany({
@@ -264,34 +241,6 @@ export async function getHolisticClientMargin(
     }
   }
 
-  // Meeting cost per client per month
-  const meetingCostByClientMonth = new Map<string, number>();
-  for (const m of meetingLogs) {
-    if (!m.clientId || !clientIds.has(m.clientId)) continue;
-    const month = toMonthKey(m.date);
-    const key = `${m.clientId}|${month}`;
-    const hours = (m.duration || 0) / 60;
-    meetingCostByClientMonth.set(key, (meetingCostByClientMonth.get(key) || 0) + hours * blendedHourlyRate);
-  }
-
-  // Comms cost per client per month
-  const commCostByClientMonth = new Map<string, number>();
-  for (const c of commLogs) {
-    if (!clientIds.has(c.clientId)) continue;
-    const month = toMonthKey(c.date);
-    const key = `${c.clientId}|${month}`;
-    commCostByClientMonth.set(key, (commCostByClientMonth.get(key) || 0) + blendedHourlyRate * 0.05);
-  }
-
-  // Creator count per client (not monthly — stays as total)
-  const creatorMap = new Map<string, Set<string>>();
-  for (const a of deliverableAssignments) {
-    const cId = a.deliverable.clientId;
-    if (!cId || !clientIds.has(cId)) continue;
-    if (!creatorMap.has(cId)) creatorMap.set(cId, new Set());
-    if (a.teamMemberId) creatorMap.get(cId)!.add(a.teamMemberId);
-  }
-
   // Build per-month rows for each client
   const rows = activeClients
     .flatMap((c) =>
@@ -299,10 +248,7 @@ export async function getHolisticClientMargin(
         const key = `${c.id}|${month}`;
         const revenue = revenueByClientMonth.get(key) || 0;
         const timeCost = timeCostByClientMonth.get(key) || 0;
-        const meetingCost = meetingCostByClientMonth.get(key) || 0;
-        const commCost = commCostByClientMonth.get(key) || 0;
-        const creatorCount = creatorMap.get(c.id)?.size || 0;
-        const totalCost = timeCost + meetingCost + commCost;
+        const totalCost = timeCost;
         const margin = revenue - totalCost;
         const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
         return {
@@ -311,9 +257,6 @@ export async function getHolisticClientMargin(
           month,
           revenue: Math.round(revenue),
           timeCost: Math.round(timeCost),
-          meetingCost: Math.round(meetingCost),
-          commCost: Math.round(commCost),
-          creatorCount,
           totalCost: Math.round(totalCost),
           margin: Math.round(margin),
           marginPercent: Number(marginPercent.toFixed(1)),
@@ -424,72 +367,4 @@ export async function getMonthlyChurn(
   const totalChurned = rows.reduce((s, r) => s + r.churned, 0);
 
   return { months: rows, avgChurnPercent, totalChurned };
-}
-
-// ---------------------------------------------------------------------------
-// Revenue Per Asset (Deliverable) — all active clients
-// ---------------------------------------------------------------------------
-
-export async function getRevenuePerAsset(): Promise<RevenuePerAssetData> {
-  const [excludedIds, clients, financials, deliverables] = await Promise.all([
-    getExcludedClientIds(),
-    db.client.findMany({
-      where: { status: "active", hubspotDealId: { not: null } },
-      select: { id: true, name: true },
-    }),
-    db.financialRecord.findMany({
-      where: { type: { in: ["retainer", "project"] } },
-      select: { clientId: true, amount: true },
-    }),
-    db.deliverable.findMany({
-      select: { clientId: true },
-    }),
-  ]);
-
-  const activeClients = clients.filter((c) => !excludedIds.has(c.id));
-  const clientIds = new Set(activeClients.map((c) => c.id));
-
-  // Revenue per client
-  const revenueMap = new Map<string, number>();
-  for (const f of financials) {
-    if (!clientIds.has(f.clientId)) continue;
-    revenueMap.set(
-      f.clientId,
-      (revenueMap.get(f.clientId) || 0) + f.amount
-    );
-  }
-
-  // Deliverable count per client
-  const deliverableCountMap = new Map<string, number>();
-  for (const d of deliverables) {
-    if (!d.clientId || !clientIds.has(d.clientId)) continue;
-    deliverableCountMap.set(
-      d.clientId,
-      (deliverableCountMap.get(d.clientId) || 0) + 1
-    );
-  }
-
-  const rows = activeClients
-    .map((c) => {
-      const revenue = revenueMap.get(c.id) || 0;
-      const deliverableCount = deliverableCountMap.get(c.id) || 0;
-      const revenuePerDeliverable =
-        deliverableCount > 0 ? Math.round(revenue / deliverableCount) : 0;
-      return {
-        clientId: c.id,
-        clientName: c.name,
-        revenue: Math.round(revenue),
-        deliverableCount,
-        revenuePerDeliverable,
-      };
-    })
-    .filter((r) => r.deliverableCount > 0)
-    .sort((a, b) => b.revenuePerDeliverable - a.revenuePerDeliverable);
-
-  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
-  const totalDeliverables = rows.reduce((s, r) => s + r.deliverableCount, 0);
-  const avgRevenuePerDeliverable =
-    totalDeliverables > 0 ? Math.round(totalRevenue / totalDeliverables) : 0;
-
-  return { clients: rows, totalRevenue, totalDeliverables, avgRevenuePerDeliverable };
 }

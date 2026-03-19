@@ -139,23 +139,10 @@ export async function confirmClientMatch(
     where: { clientId: mergeId },
     data: { clientId: keepId },
   });
-  await db.deliverable.updateMany({
-    where: { clientId: mergeId },
-    data: { clientId: keepId },
-  });
   await db.financialRecord.updateMany({
     where: { clientId: mergeId },
     data: { clientId: keepId },
   });
-  await db.communicationLog.updateMany({
-    where: { clientId: mergeId },
-    data: { clientId: keepId },
-  });
-  await db.meetingLog.updateMany({
-    where: { clientId: mergeId },
-    data: { clientId: keepId },
-  });
-
   // Move aliases
   await db.clientAlias.updateMany({
     where: { clientId: mergeId },
@@ -187,10 +174,6 @@ export async function confirmTeamMemberMatch(
 
   // Reassign related records
   await db.timeEntry.updateMany({
-    where: { teamMemberId: mergeId },
-    data: { teamMemberId: keepId },
-  });
-  await db.deliverableAssignment.updateMany({
     where: { teamMemberId: mergeId },
     data: { teamMemberId: keepId },
   });

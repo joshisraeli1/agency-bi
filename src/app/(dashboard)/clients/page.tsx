@@ -20,7 +20,6 @@ export default async function ClientsPage() {
       _count: {
         select: {
           timeEntries: true,
-          deliverables: true,
           aliases: true,
         },
       },

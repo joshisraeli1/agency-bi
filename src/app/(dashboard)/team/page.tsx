@@ -8,7 +8,6 @@ export default async function TeamPage() {
       _count: {
         select: {
           timeEntries: true,
-          deliverableAssignments: true,
         },
       },
     },

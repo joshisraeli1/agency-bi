@@ -46,7 +46,7 @@ interface TeamMember {
   weeklyHours: number | null;
   source: string;
   active: boolean;
-  _count: { timeEntries: number; deliverableAssignments: number };
+  _count: { timeEntries: number };
 }
 
 export function TeamActions({ members }: { members: TeamMember[] }) {

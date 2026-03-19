@@ -1,14 +1,10 @@
 /**
- * Direct Monday.com Sync Script
+ * Direct Monday.com Time Tracking Sync Script
  *
  * Usage:  npx tsx scripts/sync-monday.ts
  *
- * Pulls data from 3 Monday boards and writes to the database:
- *   1. Clients board  → Client records + ClientAssignment
- *   2. Creatives board → Deliverable records
- *   3. Campaigns board → FinancialRecord (project type) per campaign
- *
- * Reads MONDAY_API_TOKEN from .env.local (or set inline below).
+ * Pulls time tracking data from Monday.com boards and writes to the database.
+ * Reads MONDAY_API_TOKEN from .env.local.
  * Reads DATABASE_URL from .env.local for Prisma connection.
  */
 
@@ -24,68 +20,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const MONDAY_TOKEN = process.env.MONDAY_API_TOKEN ?? "";
 const MONDAY_API_URL = "https://api.monday.com/v2";
 
-const BOARD_IDS = {
-  clients: "1909942413",
-  creatives: "1909945576",
-  campaigns: "1917594289",
-};
-
-// Client board column IDs
-const CLIENT_COLS = {
-  status: "status", // Satisfied, Some Concern, Extra Care, etc.
-  tier: "color_mkt46t18", // Express, Premium, Base
-  contractType: "status_1_mkn18w9g", // 3-month, 6-month, 12-month
-  website: "link",
-  service: "dropdown", // Growth, Content Delivery, etc.
-  clientCode: "text6",
-  northStar: "text68",
-  kickOffDate: "date4",
-  renewalDate: "date_mkn1hzxc",
-  smRetainer: "numeric_mkswbrth",
-  contentRetainer: "numeric_mkqrn1ds",
-  growthRetainer: "numeric_mkswy9m6",
-  productionRetainer: "numeric_mkvpxh2t",
-  // People columns
-  strategist: "dup__of_management_team",
-  creativeLead: "multiple_person6",
-  commsLead: "dup__of_account_manager_mkmck522",
-  clientManager: "person",
-  growthStrategist: "multiple_person_mkyr9gny",
-  growthExecutor: "multiple_person",
-  talentManager: "multiple_person_mks1t5e6",
-  editors: "multiple_person_mkza3zjh",
-};
-
-// Creatives board column IDs
-const CREATIVE_COLS = {
-  editId: "text8",
-  status: "status",
-  dueDate: "date65",
-  shippedDate: "date",
-  deliverableType: "status_15",
-  mediaType: "color_mkqxhpnj",
-  revisions: "numbers_Mjj2CDH2",
-  reviewer: "person",
-  editor: "dup__of_strategist",
-  strategist: "dup__of_editor",
-  producer: "people",
-  clientLink: "link_to_clients",
-  priority: "priority",
-};
-
-// Campaigns board column IDs
-const CAMPAIGN_COLS = {
-  status: "status7",
-  timeline: "timeline",
-  clientLink: "connect_boards",
-  strategist: "people48",
-  creativeLead: "people4",
-  accountManager: "people_1",
-  wrappedDate: "date",
-  targetDelivery: "date_mky0cbvq",
-  monthOfCampaign: "numeric_mky9ey1f",
-  timesBilled: "numeric_mkybn17j",
-};
+// Time tracking board IDs — update these to match your workspace
+const TIME_TRACKING_BOARD_IDS = [
+  "1909945576", // Main time tracking board
+];
 
 // ---------------------------------------------------------------------------
 // Monday.com API helpers
@@ -93,6 +31,7 @@ const CAMPAIGN_COLS = {
 
 interface MondayColumnValue {
   id: string;
+  type: string;
   text: string;
   value: string | null;
 }
@@ -124,11 +63,10 @@ async function mondayQuery<T>(query: string, variables?: Record<string, unknown>
 async function fetchAllItems(boardId: string): Promise<MondayItem[]> {
   const items: MondayItem[] = [];
 
-  // First page
   const first = await mondayQuery<{
     boards: Array<{ items_page: { cursor: string | null; items: MondayItem[] } }>;
   }>(
-    `query($id:[ID!]!){boards(ids:$id){items_page(limit:100){cursor items{id name group{id title}column_values{id text value}}}}}`,
+    `query($id:[ID!]!){boards(ids:$id){items_page(limit:100){cursor items{id name group{id title}column_values{id type text value}}}}}`,
     { id: [boardId] }
   );
 
@@ -136,12 +74,11 @@ async function fetchAllItems(boardId: string): Promise<MondayItem[]> {
   items.push(...first.boards[0].items_page.items);
   let cursor = first.boards[0].items_page.cursor;
 
-  // Paginate
   while (cursor) {
     const next = await mondayQuery<{
       next_items_page: { cursor: string | null; items: MondayItem[] };
     }>(
-      `query($c:String!){next_items_page(cursor:$c,limit:100){cursor items{id name group{id title}column_values{id text value}}}}`,
+      `query($c:String!){next_items_page(cursor:$c,limit:100){cursor items{id name group{id title}column_values{id type text value}}}}`,
       { c: cursor }
     );
     items.push(...next.next_items_page.items);
@@ -156,76 +93,62 @@ async function fetchAllItems(boardId: string): Promise<MondayItem[]> {
 // Column value helpers
 // ---------------------------------------------------------------------------
 
-function col(item: MondayItem, colId: string): MondayColumnValue | undefined {
-  return item.column_values.find((c) => c.id === colId);
+function findColumnByType(item: MondayItem, type: string): MondayColumnValue | undefined {
+  return item.column_values.find(
+    (cv) => cv.type === type || cv.type === type.replace("_", "-")
+  );
 }
 
-function colText(item: MondayItem, colId: string): string {
-  return col(item, colId)?.text?.trim() ?? "";
-}
-
-function colNum(item: MondayItem, colId: string): number | null {
-  const raw = col(item, colId)?.text?.trim();
-  if (!raw) return null;
-  const n = parseFloat(raw);
-  return isNaN(n) ? null : n;
-}
-
-function colUrl(item: MondayItem, colId: string): string | null {
-  const v = col(item, colId)?.value;
-  if (!v) return null;
+function parseTimeTracking(value: string | null): number {
+  if (!value) return 0;
   try {
-    const parsed = JSON.parse(v);
-    return parsed.url ?? null;
-  } catch {
-    return col(item, colId)?.text || null;
+    const parsed = JSON.parse(value);
+    if (parsed.duration) return parsed.duration / 3600; // seconds to hours
+    if (parsed.additional_value) {
+      const secs = JSON.parse(parsed.additional_value);
+      if (typeof secs === "number") return secs / 3600;
+    }
+  } catch { /* ignore */ }
+  // Try parsing as "Xh Ym" text
+  const match = value.match(/(\d+)h\s*(\d+)?m?/);
+  if (match) {
+    return parseInt(match[1]) + (parseInt(match[2] || "0") / 60);
   }
+  const num = parseFloat(value);
+  return isNaN(num) ? 0 : num;
 }
 
-function colDate(item: MondayItem, colId: string): Date | null {
-  const v = col(item, colId)?.value;
-  if (!v) return null;
+function parsePeople(item: MondayItem): string[] {
+  const col = item.column_values.find(
+    (cv) => cv.type === "people" || cv.type === "multiple-person"
+  );
+  if (!col?.value) return [];
   try {
-    const parsed = JSON.parse(v);
+    const parsed = JSON.parse(col.value);
+    if (parsed.personsAndTeams) {
+      return parsed.personsAndTeams
+        .filter((p: { kind: string }) => p.kind === "person")
+        .map((p: { id: number }) => String(p.id));
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function parseDate(item: MondayItem): Date | null {
+  const col = findColumnByType(item, "date");
+  if (!col?.value) return null;
+  try {
+    const parsed = JSON.parse(col.value);
     if (parsed.date) return new Date(parsed.date);
   } catch { /* ignore */ }
-  const text = col(item, colId)?.text;
-  if (text) {
-    const d = new Date(text);
+  if (col.text) {
+    const d = new Date(col.text);
     if (!isNaN(d.getTime())) return d;
   }
   return null;
 }
 
-function colTimeline(item: MondayItem, colId: string): { from: string; to: string } | null {
-  const v = col(item, colId)?.value;
-  if (!v) return null;
-  try {
-    const parsed = JSON.parse(v);
-    if (parsed.from && parsed.to) return { from: parsed.from, to: parsed.to };
-  } catch { /* ignore */ }
-  return null;
-}
-
-function colPeople(item: MondayItem, colId: string): string[] {
-  const text = colText(item, colId);
-  if (!text) return [];
-  return text.split(",").map((n) => n.trim()).filter(Boolean);
-}
-
-// ---------------------------------------------------------------------------
-// Map Monday status → app status
-// ---------------------------------------------------------------------------
-
-function mapClientStatus(groupTitle: string, statusText: string): string {
-  const g = groupTitle.toLowerCase();
-  if (g.includes("churn") || g.includes("lost")) return "churned";
-  if (g.includes("pause") || g.includes("hold")) return "paused";
-  if (g.includes("prospect") || g.includes("pipeline")) return "prospect";
-  // "Current" group = active, but check status column too
-  if (statusText.toLowerCase().includes("churn")) return "churned";
-  return "active";
-}
+const OVERHEAD_NAMES = ["swan studio", "swan", "internal", "overhead"];
 
 // ---------------------------------------------------------------------------
 // Database setup
@@ -240,7 +163,6 @@ function createDb(): PrismaClient {
     return new PrismaClient({ adapter });
   }
 
-  // SQLite fallback
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
   const path = require("path");
@@ -252,378 +174,100 @@ function createDb(): PrismaClient {
 }
 
 // ---------------------------------------------------------------------------
-// Monday people ID → name cache (for team member lookup)
+// Sync Time Tracking
 // ---------------------------------------------------------------------------
 
-async function fetchMondayUsers(): Promise<Map<number, string>> {
-  const map = new Map<number, string>();
-  const data = await mondayQuery<{ users: Array<{ id: number; name: string; email: string }> }>(
-    `query { users(limit: 200) { id name email } }`
-  );
-  for (const u of data.users) {
-    map.set(u.id, u.name);
-  }
-  return map;
-}
-
-// ---------------------------------------------------------------------------
-// Sync Clients
-// ---------------------------------------------------------------------------
-
-async function syncClients(db: PrismaClient, items: MondayItem[]) {
-  console.log(`\n📋 Syncing ${items.length} clients...`);
-  let created = 0;
-  let updated = 0;
-
-  for (const item of items) {
-    const smRetainer = colNum(item, CLIENT_COLS.smRetainer) ?? 0;
-    const contentRetainer = colNum(item, CLIENT_COLS.contentRetainer) ?? 0;
-    const growthRetainer = colNum(item, CLIENT_COLS.growthRetainer) ?? 0;
-    const productionRetainer = colNum(item, CLIENT_COLS.productionRetainer) ?? 0;
-    const totalRetainer = smRetainer + contentRetainer + growthRetainer + productionRetainer;
-
-    const status = mapClientStatus(item.group.title, colText(item, CLIENT_COLS.status));
-    const tier = colText(item, CLIENT_COLS.tier);
-    const contractType = colText(item, CLIENT_COLS.contractType);
-    const service = colText(item, CLIENT_COLS.service);
-    const website = colUrl(item, CLIENT_COLS.website);
-    const clientCode = colText(item, CLIENT_COLS.clientCode);
-    const northStar = colText(item, CLIENT_COLS.northStar);
-    const kickOff = colDate(item, CLIENT_COLS.kickOffDate);
-    const renewal = colDate(item, CLIENT_COLS.renewalDate);
-
-    const notes = [
-      tier && `Tier: ${tier}`,
-      contractType && `Contract: ${contractType}`,
-      service && `Services: ${service}`,
-      clientCode && `Code: ${clientCode}`,
-      northStar && `North Star: ${northStar}`,
-      kickOff && `Kick Off: ${kickOff.toISOString().slice(0, 10)}`,
-      renewal && `Renewal: ${renewal.toISOString().slice(0, 10)}`,
-      `Retainers — SM: $${smRetainer}, Content: $${contentRetainer}, Growth: $${growthRetainer}, Production: $${productionRetainer}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    // Try to find existing client by mondayItemId or name
-    let existing = await db.client.findFirst({
-      where: { mondayItemId: item.id },
-      select: { id: true, hubspotDealId: true, industry: true, website: true, retainerValue: true, dealStage: true, serviceType: true, smRetainer: true, contentRetainer: true, growthRetainer: true, productionRetainer: true, startDate: true, endDate: true },
-    });
-    if (!existing) {
-      existing = await db.client.findFirst({
-        where: { name: { equals: item.name, mode: "insensitive" } },
-        select: { id: true, hubspotDealId: true, industry: true, website: true, retainerValue: true, dealStage: true, serviceType: true, smRetainer: true, contentRetainer: true, growthRetainer: true, productionRetainer: true, startDate: true, endDate: true },
-      });
-    }
-
-    if (existing) {
-      // HubSpot is source of truth for status, dealStage, industry, dates.
-      // Monday only provides operational data (retainers, notes, service type).
-      const isHubSpotClient = !!existing.hubspotDealId;
-      await db.client.update({
-        where: { id: existing.id },
-        data: {
-          mondayItemId: item.id,
-          notes,
-          website: website || existing.website,
-          retainerValue: totalRetainer || existing.retainerValue,
-          serviceType: service || existing.serviceType,
-          smRetainer: smRetainer || existing.smRetainer,
-          contentRetainer: contentRetainer || existing.contentRetainer,
-          growthRetainer: growthRetainer || existing.growthRetainer,
-          productionRetainer: productionRetainer || existing.productionRetainer,
-          // Only set these on non-HubSpot clients — HubSpot owns these fields
-          ...(isHubSpotClient ? {} : {
-            name: item.name,
-            source: "monday",
-            status,
-            industry: service || existing.industry,
-            dealStage: tier || existing.dealStage,
-            startDate: kickOff || existing.startDate,
-            endDate: renewal || existing.endDate,
-          }),
-        },
-      });
-      updated++;
-    } else {
-      await db.client.create({
-        data: {
-          name: item.name,
-          status,
-          industry: service || null,
-          website,
-          retainerValue: totalRetainer || null,
-          dealStage: tier || null,
-          mondayItemId: item.id,
-          source: "monday",
-          notes,
-          startDate: kickOff,
-          endDate: renewal,
-          serviceType: service || null,
-          smRetainer: smRetainer || null,
-          contentRetainer: contentRetainer || null,
-          growthRetainer: growthRetainer || null,
-          productionRetainer: productionRetainer || null,
-        },
-      });
-      created++;
-    }
-  }
-
-  console.log(`   ✅ Created ${created}, updated ${updated} clients`);
-}
-
-// ---------------------------------------------------------------------------
-// Sync Deliverables (Creatives board)
-// ---------------------------------------------------------------------------
-
-async function syncDeliverables(db: PrismaClient, items: MondayItem[]) {
-  console.log(`\n🎨 Syncing ${items.length} creatives/deliverables...`);
-  let created = 0;
-  let updated = 0;
+async function syncTimeTracking(db: PrismaClient, items: MondayItem[]) {
+  console.log(`\n⏱️  Syncing ${items.length} time tracking items...`);
+  let synced = 0;
   let skipped = 0;
 
-  // Build a client name lookup for matching
-  const clients = await db.client.findMany({ select: { id: true, name: true, mondayItemId: true } });
-  const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
+  // Build lookup maps
+  const teamMembers = await db.teamMember.findMany({ select: { id: true, mondayUserId: true } });
+  const teamByMondayId = new Map(teamMembers.filter(t => t.mondayUserId).map(t => [t.mondayUserId!, t.id]));
 
-  for (const item of items) {
-    const editId = colText(item, CREATIVE_COLS.editId);
-    const status = colText(item, CREATIVE_COLS.status);
-    const dueDate = colDate(item, CREATIVE_COLS.dueDate);
-    const shippedDate = colDate(item, CREATIVE_COLS.shippedDate);
-    const revisions = colNum(item, CREATIVE_COLS.revisions) ?? 0;
-    const mediaType = colText(item, CREATIVE_COLS.mediaType);
-    const deliverableType = colText(item, CREATIVE_COLS.deliverableType);
-
-    // Try to match client from the item's group or board relation
-    // The group often contains the client name in campaigns, but creatives group is "All Creatives"
-    // We'll try to match from the first word(s) of the creative name
-    let clientId: string | null = null;
-
-    // Try matching from the creative name against client names
-    const nameLower = item.name.toLowerCase();
-    for (const [cName, cId] of clientByName) {
-      if (nameLower.includes(cName) || cName.includes(nameLower.split(" ")[0]?.toLowerCase() ?? "")) {
-        clientId = cId;
-        break;
-      }
-    }
-
-    const existing = await db.deliverable.findUnique({
-      where: { mondayItemId: item.id },
-    });
-
-    const editCode = editId || null;
-    const statusLabel = [deliverableType, mediaType, status].filter(Boolean).join(" | ");
-
-    if (existing) {
-      await db.deliverable.update({
-        where: { id: existing.id },
-        data: {
-          name: item.name,
-          editCode,
-          status: statusLabel || existing.status,
-          dueDate: dueDate || existing.dueDate,
-          completedDate: shippedDate || existing.completedDate,
-          revisionCount: revisions,
-          clientId: clientId || existing.clientId,
-        },
-      });
-      updated++;
-    } else {
-      await db.deliverable.create({
-        data: {
-          name: item.name,
-          editCode,
-          status: statusLabel || null,
-          dueDate,
-          completedDate: shippedDate,
-          revisionCount: revisions,
-          mondayItemId: item.id,
-          mondayBoardId: BOARD_IDS.creatives,
-          clientId,
-          source: "monday",
-        },
-      });
-      created++;
-    }
-  }
-
-  console.log(`   ✅ Created ${created}, updated ${updated}, skipped ${skipped} deliverables`);
-}
-
-// ---------------------------------------------------------------------------
-// Sync Campaigns
-// ---------------------------------------------------------------------------
-
-async function syncCampaigns(db: PrismaClient, items: MondayItem[]) {
-  console.log(`\n🚨 Syncing ${items.length} campaigns...`);
-  let created = 0;
-  let updated = 0;
-
-  // Client name lookup
   const clients = await db.client.findMany({ select: { id: true, name: true } });
-  const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
+  const clientByName = new Map(clients.map(c => [c.name.toLowerCase(), c.id]));
+
+  // Also check aliases
+  const aliases = await db.clientAlias.findMany({ select: { alias: true, clientId: true } });
+  const clientByAlias = new Map(aliases.map(a => [a.alias.toLowerCase(), a.clientId]));
 
   for (const item of items) {
-    const status = colText(item, CAMPAIGN_COLS.status);
-    const timeline = colTimeline(item, CAMPAIGN_COLS.timeline);
-    const timesBilled = colNum(item, CAMPAIGN_COLS.timesBilled);
+    const ttCol = findColumnByType(item, "time_tracking") ?? findColumnByType(item, "time-tracking");
+    const hours = ttCol ? parseTimeTracking(ttCol.value ?? ttCol.text) : 0;
 
-    // Campaign names are like "AmazingCo Jan 26" or "Bizcover March Campaign"
-    // Try to match client from campaign name
+    if (hours === 0) {
+      skipped++;
+      continue;
+    }
+
+    const groupName = item.group?.title ?? "";
+    const isOverhead = OVERHEAD_NAMES.includes(groupName.toLowerCase().trim());
+
+    // Find client
     let clientId: string | null = null;
-    const nameLower = item.name.toLowerCase();
-    for (const [cName, cId] of clientByName) {
-      if (nameLower.includes(cName)) {
-        clientId = cId;
-        break;
-      }
+    if (!isOverhead && groupName) {
+      clientId = clientByName.get(groupName.toLowerCase()) ??
+        clientByAlias.get(groupName.toLowerCase()) ??
+        null;
     }
 
-    // If no match, try partial matching (first word)
-    if (!clientId) {
-      const firstWord = item.name.split(" ")[0]?.toLowerCase() ?? "";
-      for (const [cName, cId] of clientByName) {
-        if (cName.startsWith(firstWord) || firstWord.startsWith(cName.split(" ")[0] ?? "")) {
-          clientId = cId;
-          break;
-        }
-      }
-    }
+    const entryDate = parseDate(item) ?? new Date();
+    const personIds = parsePeople(item);
 
-    if (!clientId) {
-      console.log(`   ⚠️  No client match for campaign: ${item.name}`);
-      continue;
-    }
-
-    // Derive month from timeline start or campaign name
-    let month: string | null = null;
-    if (timeline?.from) {
-      month = timeline.from.slice(0, 7); // YYYY-MM
-    } else {
-      // Try to parse from name like "Jan 26" → 2026-01
-      const monthMatch = item.name.match(
-        /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s*(\d{2,4})\b/i
-      );
-      if (monthMatch) {
-        const monthNames: Record<string, string> = {
-          jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-          jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
-        };
-        const m = monthNames[monthMatch[1].toLowerCase().slice(0, 3)] ?? "01";
-        let y = monthMatch[2];
-        if (y.length === 2) y = `20${y}`;
-        month = `${y}-${m}`;
-      }
-    }
-
-    if (!month) {
-      console.log(`   ⚠️  No month derived for campaign: ${item.name}`);
-      continue;
-    }
-
-    // Store as a FinancialRecord of type "project" (campaign)
-    const category = `campaign:${item.name}`;
-    const description = [
-      `Campaign: ${item.name}`,
-      status && `Status: ${status}`,
-      timeline && `Timeline: ${timeline.from} to ${timeline.to}`,
-      timesBilled && `Billed: ${timesBilled}x`,
-    ]
-      .filter(Boolean)
-      .join(" | ");
-
-    const existing = await db.financialRecord.findFirst({
-      where: {
-        clientId,
-        month,
-        type: "project",
-        category,
-      },
-    });
-
-    if (existing) {
-      await db.financialRecord.update({
-        where: { id: existing.id },
-        data: { description, source: "monday", externalId: item.id },
-      });
-      updated++;
-    } else {
-      await db.financialRecord.create({
-        data: {
-          clientId,
-          month,
-          type: "project",
-          category,
-          amount: 0, // No dollar value from Monday — comes from Xero/Sheets
-          description,
-          source: "monday",
-          externalId: item.id,
+    if (personIds.length === 0) {
+      await db.timeEntry.upsert({
+        where: {
+          mondayItemId_teamMemberId_date: {
+            mondayItemId: item.id,
+            teamMemberId: "",
+            date: entryDate,
+          },
         },
+        create: {
+          mondayItemId: item.id,
+          clientId,
+          teamMemberId: null,
+          date: entryDate,
+          hours,
+          description: item.name,
+          isOverhead,
+          source: "monday",
+        },
+        update: { hours, description: item.name, isOverhead, clientId },
       });
-      created++;
-    }
-  }
+      synced++;
+    } else {
+      for (const mondayUserId of personIds) {
+        const teamMemberId = teamByMondayId.get(mondayUserId) ?? null;
 
-  console.log(`   ✅ Created ${created}, updated ${updated} campaign records`);
-}
-
-// ---------------------------------------------------------------------------
-// Sync Team Assignments from Client board people columns
-// ---------------------------------------------------------------------------
-
-async function syncClientAssignments(db: PrismaClient, clientItems: MondayItem[]) {
-  console.log(`\n👥 Syncing client-team assignments...`);
-  let created = 0;
-
-  const clients = await db.client.findMany({ select: { id: true, mondayItemId: true } });
-  const clientById = new Map(clients.map((c) => [c.mondayItemId, c.id]));
-
-  const teamMembers = await db.teamMember.findMany({ select: { id: true, name: true } });
-  const teamByName = new Map(teamMembers.map((t) => [t.name.toLowerCase(), t.id]));
-
-  const roleMap: Record<string, string> = {
-    [CLIENT_COLS.strategist]: "strategist",
-    [CLIENT_COLS.creativeLead]: "creative_lead",
-    [CLIENT_COLS.commsLead]: "comms_lead",
-    [CLIENT_COLS.clientManager]: "account_manager",
-    [CLIENT_COLS.growthStrategist]: "growth_strategist",
-    [CLIENT_COLS.growthExecutor]: "growth_executor",
-    [CLIENT_COLS.talentManager]: "talent_manager",
-    [CLIENT_COLS.editors]: "editor",
-  };
-
-  for (const item of clientItems) {
-    const clientId = clientById.get(item.id);
-    if (!clientId) continue;
-
-    for (const [colId, role] of Object.entries(roleMap)) {
-      const names = colPeople(item, colId);
-      for (const name of names) {
-        const memberId = teamByName.get(name.toLowerCase());
-        if (!memberId) continue;
-
-        // Upsert
-        try {
-          await db.clientAssignment.upsert({
-            where: {
-              clientId_teamMemberId_role: { clientId, teamMemberId: memberId, role },
+        await db.timeEntry.upsert({
+          where: {
+            mondayItemId_teamMemberId_date: {
+              mondayItemId: item.id,
+              teamMemberId: teamMemberId ?? "",
+              date: entryDate,
             },
-            update: {},
-            create: { clientId, teamMemberId: memberId, role, isPrimary: names.indexOf(name) === 0 },
-          });
-          created++;
-        } catch {
-          // Duplicate, skip
-        }
+          },
+          create: {
+            mondayItemId: item.id,
+            clientId,
+            teamMemberId,
+            date: entryDate,
+            hours,
+            description: item.name,
+            isOverhead,
+            source: "monday",
+          },
+          update: { hours, description: item.name, isOverhead, clientId },
+        });
+        synced++;
       }
     }
   }
 
-  console.log(`   ✅ ${created} client-team assignments synced`);
+  console.log(`   ✅ Synced ${synced} time entries, skipped ${skipped} (no hours)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -640,31 +284,20 @@ async function main() {
   const db = createDb();
 
   try {
-    // Fetch all board data in parallel
-    console.log("📡 Fetching Monday.com boards...");
-    const [clientItems, creativeItems, campaignItems] = await Promise.all([
-      fetchAllItems(BOARD_IDS.clients),
-      fetchAllItems(BOARD_IDS.creatives),
-      fetchAllItems(BOARD_IDS.campaigns),
-    ]);
+    console.log("📡 Fetching Monday.com time tracking boards...");
+    let allItems: MondayItem[] = [];
+    for (const boardId of TIME_TRACKING_BOARD_IDS) {
+      const items = await fetchAllItems(boardId);
+      console.log(`   Board ${boardId}: ${items.length} items`);
+      allItems = allItems.concat(items);
+    }
 
-    console.log(`   Found: ${clientItems.length} clients, ${creativeItems.length} creatives, ${campaignItems.length} campaigns`);
+    console.log(`   Total items: ${allItems.length}`);
 
-    // Sync in order: clients first (others depend on client records)
-    await syncClients(db, clientItems);
-    await syncDeliverables(db, creativeItems);
-    await syncCampaigns(db, campaignItems);
-    await syncClientAssignments(db, clientItems);
+    await syncTimeTracking(db, allItems);
 
-    // Summary
-    const totalClients = await db.client.count();
-    const totalDeliverables = await db.deliverable.count();
-    const totalCampaigns = await db.financialRecord.count({ where: { type: "project", source: "monday" } });
-
-    console.log(`\n🎉 Sync complete!`);
-    console.log(`   Total clients: ${totalClients}`);
-    console.log(`   Total deliverables: ${totalDeliverables}`);
-    console.log(`   Total campaign records: ${totalCampaigns}`);
+    const totalEntries = await db.timeEntry.count({ where: { source: "monday" } });
+    console.log(`\n🎉 Sync complete! Total Monday time entries: ${totalEntries}`);
   } finally {
     await db.$disconnect();
   }
