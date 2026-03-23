@@ -20,7 +20,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const SERVICE_ACCOUNT_PATH =
   process.env.GOOGLE_SERVICE_ACCOUNT_JSON ??
   "/Users/joshuaisraeli/Downloads/agency-business-intelligence-a47ea9288d02.json";
-const SPREADSHEET_ID = "1RSM8sUpQOmzGlMNu6TY0o8VWbdo2jbz3rZdR-FqdEOs";
+const SPREADSHEET_ID = "1KkIYch0G80MJagd4E_VXXyVrdG5tvOCVcJrIC_01B1s";
 
 // ---------------------------------------------------------------------------
 // Google Sheets helpers
@@ -123,32 +123,44 @@ async function loadClientMatch(sheets: any): Promise<ClientNameMap[]> {
 
 async function syncSalary(db: PrismaClient, sheets: any, teamMatch: TeamNameMap[]) {
   console.log("\n👥 Syncing salary data → Team Members...");
-  const rows = await readTab(sheets, "4.3 Salary Data");
-  // Headers: Employee Costs, Division, Role, Base Salary, Annual All Up, Monthly All Up, Location, VISA Status, Employment Status, COS or Opex
+  const rows = await readTab(sheets, "Employee Expenses");
+  // Headers (row 5): Employee Costs | Division | Role | Base Salary | Base (p/m) | Monthly + Super | Annual All Up (Incl. Super) | All Up | Location | VISA Status | Gender | Employment | Born
+
+  // Find header row
+  let headerIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i]?.[0]?.toString().toLowerCase().includes("employee costs")) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) {
+    console.log("   ⚠ Could not find header row in Employee Expenses");
+    return;
+  }
 
   const teamMatchBySalary = new Map(teamMatch.map((t) => [t.salary.toLowerCase(), t]));
-  let synced = 0;
+  let created = 0;
+  let updated = 0;
   let skipped = 0;
 
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     const name = row[0]?.trim();
-    if (!name || name === "New Hires" || name === "Casuals" || name === "Phillipines" || name === "Total") {
+    if (!name || name === "New Hires" || name === "Casuals" || name === "Phillipines" || name === "Total" || name === "Assumptions" || name === "Super + Tax Premium") {
       continue; // Skip section headers
     }
 
     const division = row[1]?.trim() || null;
     const role = row[2]?.trim() || null;
     const baseSalary = parseCurrency(row[3]);
-    const annualAllUp = parseCurrency(row[4]);
-    const monthlyAllUp = parseCurrency(row[5]);
-    const location = row[6]?.trim() || null;
-    const visaStatus = row[7]?.trim() || null;
-    const employmentStatus = row[8]?.trim() || null;
-    const costCategory = row[9]?.trim() || null;
+    const annualAllUp = parseCurrency(row[6]); // Column G: Annual All Up (Incl. Super)
+    const allUp = parseCurrency(row[7]); // Column H: All Up
+    const location = row[8]?.trim() || null;
+    const employmentStatus = row[11]?.trim() || null; // Column L: Employment
 
-    // Skip zero-cost casuals with no salary
-    if (!annualAllUp && !baseSalary && name !== "Editors") {
+    // Skip zero-cost entries
+    if (!annualAllUp && !baseSalary) {
       skipped++;
       continue;
     }
@@ -157,11 +169,12 @@ async function syncSalary(db: PrismaClient, sheets: any, teamMatch: TeamNameMap[
     const match = teamMatchBySalary.get(name.toLowerCase());
 
     try {
+      // Try to find existing by name (case-insensitive)
       const existing = await db.teamMember.findFirst({
         where: {
           OR: [
-            { name: { equals: name } },
-            ...(match ? [{ name: { equals: match.time } }] : []),
+            { name: { equals: name, mode: "insensitive" } },
+            ...(match ? [{ name: { equals: match.time, mode: "insensitive" as const } }] : []),
           ],
         },
       });
@@ -169,12 +182,12 @@ async function syncSalary(db: PrismaClient, sheets: any, teamMatch: TeamNameMap[
       const data = {
         name: match?.time || name,
         role,
-        division: division === "N/A" ? null : division,
+        division: division === "N/A" || division === "NA" ? null : division,
         location,
         employmentType: employmentStatus?.toLowerCase() ?? null,
         costType: "salary" as const,
         annualSalary: annualAllUp ?? baseSalary,
-        weeklyHours: employmentStatus === "Full-Time" ? 38 : employmentStatus === "Part-Time" ? 19 : null,
+        weeklyHours: employmentStatus === "Full-Time" ? 38 : employmentStatus === "Part-Time" ? 19 : employmentStatus === "Casual" ? 20 : null,
         source: "sheets",
         active: true,
       };
@@ -184,17 +197,18 @@ async function syncSalary(db: PrismaClient, sheets: any, teamMatch: TeamNameMap[
           where: { id: existing.id },
           data,
         });
+        updated++;
       } else {
         await db.teamMember.create({ data });
+        created++;
       }
-      synced++;
     } catch (err) {
       console.warn(`   ⚠ Skipped ${name}: ${err instanceof Error ? err.message : err}`);
       skipped++;
     }
   }
 
-  console.log(`   ✅ ${synced} team members synced, ${skipped} skipped`);
+  console.log(`   ✅ ${created} created, ${updated} updated, ${skipped} skipped`);
 }
 
 // ---------------------------------------------------------------------------
