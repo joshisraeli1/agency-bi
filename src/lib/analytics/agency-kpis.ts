@@ -251,14 +251,6 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .sort((a, b) => b.revenue - a.revenue);
 
   // ── HubSpot Profitability (client retainer fields + team salary costs) ──
-  // Division name mapping: team division → spreadsheet name
-  const TEAM_DIV_MAP: Record<string, string> = {
-    "Content Delivery (Paid)": "Ad Creative",
-    "Social Media Management": "Organic Social",
-    "Ads Management": "Paid Media",
-    "Production": "Production",
-  };
-
   // Revenue: allocate each active HubSpot client's retainerValue to division(s) based on contentPackageType
   const hubspotDivRevenue = new Map<string, number>();
   for (const c of clients) {
@@ -268,25 +260,33 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     if (rv <= 0) continue;
     const pkg = (c.contentPackageType || "").toLowerCase();
     if (pkg === "social media" || pkg === "social media management") {
-      hubspotDivRevenue.set("Organic Social", (hubspotDivRevenue.get("Organic Social") || 0) + rv);
+      hubspotDivRevenue.set("Social Media Management", (hubspotDivRevenue.get("Social Media Management") || 0) + rv);
     } else if (pkg === "social and ads management") {
-      hubspotDivRevenue.set("Organic Social", (hubspotDivRevenue.get("Organic Social") || 0) + rv * 0.5);
-      hubspotDivRevenue.set("Paid Media", (hubspotDivRevenue.get("Paid Media") || 0) + rv * 0.5);
+      hubspotDivRevenue.set("Social Media Management", (hubspotDivRevenue.get("Social Media Management") || 0) + rv * 0.5);
+      hubspotDivRevenue.set("Ads Management", (hubspotDivRevenue.get("Ads Management") || 0) + rv * 0.5);
     } else if (pkg === "meta ads" || pkg === "ads management") {
-      hubspotDivRevenue.set("Paid Media", (hubspotDivRevenue.get("Paid Media") || 0) + rv);
+      hubspotDivRevenue.set("Ads Management", (hubspotDivRevenue.get("Ads Management") || 0) + rv);
     } else {
       // Content Only, Full Suite, One-off, Content Delivery Paid/Organic,
-      // Content +, Legacy Urban Swan Package, Other, null — all map to Ad Creative
-      hubspotDivRevenue.set("Ad Creative", (hubspotDivRevenue.get("Ad Creative") || 0) + rv);
+      // Content +, Legacy Urban Swan Package, Other, null — all map to Content Delivery
+      hubspotDivRevenue.set("Content Delivery", (hubspotDivRevenue.get("Content Delivery") || 0) + rv);
     }
   }
 
-  // Cost: monthly salary per billable team member, grouped by mapped division
+  // Cost: monthly salary per billable team member, grouped by division
+  const DIVISION_NAMES = new Set(["Content Delivery (Paid)", "Social Media Management", "Ads Management"]);
+  const normalizeDivision = (div: string): string | null => {
+    if (div === "Content Delivery (Paid)") return "Content Delivery";
+    if (div === "Social Media Management") return "Social Media Management";
+    if (div === "Ads Management") return "Ads Management";
+    return null;
+  };
+
   const hubspotDivCost = new Map<string, number>();
   for (const m of billableMembers) {
     const div = m.division || "Unassigned";
-    const mappedDiv = TEAM_DIV_MAP[div];
-    if (!mappedDiv) continue; // skip divisions not in the spreadsheet mapping
+    const mappedDiv = normalizeDivision(div);
+    if (!mappedDiv) continue; // skip divisions not mapped (directors, sales, etc.)
     let monthlyCost = 0;
     if (m.annualSalary) {
       monthlyCost = m.annualSalary / 12;
