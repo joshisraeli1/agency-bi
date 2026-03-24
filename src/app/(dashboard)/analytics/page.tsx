@@ -12,7 +12,6 @@ import {
 } from "@/lib/analytics/advanced-analytics";
 import {
   getTimesheetClientMargin,
-  getHolisticClientMargin,
   getMonthlyChurn,
 } from "@/lib/analytics/margin-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -21,7 +20,6 @@ import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-section";
-import { HolisticMarginSection } from "@/components/dashboard/holistic-margin-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
@@ -45,7 +43,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     xeroMargin,
     newClientDealSize,
     timesheetMargin,
-    holisticMargin,
     monthlyChurn,
   ] = await Promise.all([
     getAgencyKPIs(months),
@@ -58,7 +55,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getXeroMarginTrend(months),
     getNewClientDealSize(months),
     getTimesheetClientMargin(months),
-    getHolisticClientMargin(months),
     getMonthlyChurn(12),
   ]);
 
@@ -116,13 +112,10 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         xeroMargin={xeroMargin}
       />
 
-      {/* 3. Timesheet-Based Client Margin */}
+      {/* 3. Client Margin Breakdown */}
       <TimesheetMarginSection data={timesheetMargin} />
 
-      {/* 4. Holistic Client Margin */}
-      <HolisticMarginSection data={holisticMargin} />
-
-      {/* 5. Monthly Churn Rate */}
+      {/* 4. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
 
       {/* 6. KPI Charts (Utilization & Margin Trend, Hours by Division) */}
