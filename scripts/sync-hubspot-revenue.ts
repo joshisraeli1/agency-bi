@@ -36,6 +36,7 @@ async function searchDeals(after?: number): Promise<{ results: HubSpotDeal[]; to
     properties: [
       "dealname", "amount", "amount__excl_gst_", "dealstage",
       "start_date", "churn_date", "closedate", "industry_type",
+      "content_package_type",
     ],
     limit: 100,
     sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
@@ -183,6 +184,7 @@ async function main() {
     const clientDealStage = new Map<string, string>();
     const clientDates = new Map<string, { startDate?: Date; endDate?: Date }>();
     const clientIndustry = new Map<string, string>();
+    const clientPackageType = new Map<string, string>();
 
     // -----------------------------------------------------------------------
     // Pass 0: Date tracking over ALL deals (not just revenue deals)
@@ -215,6 +217,11 @@ async function main() {
       // Track industry from any deal
       if (props.industry_type) {
         clientIndustry.set(clientId, props.industry_type);
+      }
+
+      // Track content package type
+      if (props.content_package_type) {
+        clientPackageType.set(clientId, props.content_package_type);
       }
     }
     console.log(`   Tracked dates for ${clientDates.size} clients`);
@@ -328,6 +335,9 @@ async function main() {
 
       const industry = clientIndustry.get(client.id);
       if (industry) update.industry = industry;
+
+      const pkgType = clientPackageType.get(client.id);
+      if (pkgType) update.contentPackageType = pkgType;
 
       await db.client.update({ where: { id: client.id }, data: update });
 
