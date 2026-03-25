@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange } from "@/lib/utils";
+import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { RevenueOverview } from "./types";
 
@@ -190,4 +190,60 @@ export async function getRevenueOverview(
     byClient,
     atRiskClients,
   };
+}
+
+// ---------------------------------------------------------------------------
+// New Revenue vs Churn by Month
+// ---------------------------------------------------------------------------
+
+export interface RevenueVsChurnRow {
+  month: string;
+  newRevenue: number;
+  churnedRevenue: number;
+  net: number;
+}
+
+export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
+  const monthRange = getMonthRange(months);
+
+  const [excludedIds, clients] = await Promise.all([
+    getExcludedClientIds(),
+    db.client.findMany({
+      where: {
+        hubspotDealId: { not: null },
+        status: { not: "prospect" },
+      },
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        retainerValue: true,
+      },
+    }),
+  ]);
+
+  const filtered = clients.filter((c) => !excludedIds.has(c.id));
+
+  return monthRange.map((month) => {
+    // New revenue: clients whose startDate falls in this month
+    const newClients = filtered.filter((c) => {
+      if (!c.startDate) return false;
+      return toMonthKey(c.startDate) === month;
+    });
+    const newRevenue = newClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
+
+    // Churned revenue: clients whose endDate falls in this month
+    const churnedClients = filtered.filter((c) => {
+      if (!c.endDate) return false;
+      return toMonthKey(c.endDate) === month;
+    });
+    const churnedRevenue = churnedClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
+
+    return {
+      month,
+      newRevenue: Math.round(newRevenue),
+      churnedRevenue: Math.round(churnedRevenue),
+      net: Math.round(newRevenue - churnedRevenue),
+    };
+  });
 }

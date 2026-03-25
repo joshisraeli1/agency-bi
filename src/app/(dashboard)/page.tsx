@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
+import { getRevenueOverview, getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
+import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle, Calendar, PiggyBank } from "lucide-react";
 
@@ -18,11 +19,12 @@ export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
 
-  const [clientCount, teamCount, recentImports, revenue] = await Promise.all([
+  const [clientCount, teamCount, recentImports, revenue, revenueVsChurn] = await Promise.all([
     db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
     db.teamMember.count(),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
+    getRevenueVsChurn(12),
   ]);
 
   return (
@@ -81,6 +83,8 @@ export default async function OverviewPage({ searchParams }: Props) {
       </div>
 
       <RevenueCharts data={revenue} />
+
+      <RevenueVsChurnChart data={revenueVsChurn} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {revenue.atRiskClients.length > 0 && (
