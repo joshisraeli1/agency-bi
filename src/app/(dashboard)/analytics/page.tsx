@@ -132,18 +132,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         newClientDealSize={newClientDealSize}
       />
 
-      {/* 8. HubSpot vs Xero Reconciliation */}
-      {(discrepancy.totalHubspot > 0 || discrepancy.totalXero > 0) && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">HubSpot vs Xero Reconciliation</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Revenue comparison between sources (ex GST)
-            </p>
-          </div>
-          <DiscrepancyTable data={discrepancy} />
-        </>
-      )}
     </div>
   );
 }

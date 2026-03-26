@@ -340,39 +340,6 @@ export function AdvancedCharts({
         />
       )}
 
-      {/* 9. Margin by Division + Division Margin Over Time (moved from KpiCharts) */}
-      {(marginByDivisionData.length > 0 || divisionMarginKeys.length > 0) && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">Division Margins</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Revenue vs cost margins by division
-            </p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {marginByDivisionData.length > 0 && (
-              <BarChartCard
-                title="Margin by Division"
-                data={marginByDivisionData}
-                xKey="division"
-                yKeys={["revenue", "cost"]}
-                yLabels={["Revenue", "Cost"]}
-                formatY={fmtCurrency}
-              />
-            )}
-            {divisionMarginKeys.length > 0 && (
-              <LineChartCard
-                title="Division Margin Over Time"
-                data={kpiData.divisionMarginTrend}
-                xKey="month"
-                yKeys={divisionMarginKeys}
-                yLabels={divisionMarginKeys}
-                formatY={(v) => `${v}%`}
-              />
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 }
