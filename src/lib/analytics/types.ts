@@ -160,6 +160,18 @@ export interface NewClientDealSizeData {
       division: string;
     }[];
     avgDealSize: number;
+    totalDealSize: number;
+    clientCount: number;
+  }[];
+  churnedMonths: {
+    month: string;
+    clients: {
+      clientId: string;
+      clientName: string;
+      dealSize: number;
+      division: string;
+    }[];
+    totalDealSize: number;
     clientCount: number;
   }[];
   byDivision: {

@@ -684,16 +684,24 @@ export async function getXeroMarginTrend(months = 6): Promise<XeroMarginTrend> {
 // New Client Deal Size — clients by startDate per month
 // ---------------------------------------------------------------------------
 
+function getClientDivision(contentPackageType: string | null): string {
+  const pkg = (contentPackageType || "").toLowerCase();
+  if (pkg === "social media" || pkg === "social media management") return "Social Media Management";
+  if (pkg === "social and ads management") return "Social Media Management / Ads Management";
+  if (pkg === "meta ads" || pkg === "ads management") return "Ads Management";
+  if (pkg) return "Content Delivery";
+  return "Content Delivery";
+}
+
 export async function getNewClientDealSize(
   months = 6
 ): Promise<NewClientDealSizeData> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, clients, financials, timeEntries] = await Promise.all([
+  const [excludedIds, clients] = await Promise.all([
     getExcludedClientIds(),
     db.client.findMany({
       where: {
-        startDate: { not: null },
         hubspotDealId: { not: null },
         status: { not: "prospect" },
       },
@@ -701,95 +709,28 @@ export async function getNewClientDealSize(
         id: true,
         name: true,
         startDate: true,
+        endDate: true,
         retainerValue: true,
-      },
-    }),
-    db.financialRecord.findMany({
-      where: {
-        month: { in: monthRange },
-        type: { in: ["retainer", "project"] },
-      },
-      select: { clientId: true, month: true, amount: true },
-    }),
-    db.timeEntry.findMany({
-      where: { clientId: { not: null }, isOverhead: false },
-      select: {
-        clientId: true,
-        hours: true,
-        teamMember: { select: { division: true } },
+        contentPackageType: true,
       },
     }),
   ]);
 
   const filteredClients = clients.filter((c) => !excludedIds.has(c.id));
 
-  // Primary division per client: most hours wins
-  const clientDivisionHours = new Map<string, Map<string, number>>();
-  for (const e of timeEntries) {
-    if (!e.clientId || !e.teamMember?.division) continue;
-    if (!clientDivisionHours.has(e.clientId)) {
-      clientDivisionHours.set(e.clientId, new Map());
-    }
-    const divMap = clientDivisionHours.get(e.clientId)!;
-    divMap.set(
-      e.teamMember.division,
-      (divMap.get(e.teamMember.division) || 0) + e.hours
-    );
-  }
-
-  function getPrimaryDivision(clientId: string): string {
-    const divMap = clientDivisionHours.get(clientId);
-    if (!divMap || divMap.size === 0) return "Unknown";
-    let maxDiv = "Unknown";
-    let maxHours = 0;
-    for (const [div, hours] of divMap) {
-      if (hours > maxHours) {
-        maxHours = hours;
-        maxDiv = div;
-      }
-    }
-    return maxDiv;
-  }
-
-  // Group by client's first revenue month to find first-month totals
-  const clientFirstMonthRev = new Map<string, Map<string, number>>();
-  for (const f of financials) {
-    if (!clientFirstMonthRev.has(f.clientId)) {
-      clientFirstMonthRev.set(f.clientId, new Map());
-    }
-    const monthMap = clientFirstMonthRev.get(f.clientId)!;
-    monthMap.set(f.month, (monthMap.get(f.month) || 0) + f.amount);
-  }
-
-  const allClientsWithDeal: { division: string; dealSize: number }[] = [];
-
-  const result = monthRange.map((month) => {
-    // Find clients whose startDate falls in this month
+  // New clients by start month
+  const newMonths = monthRange.map((month) => {
     const newClients = filteredClients.filter((c) => {
       if (!c.startDate) return false;
       return toMonthKey(c.startDate) === month;
     });
 
-    const clientsWithDeal = newClients.map((c) => {
-      // Use retainerValue if available, else first-month revenue
-      let dealSize = c.retainerValue || 0;
-      if (!dealSize) {
-        const monthRevMap = clientFirstMonthRev.get(c.id);
-        if (monthRevMap) {
-          // Get the earliest month's revenue for this client
-          const sortedMonths = Array.from(monthRevMap.keys()).sort();
-          dealSize = sortedMonths.length > 0 ? (monthRevMap.get(sortedMonths[0]) || 0) : 0;
-        }
-      }
-      const division = getPrimaryDivision(c.id);
-      allClientsWithDeal.push({ division, dealSize: Math.round(dealSize) });
-      return {
-        clientId: c.id,
-        clientName: c.name,
-        dealSize: Math.round(dealSize),
-        division,
-      };
-    });
+    const clientsWithDeal = newClients.map((c) => ({
+      clientId: c.id,
+      clientName: c.name,
+      dealSize: Math.round(c.retainerValue || 0),
+      division: getClientDivision(c.contentPackageType),
+    }));
 
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
 
@@ -797,13 +738,39 @@ export async function getNewClientDealSize(
       month,
       clients: clientsWithDeal,
       avgDealSize: clientsWithDeal.length > 0 ? Math.round(totalDealSize / clientsWithDeal.length) : 0,
+      totalDealSize,
       clientCount: clientsWithDeal.length,
     };
   });
 
-  // By division summary
+  // Churned clients by end month
+  const churnedMonths = monthRange.map((month) => {
+    const churnedClients = filteredClients.filter((c) => {
+      if (!c.endDate) return false;
+      return toMonthKey(c.endDate) === month;
+    });
+
+    const clientsWithDeal = churnedClients.map((c) => ({
+      clientId: c.id,
+      clientName: c.name,
+      dealSize: Math.round(c.retainerValue || 0),
+      division: getClientDivision(c.contentPackageType),
+    }));
+
+    const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
+
+    return {
+      month,
+      clients: clientsWithDeal,
+      totalDealSize,
+      clientCount: clientsWithDeal.length,
+    };
+  });
+
+  // By division summary (new clients only)
+  const allNew = newMonths.flatMap((m) => m.clients);
   const divisionMap = new Map<string, { totalDealSize: number; count: number }>();
-  for (const c of allClientsWithDeal) {
+  for (const c of allNew) {
     if (c.dealSize <= 0) continue;
     const existing = divisionMap.get(c.division) || { totalDealSize: 0, count: 0 };
     existing.totalDealSize += c.dealSize;
@@ -819,5 +786,5 @@ export async function getNewClientDealSize(
     }))
     .sort((a, b) => b.avgDealSize - a.avgDealSize);
 
-  return { months: result, byDivision };
+  return { months: newMonths, churnedMonths, byDivision };
 }

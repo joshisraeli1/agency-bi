@@ -245,8 +245,25 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .map(([industry, revenue]) => ({ industry, revenue: Math.round(revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // Client LTV by Division (reuse divRevenue from marginByDivision)
-  const clientLTVByDivision = Array.from(divRevenue.entries())
+  // Client LTV by Division (based on contentPackageType from HubSpot)
+  const divisionRevMap = new Map<string, number>();
+  for (const c of clients) {
+    if (c.status !== "active" || !c.hubspotDealId) continue;
+    if (excludedIds.has(c.id)) continue;
+    const rv = c.retainerValue ?? 0;
+    if (rv <= 0) continue;
+    const pkg = (c.contentPackageType || "").toLowerCase();
+    let div = "Content Delivery";
+    if (pkg === "social media" || pkg === "social media management") div = "Social Media Management";
+    else if (pkg === "meta ads" || pkg === "ads management") div = "Ads Management";
+    else if (pkg === "social and ads management") {
+      divisionRevMap.set("Social Media Management", (divisionRevMap.get("Social Media Management") || 0) + rv * 0.5);
+      divisionRevMap.set("Ads Management", (divisionRevMap.get("Ads Management") || 0) + rv * 0.5);
+      continue;
+    }
+    divisionRevMap.set(div, (divisionRevMap.get(div) || 0) + rv);
+  }
+  const clientLTVByDivision = Array.from(divisionRevMap.entries())
     .map(([division, revenue]) => ({ division, revenue: Math.round(revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
