@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import {
   getLTVData,
@@ -23,7 +24,7 @@ import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Target, TrendingUp, DollarSign, Building, UserCheck } from "lucide-react";
+import { TrendingUp, DollarSign, Building, UserCheck, Receipt } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -44,6 +45,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     newClientDealSize,
     timesheetMargin,
     monthlyChurn,
+    avgDealSizeResult,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -56,7 +58,13 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getNewClientDealSize(months),
     getTimesheetClientMargin(months),
     getMonthlyChurn(12),
+    db.client.aggregate({
+      where: { status: "active", hubspotDealId: { not: null }, retainerValue: { gt: 0 } },
+      _avg: { retainerValue: true },
+    }),
   ]);
+
+  const avgDealSize = Math.round(avgDealSizeResult._avg.retainerValue ?? 0);
 
   return (
     <div className="space-y-6">
@@ -73,9 +81,10 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       {/* 1. Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
-          title="Avg Utilization"
-          value={formatPercent(data.avgUtilization)}
-          icon={<Target className="h-4 w-4 text-muted-foreground" />}
+          title="Avg Deal Size"
+          value={formatCurrency(avgDealSize)}
+          description="Active clients"
+          icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Avg Margin"
