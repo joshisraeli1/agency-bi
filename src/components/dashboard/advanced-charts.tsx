@@ -34,15 +34,14 @@ export function AdvancedCharts({
   kpiData,
   newClientDealSize,
 }: Props) {
-  // Client health matrix: x = monthly revenue, y = margin %, z = LTV (monthly × months)
+  // Client health matrix: x = monthly revenue, y = months retained, z = margin %
   const healthData = clientHealth.clients.map((c) => {
     const monthlyRevenue = c.monthsRetained > 0 ? Math.round(c.revenue / c.monthsRetained) : c.revenue;
-    const ltv = monthlyRevenue * c.monthsRetained;
     return {
       name: c.clientName,
       x: monthlyRevenue,
-      y: c.marginPercent,
-      z: ltv,
+      y: c.monthsRetained,
+      z: Math.max(1, Math.abs(c.marginPercent)),
     };
   });
 
@@ -106,7 +105,7 @@ export function AdvancedCharts({
       <div>
         <h2 className="text-xl font-semibold">Client Health Matrix</h2>
         <p className="text-muted-foreground text-sm mt-1">
-          Monthly revenue vs margin — bubble size represents lifetime value
+          Monthly revenue vs months retained — bubble size represents margin %
         </p>
       </div>
 
@@ -115,11 +114,10 @@ export function AdvancedCharts({
           title="Client Health Matrix"
           data={healthData}
           xLabel="Monthly Revenue"
-          yLabel="Margin %"
-          zLabel="LTV"
+          yLabel="Months Retained"
+          zLabel="Margin %"
           formatX={fmtCurrency}
-          formatY={(v) => `${v}%`}
-          referenceY={20}
+          formatY={(v) => `${v}`}
         />
       )}
 
