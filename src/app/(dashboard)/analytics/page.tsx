@@ -97,8 +97,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
-          title="Total Revenue"
-          value={formatCurrency(data.totalRevenue)}
+          title="Annualised Revenue"
+          value={formatCurrency(data.activeClients > 0 ? avgDealSize * data.activeClients * 12 : 0)}
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
