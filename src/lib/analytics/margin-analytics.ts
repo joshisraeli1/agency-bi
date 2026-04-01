@@ -17,7 +17,7 @@ export async function getTimesheetClientMargin(
   const monthRange = getMonthRange(months);
   const startDate = new Date(`${monthRange[0]}-01`);
 
-  const [excludedIds, clients, financials, timeEntries, settings] =
+  const [excludedIds, clients, financials, timeEntries, teamMembers, settings] =
     await Promise.all([
       getExcludedClientIds(),
       db.client.findMany({
@@ -55,12 +55,30 @@ export async function getTimesheetClientMargin(
           },
         },
       }),
+      db.teamMember.findMany({
+        where: { active: true },
+        select: {
+          costType: true,
+          hourlyRate: true,
+          annualSalary: true,
+          weeklyHours: true,
+        },
+      }),
       db.appSettings.findFirst(),
     ]);
 
   const activeClients = clients.filter((c) => !excludedIds.has(c.id));
   const clientIds = new Set(activeClients.map((c) => c.id));
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
+
+  // Blended hourly rate as fallback for time entries without a team member
+  let totalRate = 0;
+  let rateCount = 0;
+  for (const m of teamMembers) {
+    const rate = getEffectiveHourlyRate(m);
+    if (rate) { totalRate += rate; rateCount++; }
+  }
+  const blendedHourlyRate = rateCount > 0 ? totalRate / rateCount : 50;
 
   // Revenue per client per month (ex-GST)
   const revenueByClientMonth = new Map<string, number>();
@@ -77,10 +95,8 @@ export async function getTimesheetClientMargin(
     if (!e.clientId || !clientIds.has(e.clientId)) continue;
     const month = toMonthKey(e.date);
     const key = `${e.clientId}|${month}`;
-    const rate = e.teamMember ? getEffectiveHourlyRate(e.teamMember) : null;
-    if (rate) {
-      timeCostByClientMonth.set(key, (timeCostByClientMonth.get(key) || 0) + e.hours * rate);
-    }
+    const rate = e.teamMember ? (getEffectiveHourlyRate(e.teamMember) ?? blendedHourlyRate) : blendedHourlyRate;
+    timeCostByClientMonth.set(key, (timeCostByClientMonth.get(key) || 0) + e.hours * rate);
     hoursByClientMonth.set(key, (hoursByClientMonth.get(key) || 0) + e.hours);
   }
 
@@ -126,8 +142,8 @@ export async function getTimesheetClientMargin(
     const monthTimeCost = timeEntries
       .filter((e) => e.clientId && clientIds.has(e.clientId) && toMonthKey(e.date) === month)
       .reduce((s, e) => {
-        const rate = e.teamMember ? getEffectiveHourlyRate(e.teamMember) : null;
-        return s + (rate ? e.hours * rate : 0);
+        const rate = e.teamMember ? (getEffectiveHourlyRate(e.teamMember) ?? blendedHourlyRate) : blendedHourlyRate;
+        return s + e.hours * rate;
       }, 0);
     const margin = monthRev - monthTimeCost;
     const marginPercent = monthRev > 0 ? Number(((margin / monthRev) * 100).toFixed(1)) : 0;
@@ -229,16 +245,14 @@ export async function getHolisticClientMargin(
     revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount / gstDivisor);
   }
 
-  // Time cost per client per month
+  // Time cost per client per month (use blended rate as fallback)
   const timeCostByClientMonth = new Map<string, number>();
   for (const e of timeEntries) {
     if (!e.clientId || !clientIds.has(e.clientId)) continue;
     const month = toMonthKey(e.date);
     const key = `${e.clientId}|${month}`;
-    const rate = e.teamMember ? getEffectiveHourlyRate(e.teamMember) : null;
-    if (rate) {
-      timeCostByClientMonth.set(key, (timeCostByClientMonth.get(key) || 0) + e.hours * rate);
-    }
+    const rate = e.teamMember ? (getEffectiveHourlyRate(e.teamMember) ?? blendedHourlyRate) : blendedHourlyRate;
+    timeCostByClientMonth.set(key, (timeCostByClientMonth.get(key) || 0) + e.hours * rate);
   }
 
   // Build per-month rows for each client

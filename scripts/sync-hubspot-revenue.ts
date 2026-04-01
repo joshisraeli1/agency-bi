@@ -331,7 +331,7 @@ async function main() {
 
       const dates = clientDates.get(client.id);
       if (dates?.startDate) update.startDate = dates.startDate;
-      if (dates?.endDate) update.endDate = dates.endDate;
+      update.endDate = dates?.endDate ?? null;
 
       const industry = clientIndustry.get(client.id);
       if (industry) update.industry = industry;

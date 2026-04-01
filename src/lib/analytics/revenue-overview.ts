@@ -196,17 +196,25 @@ export async function getRevenueOverview(
 // New Revenue vs Churn by Month
 // ---------------------------------------------------------------------------
 
+export interface RevenueVsChurnClient {
+  id: string;
+  name: string;
+  retainerValue: number;
+}
+
 export interface RevenueVsChurnRow {
   month: string;
   newRevenue: number;
   churnedRevenue: number;
   net: number;
+  newClients: RevenueVsChurnClient[];
+  churnedClients: RevenueVsChurnClient[];
 }
 
 export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, clients] = await Promise.all([
+  const [excludedIds, clients, settings] = await Promise.all([
     getExcludedClientIds(),
     db.client.findMany({
       where: {
@@ -215,12 +223,17 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       },
       select: {
         id: true,
+        name: true,
         startDate: true,
         endDate: true,
         retainerValue: true,
       },
     }),
+    db.appSettings.findFirst(),
   ]);
+
+  const gstRate = settings?.gstRate ?? 10;
+  const gstDivisor = 1 + gstRate / 100;
 
   const filtered = clients.filter((c) => !excludedIds.has(c.id));
 
@@ -230,20 +243,30 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       if (!c.startDate) return false;
       return toMonthKey(c.startDate) === month;
     });
-    const newRevenue = newClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
+    const newRevenue = newClients.reduce((s, c) => s + (c.retainerValue || 0) / gstDivisor, 0);
 
     // Churned revenue: clients whose endDate falls in this month
     const churnedClients = filtered.filter((c) => {
       if (!c.endDate) return false;
       return toMonthKey(c.endDate) === month;
     });
-    const churnedRevenue = churnedClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
+    const churnedRevenue = churnedClients.reduce((s, c) => s + (c.retainerValue || 0) / gstDivisor, 0);
 
     return {
       month,
       newRevenue: Math.round(newRevenue),
       churnedRevenue: Math.round(churnedRevenue),
       net: Math.round(newRevenue - churnedRevenue),
+      newClients: newClients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        retainerValue: Math.round((c.retainerValue || 0) / gstDivisor),
+      })),
+      churnedClients: churnedClients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        retainerValue: Math.round((c.retainerValue || 0) / gstDivisor),
+      })),
     };
   });
 }

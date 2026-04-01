@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import {
   BarChart,
   Bar,
@@ -9,7 +11,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  Cell,
   LabelList,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,22 +21,44 @@ interface Props {
   data: RevenueVsChurnRow[];
 }
 
+type ExpandedState = { month: string; type: "new" | "churn" } | null;
+
 export function RevenueVsChurnChart({ data }: Props) {
+  const [expanded, setExpanded] = useState<ExpandedState>(null);
+
   const chartData = data.map((d) => ({
     month: formatMonth(d.month),
+    rawMonth: d.month,
     "New Revenue": d.newRevenue,
-    "Churned Revenue": -d.churnedRevenue, // negative for visual separation
+    "Churned Revenue": d.churnedRevenue,
     net: d.net,
-    rawNew: d.newRevenue,
-    rawChurn: d.churnedRevenue,
   }));
 
   const formatLabel = (value: unknown) => {
-    const abs = Math.abs(Number(value));
-    if (abs === 0) return "";
-    if (abs >= 1000) return `$${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}K`;
-    return `$${abs}`;
+    const v = Number(value);
+    if (v === 0) return "";
+    if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`;
+    return `$${v}`;
   };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleBarClick = (dataKey: "new" | "churn") => (entry: any) => {
+    if (!entry?.rawMonth) return;
+    setExpanded((prev) =>
+      prev !== null && prev.month === entry.rawMonth && prev.type === dataKey
+        ? null
+        : { month: entry.rawMonth, type: dataKey }
+    );
+  };
+
+  const expandedRow = expanded
+    ? data.find((d) => d.month === expanded.month)
+    : null;
+
+  const expandedClients =
+    expanded?.type === "new"
+      ? expandedRow?.newClients
+      : expandedRow?.churnedClients;
 
   return (
     <Card>
@@ -50,18 +73,23 @@ export function RevenueVsChurnChart({ data }: Props) {
             <YAxis
               tick={{ fontSize: 12 }}
               tickFormatter={(v: number) => {
-                const abs = Math.abs(v);
-                if (abs >= 1000) return `$${(abs / 1000).toFixed(0)}K`;
-                return `$${abs}`;
+                if (v >= 1000) return `$${(v / 1000).toFixed(0)}K`;
+                return `$${v}`;
               }}
             />
             <Tooltip
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              formatter={(value: any, name: any) => [formatCurrency(Math.abs(Number(value))), String(name)]}
+              formatter={(value: any, name: any) => [formatCurrency(Number(value)), String(name)]}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
             />
             <Legend />
-            <Bar dataKey="New Revenue" fill="#22c55e" radius={[4, 4, 0, 0]}>
+            <Bar
+              dataKey="New Revenue"
+              fill="#22c55e"
+              radius={[4, 4, 0, 0]}
+              cursor="pointer"
+              onClick={handleBarClick("new")}
+            >
               <LabelList
                 dataKey="New Revenue"
                 position="top"
@@ -69,16 +97,69 @@ export function RevenueVsChurnChart({ data }: Props) {
                 style={{ fontSize: 11, fill: "#22c55e", fontWeight: 600 }}
               />
             </Bar>
-            <Bar dataKey="Churned Revenue" fill="#ef4444" radius={[0, 0, 4, 4]}>
+            <Bar
+              dataKey="Churned Revenue"
+              fill="#ef4444"
+              radius={[4, 4, 0, 0]}
+              cursor="pointer"
+              onClick={handleBarClick("churn")}
+            >
               <LabelList
                 dataKey="Churned Revenue"
-                position="bottom"
+                position="top"
                 formatter={formatLabel}
                 style={{ fontSize: 11, fill: "#ef4444", fontWeight: 600 }}
               />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+
+        {expanded && expandedClients && (
+          <div className="mt-4 rounded-lg border p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold">
+                {expanded.type === "new" ? "New Clients" : "Churned Clients"} &mdash;{" "}
+                {formatMonth(expanded.month)}
+              </h4>
+              <button
+                onClick={() => setExpanded(null)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+            {expandedClients.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No clients for this month.</p>
+            ) : (
+              <div className="space-y-1">
+                {expandedClients.map((client) => (
+                  <div
+                    key={client.id}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <Link
+                      href={`/clients/${client.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {client.name}
+                    </Link>
+                    <span className="text-muted-foreground">
+                      {formatCurrency(client.retainerValue)}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-sm font-semibold border-t pt-1 mt-2">
+                  <span>Total</span>
+                  <span>
+                    {formatCurrency(
+                      expandedClients.reduce((s, c) => s + c.retainerValue, 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

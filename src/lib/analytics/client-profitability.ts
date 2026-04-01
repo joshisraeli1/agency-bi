@@ -9,7 +9,7 @@ export async function getClientProfitability(
   const monthRange = getMonthRange(months);
   const startDate = new Date(`${monthRange[0]}-01`);
 
-  const [client, financials, timeEntries] = await Promise.all([
+  const [client, financials, timeEntries, teamMembers] = await Promise.all([
     db.client.findUniqueOrThrow({
       where: { id: clientId },
     }),
@@ -25,7 +25,25 @@ export async function getClientProfitability(
         teamMember: true,
       },
     }),
+    db.teamMember.findMany({
+      where: { active: true },
+      select: {
+        costType: true,
+        hourlyRate: true,
+        annualSalary: true,
+        weeklyHours: true,
+      },
+    }),
   ]);
+
+  // Blended hourly rate as fallback for entries without a team member
+  let totalRate = 0;
+  let rateCount = 0;
+  for (const m of teamMembers) {
+    const rate = getEffectiveHourlyRate(m);
+    if (rate) { totalRate += rate; rateCount++; }
+  }
+  const blendedHourlyRate = rateCount > 0 ? totalRate / rateCount : 50;
 
   const totalRevenue = financials
     .filter((f) => f.type === "retainer" || f.type === "project")
@@ -54,10 +72,10 @@ export async function getClientProfitability(
     };
     existing.hours += entry.hours;
 
-    if (entry.teamMember) {
-      const rate = getEffectiveHourlyRate(entry.teamMember);
-      if (rate) existing.cost += entry.hours * rate;
-    }
+    const rate = entry.teamMember
+      ? (getEffectiveHourlyRate(entry.teamMember) ?? blendedHourlyRate)
+      : blendedHourlyRate;
+    existing.cost += entry.hours * rate;
 
     teamMap.set(memberId, existing);
   }
