@@ -9,7 +9,7 @@ import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle, Calendar, PiggyBank } from "lucide-react";
+import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle, Calendar, PiggyBank, Receipt } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -27,6 +27,11 @@ export default async function OverviewPage({ searchParams }: Props) {
     getRevenueVsChurn(12),
   ]);
 
+  // Current month revenue (last entry in trend)
+  const currentMonth = revenue.monthlyTrend[revenue.monthlyTrend.length - 1];
+  const monthlyRevenueExGst = currentMonth?.hubspotRevenue ?? 0;
+  const monthlyRevenueIncGst = currentMonth?.hubspotRevenueIncGst ?? 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -36,7 +41,17 @@ export default async function OverviewPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+        <StatCard
+          title="Monthly Revenue (inc GST)"
+          value={formatCurrency(monthlyRevenueIncGst)}
+          icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Monthly Revenue (ex GST)"
+          value={formatCurrency(monthlyRevenueExGst)}
+          icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
+        />
         <Link href="/financials">
           <StatCard
             title={`Revenue ex GST (${months}mo)`}

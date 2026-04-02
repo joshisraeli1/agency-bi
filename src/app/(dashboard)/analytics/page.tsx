@@ -20,7 +20,6 @@ import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
-import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
@@ -70,6 +69,10 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
   const avgDealSize = Math.round(avgDealSizeResult._avg.retainerValue ?? 0);
 
+  const currentMonth = revenueOverview.monthlyTrend[revenueOverview.monthlyTrend.length - 1];
+  const monthlyRevenueExGst = currentMonth?.hubspotRevenue ?? 0;
+  const monthlyRevenueIncGst = currentMonth?.hubspotRevenueIncGst ?? 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -83,7 +86,17 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       </div>
 
       {/* 1. Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+        <StatCard
+          title="Monthly Revenue (inc GST)"
+          value={formatCurrency(monthlyRevenueIncGst)}
+          icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Monthly Revenue (ex GST)"
+          value={formatCurrency(monthlyRevenueExGst)}
+          icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
+        />
         <StatCard
           title="Avg Deal Size"
           value={formatCurrency(avgDealSize)}
@@ -118,10 +131,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         />
       </div>
 
-      {/* 2. Monthly & Quarterly Revenue */}
-      <RevenueCharts data={revenueOverview} />
-
-      {/* 3. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
+      {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection
         hubspotProfitability={data.hubspotProfitability}
         xeroProfitability={data.xeroProfitability}

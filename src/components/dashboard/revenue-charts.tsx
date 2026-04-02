@@ -11,11 +11,9 @@ interface Props {
 }
 
 type SourceFilter = "both" | "hubspot" | "xero";
-type GstFilter = "ex" | "inc";
 
 export function RevenueCharts({ data }: Props) {
   const [source, setSource] = useState<SourceFilter>("hubspot");
-  const [gst, setGst] = useState<GstFilter>("ex");
 
   const fmtCurrency = (v: number) => formatCurrency(v);
 
@@ -23,10 +21,10 @@ export function RevenueCharts({ data }: Props) {
   const monthlyData = data.monthlyTrend.map((m) => {
     const row: Record<string, unknown> = { month: formatMonth(m.month) };
     if (source === "both" || source === "hubspot") {
-      row.hubspot = Math.round(gst === "ex" ? m.hubspotRevenue : m.hubspotRevenueIncGst);
+      row.hubspot = Math.round(m.hubspotRevenue);
     }
     if (source === "both" || source === "xero") {
-      row.xero = Math.round(gst === "ex" ? m.xeroRevenue : m.xeroRevenueIncGst);
+      row.xero = Math.round(m.xeroRevenue);
     }
     return row;
   });
@@ -38,10 +36,10 @@ export function RevenueCharts({ data }: Props) {
   const quarterlyData = data.quarterlyTrend.map((q) => {
     const row: Record<string, unknown> = { quarter: q.quarter };
     if (source === "both" || source === "hubspot") {
-      row.hubspot = gst === "ex" ? q.hubspotRevenue : q.hubspotRevenueIncGst;
+      row.hubspot = q.hubspotRevenue;
     }
     if (source === "both" || source === "xero") {
-      row.xero = gst === "ex" ? q.xeroRevenue : q.xeroRevenueIncGst;
+      row.xero = q.xeroRevenue;
     }
     return row;
   });
@@ -53,46 +51,27 @@ export function RevenueCharts({ data }: Props) {
     cost: Number(c.cost.toFixed(0)),
   }));
 
-  const gstLabel = gst === "ex" ? "ex GST" : "inc GST";
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">Source:</span>
-          <div className="flex gap-1">
-            {(["both", "hubspot", "xero"] as const).map((s) => (
-              <Button
-                key={s}
-                variant={source === s ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSource(s)}
-              >
-                {s === "both" ? "Both" : s === "hubspot" ? "HubSpot" : "Xero"}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">GST:</span>
-          <div className="flex gap-1">
-            {(["ex", "inc"] as const).map((g) => (
-              <Button
-                key={g}
-                variant={gst === g ? "default" : "outline"}
-                size="sm"
-                onClick={() => setGst(g)}
-              >
-                {g === "ex" ? "Ex GST" : "Inc GST"}
-              </Button>
-            ))}
-          </div>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">Source:</span>
+        <div className="flex gap-1">
+          {(["both", "hubspot", "xero"] as const).map((s) => (
+            <Button
+              key={s}
+              variant={source === s ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSource(s)}
+            >
+              {s === "both" ? "Both" : s === "hubspot" ? "HubSpot" : "Xero"}
+            </Button>
+          ))}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <BarChartCard
-          title={`Monthly Revenue (${gstLabel})`}
+          title="Monthly Revenue"
           data={monthlyData}
           xKey="month"
           yKeys={monthlyKeys}
@@ -100,7 +79,7 @@ export function RevenueCharts({ data }: Props) {
           formatY={fmtCurrency}
         />
         <BarChartCard
-          title={`Quarterly Revenue (${gstLabel})`}
+          title="Quarterly Revenue"
           data={quarterlyData}
           xKey="quarter"
           yKeys={monthlyKeys}
