@@ -233,7 +233,7 @@ export interface RevenueVsChurnRow {
 export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, clients, settings] = await Promise.all([
+  const [excludedIds, clients] = await Promise.all([
     getExcludedClientIds(),
     db.client.findMany({
       where: {
@@ -248,11 +248,7 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
         retainerValue: true,
       },
     }),
-    db.appSettings.findFirst(),
   ]);
-
-  const gstRate = settings?.gstRate ?? 10;
-  const gstDivisor = 1 + gstRate / 100;
 
   const filtered = clients.filter((c) => !excludedIds.has(c.id));
 
@@ -262,14 +258,15 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       if (!c.startDate) return false;
       return toMonthKey(c.startDate) === month;
     });
-    const newRevenue = newClients.reduce((s, c) => s + (c.retainerValue || 0) / gstDivisor, 0);
+    // retainerValue is already ex-GST (populated from amount__excl_gst_)
+    const newRevenue = newClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
 
     // Churned revenue: clients whose endDate falls in this month
     const churnedClients = filtered.filter((c) => {
       if (!c.endDate) return false;
       return toMonthKey(c.endDate) === month;
     });
-    const churnedRevenue = churnedClients.reduce((s, c) => s + (c.retainerValue || 0) / gstDivisor, 0);
+    const churnedRevenue = churnedClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
 
     return {
       month,
@@ -279,12 +276,12 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       newClients: newClients.map((c) => ({
         id: c.id,
         name: c.name,
-        retainerValue: Math.round((c.retainerValue || 0) / gstDivisor),
+        retainerValue: Math.round(c.retainerValue || 0),
       })),
       churnedClients: churnedClients.map((c) => ({
         id: c.id,
         name: c.name,
-        retainerValue: Math.round((c.retainerValue || 0) / gstDivisor),
+        retainerValue: Math.round(c.retainerValue || 0),
       })),
     };
   });
