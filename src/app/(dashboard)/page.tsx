@@ -29,8 +29,8 @@ export default async function OverviewPage({ searchParams }: Props) {
 
   // Current month revenue (last entry in trend)
   const currentMonth = revenue.monthlyTrend[revenue.monthlyTrend.length - 1];
-  const monthlyRevenueExGst = currentMonth?.hubspotRevenue ?? 0;
-  const monthlyRevenueIncGst = currentMonth?.hubspotRevenueIncGst ?? 0;
+  const monthlyRevenueExGst = currentMonth?.closedWonRevenue ?? 0;
+  const monthlyRevenueIncGst = currentMonth?.closedWonRevenueIncGst ?? 0;
 
   return (
     <div className="space-y-6">

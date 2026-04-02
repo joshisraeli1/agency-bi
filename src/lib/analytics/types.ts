@@ -68,6 +68,8 @@ export interface RevenueOverview {
     xeroRevenue: number;
     hubspotRevenueIncGst: number;
     xeroRevenueIncGst: number;
+    closedWonRevenue: number;
+    closedWonRevenueIncGst: number;
   }[];
   quarterlyTrend: {
     quarter: string;

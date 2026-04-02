@@ -74,8 +74,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
   const avgDealSize = Math.round((avgDealSizeResult._avg.retainerValue ?? 0) / gstDivisor);
 
   const currentMonth = revenueOverview.monthlyTrend[revenueOverview.monthlyTrend.length - 1];
-  const monthlyRevenueExGst = currentMonth?.hubspotRevenue ?? 0;
-  const monthlyRevenueIncGst = currentMonth?.hubspotRevenueIncGst ?? 0;
+  const monthlyRevenueExGst = currentMonth?.closedWonRevenue ?? 0;
+  const monthlyRevenueIncGst = currentMonth?.closedWonRevenueIncGst ?? 0;
 
   return (
     <div className="space-y-6">

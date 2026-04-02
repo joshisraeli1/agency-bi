@@ -57,9 +57,9 @@ export async function getRevenueOverview(
 
   const marginWarning = settings?.marginWarning ?? 20;
 
-  // Totals — revenue only from HubSpot Closed Won clients (source of truth), ex-GST
+  // Totals — revenue from all HubSpot clients (source of truth), ex-GST
   const totalRevenue = financials
-    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && closedWonClientIds.has(f.clientId))
+    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
     .reduce((sum, f) => sum + f.amount, 0);
 
   const explicitCost = financials
@@ -103,6 +103,10 @@ export async function getRevenueOverview(
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
     const hubspotRevenue = monthFinancials
+      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
+      .reduce((s, f) => s + f.amount, 0);
+    // Closed Won only — for monthly revenue stat cards
+    const closedWonRevenue = monthFinancials
       .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && closedWonClientIds.has(f.clientId))
       .reduce((s, f) => s + f.amount, 0);
     // Xero revenue from ALL records (including synthetic P&L client, unfiltered)
@@ -117,7 +121,8 @@ export async function getRevenueOverview(
     // Inc-GST amounts (financial records are ex-GST, multiply back)
     const hubspotRevenueIncGst = hubspotRevenue * gstDivisor;
     const xeroRevenueIncGst = xeroRevenue * gstDivisor;
-    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst };
+    const closedWonRevenueIncGst = closedWonRevenue * gstDivisor;
+    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst, closedWonRevenue, closedWonRevenueIncGst };
   });
 
   // Quarterly trend: aggregate monthly into quarters
