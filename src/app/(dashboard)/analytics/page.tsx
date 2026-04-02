@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
+import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import {
   getLTVData,
   getRevenueByServiceType,
@@ -19,6 +20,7 @@ import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
+import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
@@ -34,6 +36,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
   const [
+    revenueOverview,
     data,
     ltv,
     revenueByType,
@@ -47,6 +50,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     monthlyChurn,
     avgDealSizeResult,
   ] = await Promise.all([
+    getRevenueOverview(months),
     getAgencyKPIs(months),
     getLTVData(),
     getRevenueByServiceType(months),
@@ -114,7 +118,10 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         />
       </div>
 
-      {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
+      {/* 2. Monthly & Quarterly Revenue */}
+      <RevenueCharts data={revenueOverview} />
+
+      {/* 3. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection
         hubspotProfitability={data.hubspotProfitability}
         xeroProfitability={data.xeroProfitability}

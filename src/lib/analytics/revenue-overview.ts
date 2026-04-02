@@ -107,18 +107,27 @@ export async function getRevenueOverview(
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
     const cost = monthExplicitCost + monthlyTeamCost;
-    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue };
+    // Inc-GST amounts (raw)
+    const hubspotRevenueIncGst = monthFinancials
+      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
+      .reduce((s, f) => s + f.amount, 0);
+    const xeroRevenueIncGst = financialsRaw
+      .filter((f) => f.month === month && (f.type === "retainer" || f.type === "project") && f.source === "xero")
+      .reduce((s, f) => s + f.amount, 0);
+    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst };
   });
 
   // Quarterly trend: aggregate monthly into quarters
-  const quarterMap = new Map<string, { hubspotRevenue: number; xeroRevenue: number; revenue: number; cost: number }>();
+  const quarterMap = new Map<string, { hubspotRevenue: number; xeroRevenue: number; hubspotRevenueIncGst: number; xeroRevenueIncGst: number; revenue: number; cost: number }>();
   for (const m of monthlyTrend) {
     const [y, mo] = m.month.split("-").map(Number);
     const q = Math.ceil(mo / 3);
     const qKey = `Q${q} ${y}`;
-    const existing = quarterMap.get(qKey) || { hubspotRevenue: 0, xeroRevenue: 0, revenue: 0, cost: 0 };
+    const existing = quarterMap.get(qKey) || { hubspotRevenue: 0, xeroRevenue: 0, hubspotRevenueIncGst: 0, xeroRevenueIncGst: 0, revenue: 0, cost: 0 };
     existing.hubspotRevenue += m.hubspotRevenue;
     existing.xeroRevenue += m.xeroRevenue;
+    existing.hubspotRevenueIncGst += m.hubspotRevenueIncGst;
+    existing.xeroRevenueIncGst += m.xeroRevenueIncGst;
     existing.revenue += m.revenue;
     existing.cost += m.cost;
     quarterMap.set(qKey, existing);
@@ -128,6 +137,8 @@ export async function getRevenueOverview(
       quarter,
       hubspotRevenue: Math.round(d.hubspotRevenue),
       xeroRevenue: Math.round(d.xeroRevenue),
+      hubspotRevenueIncGst: Math.round(d.hubspotRevenueIncGst),
+      xeroRevenueIncGst: Math.round(d.xeroRevenueIncGst),
       revenue: Math.round(d.revenue),
       cost: Math.round(d.cost),
       margin: Math.round(d.revenue - d.cost),
