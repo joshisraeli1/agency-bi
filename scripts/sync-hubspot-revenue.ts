@@ -311,9 +311,9 @@ async function main() {
     // -----------------------------------------------------------------------
     console.log("\n📊 Updating client statuses from HubSpot deal stages...");
 
-    // Get all HubSpot clients
+    // Get all HubSpot clients (include prospects — they may have won deals)
     const hubspotClients = await db.client.findMany({
-      where: { hubspotDealId: { not: null }, status: { not: "prospect" } },
+      where: { hubspotDealId: { not: null } },
       select: { id: true, name: true },
     });
 
