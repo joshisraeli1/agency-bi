@@ -34,16 +34,13 @@ export function AdvancedCharts({
   kpiData,
   newClientDealSize,
 }: Props) {
-  // Client health matrix: x = monthly revenue, y = months retained, z = margin %
-  const healthData = clientHealth.clients.map((c) => {
-    const monthlyRevenue = c.monthsRetained > 0 ? Math.round(c.revenue / c.monthsRetained) : c.revenue;
-    return {
-      name: c.clientName,
-      x: monthlyRevenue,
-      y: c.monthsRetained,
-      z: Math.max(1, Math.abs(c.marginPercent)),
-    };
-  });
+  // Client health matrix: x = monthly revenue, y = months retained
+  const healthData = clientHealth.clients.map((c) => ({
+    name: c.clientName,
+    x: c.monthlyRevenue ?? Math.round(c.revenue / Math.max(1, c.monthsRetained)),
+    y: c.monthsRetained,
+    z: 10, // uniform bubble size
+  }));
 
   // Client Revenue by Division (from contentPackageType — no double-up)
   const ltvDivisionData = kpiData.clientLTVByDivision.map((d) => ({

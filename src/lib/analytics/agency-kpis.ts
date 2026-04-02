@@ -64,7 +64,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
   const totalRevenue = filteredFinancials
     .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-    .reduce((sum, f) => sum + f.amount / gstDivisor, 0);
+    .reduce((sum, f) => sum + f.amount, 0);
 
   // Cost: billable team salary cost over the period
   let monthlyBillableSalaryCost = 0;

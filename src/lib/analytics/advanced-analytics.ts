@@ -52,6 +52,7 @@ export interface ClientHealthData {
     revenue: number;
     marginPercent: number;
     monthsRetained: number;
+    monthlyRevenue: number;
   }[];
 }
 
@@ -95,7 +96,7 @@ export async function getLTVData(): Promise<LTVData> {
   // Sum revenue per client (ex-GST)
   const revenueMap = new Map<string, number>();
   for (const f of financials) {
-    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount / gstDivisor);
+    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
   }
 
   const now = new Date();
@@ -285,7 +286,7 @@ export async function getRevenueByServiceType(
       (f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot"
     );
     for (const r of revenueRecords) {
-      const exGst = r.amount / gstDivisor;
+      const exGst = r.amount;
       const alloc = clientAlloc.get(r.clientId);
       if (alloc && alloc.total > 0) {
         socialMedia += exGst * (alloc.sm / alloc.total);
@@ -324,52 +325,39 @@ export async function getClientHealthData(
 ): Promise<ClientHealthData> {
   const monthRange = getMonthRange(months);
 
-  const [clients, financials, chSettings] = await Promise.all([
+  const [excludedIds, clients, financials] = await Promise.all([
+    getExcludedClientIds(),
     db.client.findMany({
-      where: { status: "active" },
+      where: { status: "active", hubspotDealId: { not: null } },
       select: { id: true, name: true, startDate: true, createdAt: true },
     }),
     db.financialRecord.findMany({
-      where: { month: { in: monthRange } },
+      where: { month: { in: monthRange }, source: "hubspot", type: { in: ["retainer", "project"] } },
     }),
-    db.appSettings.findFirst(),
   ]);
 
-  const gstDivisor = 1 + (chSettings?.gstRate ?? 10) / 100;
   const now = new Date();
-  const clientMap = new Map(clients.map((c) => [c.id, c]));
+  const activeClients = clients.filter((c) => !excludedIds.has(c.id));
+  const clientMap = new Map(activeClients.map((c) => [c.id, c]));
 
-  // Aggregate financials per client (revenue ex-GST)
-  const clientFinancials = new Map<
-    string,
-    { revenue: number; cost: number }
-  >();
+  // Aggregate financials per client (already ex-GST)
+  const clientRevenue = new Map<string, number>();
   for (const f of financials) {
     if (!clientMap.has(f.clientId)) continue;
-    const existing = clientFinancials.get(f.clientId) || {
-      revenue: 0,
-      cost: 0,
-    };
-    if (
-      (f.type === "retainer" || f.type === "project") &&
-      f.source === "hubspot"
-    ) {
-      existing.revenue += f.amount / gstDivisor;
-    } else if (f.type === "cost") {
-      existing.cost += f.amount;
-    }
-    clientFinancials.set(f.clientId, existing);
+    clientRevenue.set(f.clientId, (clientRevenue.get(f.clientId) || 0) + f.amount);
   }
 
-  const result = clients
+  const periodMonths = monthRange.length;
+
+  const result = activeClients
     .filter((c) => {
-      const fin = clientFinancials.get(c.id);
-      return fin && fin.revenue > 0;
+      const rev = clientRevenue.get(c.id);
+      return rev && rev > 0;
     })
     .map((c) => {
-      const fin = clientFinancials.get(c.id)!;
-      const margin = fin.revenue - fin.cost;
-      const marginPercent = (margin / fin.revenue) * 100;
+      const totalRevenue = clientRevenue.get(c.id)!;
+      // Monthly revenue = total revenue in period / number of months in period
+      const monthlyRevenue = totalRevenue / periodMonths;
       const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
       const monthsRetained = Math.max(
         1,
@@ -381,9 +369,10 @@ export async function getClientHealthData(
       return {
         clientId: c.id,
         clientName: c.name,
-        revenue: Math.round(fin.revenue),
-        marginPercent: Number(marginPercent.toFixed(1)),
+        revenue: Math.round(totalRevenue),
+        marginPercent: 0, // Cost data not available in this view
         monthsRetained,
+        monthlyRevenue: Math.round(monthlyRevenue),
       };
     });
 
@@ -501,7 +490,7 @@ export async function getIndustryBreakdown(): Promise<IndustryBreakdown> {
   // Revenue per client
   const revenueMap = new Map<string, number>();
   for (const f of financials) {
-    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount / gstDivisor);
+    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
   }
 
   // Group by industry
@@ -571,9 +560,9 @@ export async function getSourceDiscrepancy(
       xero: 0,
     };
     if (f.source === "hubspot") {
-      existing.hubspot += f.amount / gstDivisor;
+      existing.hubspot += f.amount;
     } else if (f.source === "xero") {
-      existing.xero += f.amount / gstDivisor;
+      existing.xero += f.amount;
     }
     map.set(key, existing);
   }

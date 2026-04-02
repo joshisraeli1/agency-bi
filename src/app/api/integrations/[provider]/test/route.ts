@@ -35,6 +35,13 @@ export async function POST(
     );
   }
 
+  const markConnected = async () => {
+    await db.integrationConfig.update({
+      where: { provider },
+      data: { enabled: true },
+    });
+  };
+
   try {
     switch (provider) {
       case "monday": {
@@ -50,6 +57,7 @@ export async function POST(
         });
         const data = await res.json();
         if (data.errors) throw new Error(data.errors[0].message);
+        await markConnected();
         return NextResponse.json({
           success: true,
           message: `Connected as ${data.data.me.name}`,
@@ -69,6 +77,7 @@ export async function POST(
           const err = await res.json();
           throw new Error(err.message || `HTTP ${res.status}`);
         }
+        await markConnected();
         return NextResponse.json({
           success: true,
           message: "Connected to HubSpot",
@@ -86,6 +95,7 @@ export async function POST(
         if (!sheetsResult.success) {
           throw new Error(sheetsResult.error ?? "Connection failed");
         }
+        await markConnected();
         return NextResponse.json({
           success: true,
           message: `Connected! Found ${sheetsResult.tabs?.length ?? 0} tab(s)`,
@@ -102,6 +112,7 @@ export async function POST(
         if (!xeroResult.success) {
           throw new Error(xeroResult.error ?? "Connection failed");
         }
+        await markConnected();
         return NextResponse.json({
           success: true,
           message: `Connected to ${xeroResult.orgName || "Xero"}`,

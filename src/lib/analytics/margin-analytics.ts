@@ -85,7 +85,7 @@ export async function getTimesheetClientMargin(
   for (const f of financials) {
     if (!clientIds.has(f.clientId)) continue;
     const key = `${f.clientId}|${f.month}`;
-    revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount / gstDivisor);
+    revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount);
   }
 
   // Time cost per client per month
@@ -138,7 +138,7 @@ export async function getTimesheetClientMargin(
   const monthlyTrend = monthRange.map((month) => {
     const monthRev = financials
       .filter((f) => f.month === month && clientIds.has(f.clientId))
-      .reduce((s, f) => s + f.amount / gstDivisor, 0);
+      .reduce((s, f) => s + f.amount, 0);
     const monthTimeCost = timeEntries
       .filter((e) => e.clientId && clientIds.has(e.clientId) && toMonthKey(e.date) === month)
       .reduce((s, e) => {
@@ -242,7 +242,7 @@ export async function getHolisticClientMargin(
   for (const f of financials) {
     if (!clientIds.has(f.clientId)) continue;
     const key = `${f.clientId}|${f.month}`;
-    revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount / gstDivisor);
+    revenueByClientMonth.set(key, (revenueByClientMonth.get(key) || 0) + f.amount);
   }
 
   // Time cost per client per month (use blended rate as fallback)

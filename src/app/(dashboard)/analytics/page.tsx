@@ -48,6 +48,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     timesheetMargin,
     monthlyChurn,
     avgDealSizeResult,
+    appSettings,
   ] = await Promise.all([
     getRevenueOverview(months),
     getAgencyKPIs(months),
@@ -65,9 +66,12 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       where: { status: "active", hubspotDealId: { not: null }, retainerValue: { gt: 0 } },
       _avg: { retainerValue: true },
     }),
+    db.appSettings.findFirst(),
   ]);
 
-  const avgDealSize = Math.round(avgDealSizeResult._avg.retainerValue ?? 0);
+  const gstDivisor = 1 + (appSettings?.gstRate ?? 10) / 100;
+  // retainerValue is GST-inclusive; convert to ex-GST for avg deal size
+  const avgDealSize = Math.round((avgDealSizeResult._avg.retainerValue ?? 0) / gstDivisor);
 
   const currentMonth = revenueOverview.monthlyTrend[revenueOverview.monthlyTrend.length - 1];
   const monthlyRevenueExGst = currentMonth?.hubspotRevenue ?? 0;

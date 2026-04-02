@@ -53,7 +53,7 @@ export async function getRevenueOverview(
   // Totals — revenue only from HubSpot (source of truth), converted to ex-GST
   const totalRevenue = financials
     .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-    .reduce((sum, f) => sum + f.amount / gstDivisor, 0);
+    .reduce((sum, f) => sum + f.amount, 0);
 
   const explicitCost = financials
     .filter((f) => f.type === "cost")
@@ -85,7 +85,7 @@ export async function getRevenueOverview(
   for (const f of financials) {
     if (f.type === "retainer" || f.type === "project") {
       const source = f.source || "unknown";
-      sourceMap.set(source, (sourceMap.get(source) || 0) + f.amount / gstDivisor);
+      sourceMap.set(source, (sourceMap.get(source) || 0) + f.amount);
     }
   }
   const revenueBySource = Array.from(sourceMap.entries())
@@ -97,23 +97,19 @@ export async function getRevenueOverview(
     const monthFinancials = financials.filter((f) => f.month === month);
     const hubspotRevenue = monthFinancials
       .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount / gstDivisor, 0);
+      .reduce((s, f) => s + f.amount, 0);
     // Xero revenue from ALL records (including synthetic P&L client, unfiltered)
     const xeroRevenue = financialsRaw
       .filter((f) => f.month === month && (f.type === "retainer" || f.type === "project") && f.source === "xero")
-      .reduce((s, f) => s + f.amount / gstDivisor, 0);
+      .reduce((s, f) => s + f.amount, 0);
     const rev = hubspotRevenue; // HubSpot is source of truth
     const monthExplicitCost = monthFinancials
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
     const cost = monthExplicitCost + monthlyTeamCost;
-    // Inc-GST amounts (raw)
-    const hubspotRevenueIncGst = monthFinancials
-      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount, 0);
-    const xeroRevenueIncGst = financialsRaw
-      .filter((f) => f.month === month && (f.type === "retainer" || f.type === "project") && f.source === "xero")
-      .reduce((s, f) => s + f.amount, 0);
+    // Inc-GST amounts (financial records are ex-GST, multiply back)
+    const hubspotRevenueIncGst = hubspotRevenue * gstDivisor;
+    const xeroRevenueIncGst = xeroRevenue * gstDivisor;
     return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst };
   });
 
@@ -159,7 +155,7 @@ export async function getRevenueOverview(
       cost: 0,
     };
     if ((f.type === "retainer" || f.type === "project") && f.source === "hubspot") {
-      existing.revenue += f.amount / gstDivisor;
+      existing.revenue += f.amount;
     } else if (f.type === "cost") {
       existing.cost += f.amount;
     }
