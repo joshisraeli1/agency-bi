@@ -48,11 +48,18 @@ export async function getRevenueOverview(
   // Filter out excluded clients (prospects + legacy)
   const financials = financialsRaw.filter((f) => !excludedIds.has(f.clientId));
 
+  // Closed Won client IDs — used for monthly stat cards
+  const closedWonClientIds = new Set(
+    financialsRaw
+      .filter((f) => f.client.dealStage === "Closed Won (AU)")
+      .map((f) => f.clientId)
+  );
+
   const marginWarning = settings?.marginWarning ?? 20;
 
-  // Totals — revenue only from HubSpot (source of truth), converted to ex-GST
+  // Totals — revenue only from HubSpot Closed Won clients (source of truth), ex-GST
   const totalRevenue = financials
-    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
+    .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && closedWonClientIds.has(f.clientId))
     .reduce((sum, f) => sum + f.amount, 0);
 
   const explicitCost = financials
@@ -96,7 +103,7 @@ export async function getRevenueOverview(
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
     const hubspotRevenue = monthFinancials
-      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
+      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && closedWonClientIds.has(f.clientId))
       .reduce((s, f) => s + f.amount, 0);
     // Xero revenue from ALL records (including synthetic P&L client, unfiltered)
     const xeroRevenue = financialsRaw
