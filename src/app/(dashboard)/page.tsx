@@ -41,7 +41,7 @@ export default async function OverviewPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         <StatCard
           title="Monthly Revenue (inc GST)"
           value={formatCurrency(monthlyRevenueIncGst)}
@@ -52,13 +52,6 @@ export default async function OverviewPage({ searchParams }: Props) {
           value={formatCurrency(monthlyRevenueExGst)}
           icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
         />
-        <Link href="/financials">
-          <StatCard
-            title={`Revenue ex GST (${months}mo)`}
-            value={formatCurrency(revenue.totalRevenue)}
-            icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
-          />
-        </Link>
         <Link href="/financials">
           <StatCard
             title="Annualized Rev ex GST"

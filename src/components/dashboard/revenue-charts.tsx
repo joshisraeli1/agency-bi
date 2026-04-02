@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BarChartCard } from "@/components/charts/bar-chart";
+import { LineChartCard } from "@/components/charts/line-chart";
 import { Button } from "@/components/ui/button";
 import { formatMonth, formatCurrency } from "@/lib/utils";
 import type { RevenueOverview } from "@/lib/analytics/types";
@@ -44,12 +45,6 @@ export function RevenueCharts({ data }: Props) {
     return row;
   });
 
-  // Client data (always shown)
-  const clientData = data.byClient.slice(0, 10).map((c) => ({
-    name: c.clientName.length > 15 ? c.clientName.slice(0, 15) + "..." : c.clientName,
-    revenue: Number(c.revenue.toFixed(0)),
-    cost: Number(c.cost.toFixed(0)),
-  }));
 
   return (
     <div className="space-y-4">
@@ -88,16 +83,14 @@ export function RevenueCharts({ data }: Props) {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <BarChartCard
-          title="Revenue by Client"
-          data={clientData}
-          xKey="name"
-          yKeys={["revenue", "cost"]}
-          yLabels={["Revenue", "Cost"]}
-          formatY={fmtCurrency}
-        />
-      </div>
+      <LineChartCard
+        title="Revenue by Service Line"
+        data={data.divisionRevenueTrend}
+        xKey="month"
+        yKeys={["Content Delivery", "Social Media Management", "Ads Management"]}
+        yLabels={["Content Delivery", "Social Media Management", "Ads Management"]}
+        formatY={fmtCurrency}
+      />
     </div>
   );
 }

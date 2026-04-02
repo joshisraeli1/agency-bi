@@ -270,6 +270,7 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   // ── HubSpot Profitability (client retainer fields + team salary costs) ──
   // Revenue: allocate each active HubSpot client's retainerValue to division(s) based on contentPackageType
   const hubspotDivRevenue = new Map<string, number>();
+  const hubspotDivClientCount = new Map<string, number>();
   for (const c of clients) {
     if (c.status !== "active" || !(c.hubspotDealId || c.hubspotCompanyId)) continue;
     if (excludedIds.has(c.id)) continue;
@@ -278,15 +279,20 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     const pkg = (c.contentPackageType || "").toLowerCase();
     if (pkg === "social media" || pkg === "social media management") {
       hubspotDivRevenue.set("Social Media Management", (hubspotDivRevenue.get("Social Media Management") || 0) + rv);
+      hubspotDivClientCount.set("Social Media Management", (hubspotDivClientCount.get("Social Media Management") || 0) + 1);
     } else if (pkg === "social and ads management") {
       hubspotDivRevenue.set("Social Media Management", (hubspotDivRevenue.get("Social Media Management") || 0) + rv * 0.5);
       hubspotDivRevenue.set("Ads Management", (hubspotDivRevenue.get("Ads Management") || 0) + rv * 0.5);
+      hubspotDivClientCount.set("Social Media Management", (hubspotDivClientCount.get("Social Media Management") || 0) + 1);
+      hubspotDivClientCount.set("Ads Management", (hubspotDivClientCount.get("Ads Management") || 0) + 1);
     } else if (pkg === "meta ads" || pkg === "ads management") {
       hubspotDivRevenue.set("Ads Management", (hubspotDivRevenue.get("Ads Management") || 0) + rv);
+      hubspotDivClientCount.set("Ads Management", (hubspotDivClientCount.get("Ads Management") || 0) + 1);
     } else {
       // Content Only, Full Suite, One-off, Content Delivery Paid/Organic,
       // Content +, Legacy Urban Swan Package, Other, null — all map to Content Delivery
       hubspotDivRevenue.set("Content Delivery", (hubspotDivRevenue.get("Content Delivery") || 0) + rv);
+      hubspotDivClientCount.set("Content Delivery", (hubspotDivClientCount.get("Content Delivery") || 0) + 1);
     }
   }
 
@@ -321,12 +327,15 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       const rev = hubspotDivRevenue.get(division) || 0;
       const cost = hubspotDivCost.get(division) || 0;
       const margin = rev - cost;
+      const clientCount = hubspotDivClientCount.get(division) || 0;
       return {
         division,
         revenue: Math.round(rev),
         cost: Math.round(cost),
         ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
+        clientCount,
+        avgDealSize: clientCount > 0 ? Math.round(rev / clientCount) : 0,
       };
     })
     .filter((d) => d.revenue > 0 || d.cost > 0)
@@ -394,6 +403,8 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
         cost: Math.round(cost),
         ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
+        clientCount: 0,
+        avgDealSize: 0,
       };
     })
     .filter((d) => d.revenue > 0 || d.cost > 0)

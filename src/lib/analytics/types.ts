@@ -95,6 +95,7 @@ export interface RevenueOverview {
     marginPercent: number;
     reason: string;
   }[];
+  divisionRevenueTrend: Record<string, unknown>[];
 }
 
 export interface AgencyKPIs {
@@ -141,6 +142,8 @@ export interface DivisionProfitabilityRow {
   cost: number;
   ratio: number;
   marginPercent: number;
+  clientCount: number;
+  avgDealSize: number;
 }
 
 export interface XeroMarginTrend {

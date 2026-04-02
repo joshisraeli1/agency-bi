@@ -31,6 +31,7 @@ function DivisionSummaryBlock({
   const totalMargin = totalRevenue - totalCost;
   const totalMarginPercent = totalRevenue > 0 ? Number(((totalMargin / totalRevenue) * 100).toFixed(0)) : 0;
   const totalMultiple = totalCost > 0 ? Number((totalRevenue / totalCost).toFixed(1)) : 0;
+  const totalClientCount = data.reduce((s, d) => s + d.clientCount, 0);
 
   const pieData = data.map((d) => ({ name: d.division, value: d.revenue }));
   const marginBarData = data.map((d) => ({ name: d.division, marginPercent: d.marginPercent }));
@@ -97,7 +98,7 @@ function DivisionSummaryBlock({
                     {totalMarginPercent}%
                   </td>
                 </tr>
-                <tr>
+                <tr className="border-b">
                   <td className="py-2 px-3 font-medium">Multiple</td>
                   {data.map((d) => (
                     <td key={d.division} className="text-right py-2 px-3">
@@ -106,6 +107,17 @@ function DivisionSummaryBlock({
                   ))}
                   <td className="text-right py-2 px-3 font-semibold">
                     {totalMultiple}x
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 px-3 font-medium">Avg Deal Size</td>
+                  {data.map((d) => (
+                    <td key={d.division} className="text-right py-2 px-3">
+                      {d.avgDealSize > 0 ? formatCurrency(d.avgDealSize) : "–"}
+                    </td>
+                  ))}
+                  <td className="text-right py-2 px-3 font-semibold">
+                    {totalClientCount > 0 ? formatCurrency(Math.round(totalRevenue / totalClientCount)) : "–"}
                   </td>
                 </tr>
               </tbody>

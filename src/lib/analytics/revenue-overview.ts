@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey } from "@/lib/utils";
+import { getMonthRange, toMonthKey, formatMonth } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { RevenueOverview } from "./types";
 
@@ -183,6 +183,36 @@ export async function getRevenueOverview(
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
+  // Division revenue trend — map each client's revenue to its service line based on contentPackageType
+  const divisionRevenueTrend = monthRange.map((month) => {
+    const monthFinancials = financials.filter((f) => f.month === month);
+    const divRev: Record<string, number> = {
+      "Content Delivery": 0,
+      "Social Media Management": 0,
+      "Ads Management": 0,
+    };
+    for (const f of monthFinancials) {
+      if (!((f.type === "retainer" || f.type === "project") && f.source === "hubspot")) continue;
+      const pkg = (f.client.contentPackageType || "").toLowerCase();
+      if (pkg === "social media" || pkg === "social media management") {
+        divRev["Social Media Management"] += f.amount;
+      } else if (pkg === "social and ads management") {
+        divRev["Social Media Management"] += f.amount * 0.5;
+        divRev["Ads Management"] += f.amount * 0.5;
+      } else if (pkg === "meta ads" || pkg === "ads management") {
+        divRev["Ads Management"] += f.amount;
+      } else {
+        divRev["Content Delivery"] += f.amount;
+      }
+    }
+    return {
+      month: formatMonth(month),
+      "Content Delivery": Math.round(divRev["Content Delivery"]),
+      "Social Media Management": Math.round(divRev["Social Media Management"]),
+      "Ads Management": Math.round(divRev["Ads Management"]),
+    };
+  });
+
   // At-risk clients
   const atRiskClients = byClient
     .filter((c) => c.marginPercent < marginWarning && c.revenue > 0)
@@ -208,6 +238,7 @@ export async function getRevenueOverview(
     quarterlyTrend,
     byClient,
     atRiskClients,
+    divisionRevenueTrend,
   };
 }
 
