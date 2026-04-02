@@ -48,10 +48,10 @@ export async function getRevenueOverview(
   // Filter out excluded clients (prospects + legacy)
   const financials = financialsRaw.filter((f) => !excludedIds.has(f.clientId));
 
-  // Closed Won client IDs — used for monthly stat cards
-  const closedWonClientIds = new Set(
+  // Active client IDs — used for monthly revenue stat cards
+  const activeClientIds = new Set(
     financialsRaw
-      .filter((f) => f.client.dealStage === "Closed Won (AU)")
+      .filter((f) => f.client.status === "active")
       .map((f) => f.clientId)
   );
 
@@ -106,8 +106,8 @@ export async function getRevenueOverview(
       .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
       .reduce((s, f) => s + f.amount, 0);
     // Closed Won only — for monthly revenue stat cards
-    const closedWonRevenue = monthFinancials
-      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && closedWonClientIds.has(f.clientId))
+    const activeRevenue = monthFinancials
+      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && activeClientIds.has(f.clientId))
       .reduce((s, f) => s + f.amount, 0);
     // Xero revenue from ALL records (including synthetic P&L client, unfiltered)
     const xeroRevenue = financialsRaw
@@ -121,8 +121,8 @@ export async function getRevenueOverview(
     // Inc-GST amounts (financial records are ex-GST, multiply back)
     const hubspotRevenueIncGst = hubspotRevenue * gstDivisor;
     const xeroRevenueIncGst = xeroRevenue * gstDivisor;
-    const closedWonRevenueIncGst = closedWonRevenue * gstDivisor;
-    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst, closedWonRevenue, closedWonRevenueIncGst };
+    const activeRevenueIncGst = activeRevenue * gstDivisor;
+    return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst, activeRevenue, activeRevenueIncGst };
   });
 
   // Quarterly trend: aggregate monthly into quarters
