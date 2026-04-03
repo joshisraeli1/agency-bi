@@ -25,7 +25,7 @@ import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { TrendingUp, DollarSign, Building, UserCheck, Receipt } from "lucide-react";
+import { DollarSign, Building, UserCheck, Receipt } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -49,6 +49,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     monthlyChurn,
     avgDealSizeResult,
     appSettings,
+    clientCount,
   ] = await Promise.all([
     getRevenueOverview(months),
     getAgencyKPIs(months),
@@ -67,6 +68,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       _avg: { retainerValue: true },
     }),
     db.appSettings.findFirst(),
+    db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
   ]);
 
   const gstDivisor = 1 + (appSettings?.gstRate ?? 10) / 100;
@@ -89,8 +91,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
-      {/* 1. Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+      {/* 1. Stat Cards — sourced from revenueOverview to match Overview page */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           title="Monthly Revenue (inc GST)"
           value={formatCurrency(monthlyRevenueIncGst)}
@@ -108,23 +110,13 @@ export default async function AnalyticsPage({ searchParams }: Props) {
           icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
-          title="Avg Margin"
-          value={formatPercent(data.avgMargin)}
-          icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Revenue / Head"
-          value={formatCurrency(data.revenuePerHead)}
-          icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
           title="Annualised Revenue"
-          value={formatCurrency(data.activeClients > 0 ? avgDealSize * data.activeClients * 12 : 0)}
+          value={formatCurrency(revenueOverview.annualizedRevenue)}
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Active Clients"
-          value={String(data.activeClients)}
+          value={String(clientCount)}
           icon={<Building className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard

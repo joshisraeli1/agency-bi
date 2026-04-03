@@ -267,33 +267,42 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .map(([division, revenue]) => ({ division, revenue: Math.round(revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // ── HubSpot Profitability (client retainer fields + team salary costs) ──
-  // Revenue: allocate each active HubSpot client's retainerValue to division(s) based on contentPackageType
-  const hubspotDivRevenue = new Map<string, number>();
-  const hubspotDivClientCount = new Map<string, number>();
+  // ── HubSpot Profitability (financial records + team salary costs) ──
+  // Revenue: allocate HubSpot financial records to divisions based on client's contentPackageType
+  const clientPkgMap = new Map<string, string>();
+  const clientsInDivision = new Map<string, Set<string>>();
   for (const c of clients) {
-    if (c.status !== "active" || !(c.hubspotDealId || c.hubspotCompanyId)) continue;
-    if (excludedIds.has(c.id)) continue;
-    const rv = c.retainerValue ?? 0;
-    if (rv <= 0) continue;
-    const pkg = (c.contentPackageType || "").toLowerCase();
+    clientPkgMap.set(c.id, (c.contentPackageType || "").toLowerCase());
+  }
+
+  function allocateToDivision(clientId: string, amount: number, divRevMap: Map<string, number>) {
+    const pkg = clientPkgMap.get(clientId) || "";
     if (pkg === "social media" || pkg === "social media management") {
-      hubspotDivRevenue.set("Social Media Management", (hubspotDivRevenue.get("Social Media Management") || 0) + rv);
-      hubspotDivClientCount.set("Social Media Management", (hubspotDivClientCount.get("Social Media Management") || 0) + 1);
+      divRevMap.set("Social Media Management", (divRevMap.get("Social Media Management") || 0) + amount);
+      if (!clientsInDivision.has("Social Media Management")) clientsInDivision.set("Social Media Management", new Set());
+      clientsInDivision.get("Social Media Management")!.add(clientId);
     } else if (pkg === "social and ads management") {
-      hubspotDivRevenue.set("Social Media Management", (hubspotDivRevenue.get("Social Media Management") || 0) + rv * 0.5);
-      hubspotDivRevenue.set("Ads Management", (hubspotDivRevenue.get("Ads Management") || 0) + rv * 0.5);
-      hubspotDivClientCount.set("Social Media Management", (hubspotDivClientCount.get("Social Media Management") || 0) + 1);
-      hubspotDivClientCount.set("Ads Management", (hubspotDivClientCount.get("Ads Management") || 0) + 1);
+      divRevMap.set("Social Media Management", (divRevMap.get("Social Media Management") || 0) + amount * 0.5);
+      divRevMap.set("Ads Management", (divRevMap.get("Ads Management") || 0) + amount * 0.5);
+      if (!clientsInDivision.has("Social Media Management")) clientsInDivision.set("Social Media Management", new Set());
+      if (!clientsInDivision.has("Ads Management")) clientsInDivision.set("Ads Management", new Set());
+      clientsInDivision.get("Social Media Management")!.add(clientId);
+      clientsInDivision.get("Ads Management")!.add(clientId);
     } else if (pkg === "meta ads" || pkg === "ads management") {
-      hubspotDivRevenue.set("Ads Management", (hubspotDivRevenue.get("Ads Management") || 0) + rv);
-      hubspotDivClientCount.set("Ads Management", (hubspotDivClientCount.get("Ads Management") || 0) + 1);
+      divRevMap.set("Ads Management", (divRevMap.get("Ads Management") || 0) + amount);
+      if (!clientsInDivision.has("Ads Management")) clientsInDivision.set("Ads Management", new Set());
+      clientsInDivision.get("Ads Management")!.add(clientId);
     } else {
-      // Content Only, Full Suite, One-off, Content Delivery Paid/Organic,
-      // Content +, Legacy Urban Swan Package, Other, null — all map to Content Delivery
-      hubspotDivRevenue.set("Content Delivery", (hubspotDivRevenue.get("Content Delivery") || 0) + rv);
-      hubspotDivClientCount.set("Content Delivery", (hubspotDivClientCount.get("Content Delivery") || 0) + 1);
+      divRevMap.set("Content Delivery", (divRevMap.get("Content Delivery") || 0) + amount);
+      if (!clientsInDivision.has("Content Delivery")) clientsInDivision.set("Content Delivery", new Set());
+      clientsInDivision.get("Content Delivery")!.add(clientId);
     }
+  }
+
+  const hubspotDivRevenue = new Map<string, number>();
+  for (const f of filteredFinancials) {
+    if (!((f.type === "retainer" || f.type === "project") && f.source === "hubspot")) continue;
+    allocateToDivision(f.clientId, f.amount, hubspotDivRevenue);
   }
 
   // Cost: monthly salary per billable team member, grouped by division
@@ -317,7 +326,8 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       monthlyCost = m.hourlyRate * m.weeklyHours * 52 / 12;
     }
     if (monthlyCost > 0) {
-      hubspotDivCost.set(mappedDiv, (hubspotDivCost.get(mappedDiv) || 0) + monthlyCost);
+      // Multiply by months to match revenue which is summed over the full period
+      hubspotDivCost.set(mappedDiv, (hubspotDivCost.get(mappedDiv) || 0) + monthlyCost * monthRange.length);
     }
   }
 
@@ -327,15 +337,15 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
       const rev = hubspotDivRevenue.get(division) || 0;
       const cost = hubspotDivCost.get(division) || 0;
       const margin = rev - cost;
-      const clientCount = hubspotDivClientCount.get(division) || 0;
+      const divClientCount = clientsInDivision.get(division)?.size || 0;
       return {
         division,
         revenue: Math.round(rev),
         cost: Math.round(cost),
         ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
-        clientCount,
-        avgDealSize: clientCount > 0 ? Math.round(rev / clientCount) : 0,
+        clientCount: divClientCount,
+        avgDealSize: divClientCount > 0 ? Math.round(rev / divClientCount) : 0,
       };
     })
     .filter((d) => d.revenue > 0 || d.cost > 0)
