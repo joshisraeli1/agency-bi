@@ -12,15 +12,15 @@ interface StatCardProps {
 
 export function StatCard({ title, value, description, trend, icon }: StatCardProps) {
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
         </CardTitle>
         {icon}
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+      <CardContent className="overflow-hidden">
+        <div className="text-2xl font-bold truncate">{value}</div>
         <div className="flex items-center gap-1 mt-1 min-h-[20px]">
           {trend !== undefined && (
             <span

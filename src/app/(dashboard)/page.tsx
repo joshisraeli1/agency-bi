@@ -41,7 +41,7 @@ export default async function OverviewPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           title="Monthly Revenue (inc GST)"
           value={formatCurrency(monthlyRevenueIncGst)}
@@ -52,28 +52,21 @@ export default async function OverviewPage({ searchParams }: Props) {
           value={formatCurrency(monthlyRevenueExGst)}
           icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
         />
-        <Link href="/financials">
+        <Link href="/financials" className="h-full">
           <StatCard
             title="Annualized Rev ex GST"
             value={formatCurrency(revenue.annualizedRevenue)}
             icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
           />
         </Link>
-        <Link href="/financials">
+        <Link href="/financials" className="h-full">
           <StatCard
             title="Annualized Gross Profit"
             value={formatCurrency(revenue.annualizedProfit)}
             icon={<PiggyBank className="h-4 w-4 text-muted-foreground" />}
           />
         </Link>
-        <Link href="/analytics">
-          <StatCard
-            title="Avg Margin"
-            value={formatPercent(revenue.avgMarginPercent)}
-            icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
-          />
-        </Link>
-        <Link href="/clients">
+        <Link href="/clients" className="h-full">
           <StatCard
             title="Clients"
             value={String(clientCount)}
@@ -81,7 +74,7 @@ export default async function OverviewPage({ searchParams }: Props) {
             icon={<Users className="h-4 w-4 text-muted-foreground" />}
           />
         </Link>
-        <Link href="/team">
+        <Link href="/team" className="h-full">
           <StatCard
             title="Team Members"
             value={String(teamCount)}
