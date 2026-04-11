@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { LineChartCard } from "@/components/charts/line-chart";
+import { BarChartCard } from "@/components/charts/bar-chart";
 import {
   Select,
   SelectContent,
@@ -78,7 +79,16 @@ export function DealSizeChart({ data }: Props) {
       </div>
 
       <LineChartCard
-        title="Avg Deal Size"
+        title="Avg Deal Size (Rolling)"
+        data={chartData}
+        xKey="month"
+        yKeys={["avgDealSize"]}
+        yLabels={["Avg Deal Size"]}
+        formatY={(v) => formatCurrency(v)}
+      />
+
+      <BarChartCard
+        title="Avg Deal Size Won per Month"
         data={chartData}
         xKey="month"
         yKeys={["avgDealSize"]}

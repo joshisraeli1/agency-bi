@@ -30,7 +30,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TeamMemberForm } from "./team-member-form";
-import { formatCurrency, getAnnualRate } from "@/lib/utils";
+import { formatCurrency, getAnnualRate, SALARY_MARKUP } from "@/lib/utils";
+import { StatCard } from "@/components/charts/stat-card";
+import { DollarSign } from "lucide-react";
 
 interface TeamMember {
   id: string;
@@ -49,12 +51,45 @@ interface TeamMember {
   _count: { timeEntries: number };
 }
 
+const SERVICE_DIVISIONS = ["Content Delivery", "Paid Ads Management", "Social Media Management"];
+
+function normaliseDivision(division: string | null): string {
+  if (!division) return "Other";
+  if (SERVICE_DIVISIONS.includes(division)) return division;
+  return "Other";
+}
+
+function getMemberAnnualCost(member: TeamMember): number {
+  if (member.annualSalary) {
+    return member.annualSalary * SALARY_MARKUP;
+  }
+  if (member.hourlyRate) {
+    return member.hourlyRate * (member.weeklyHours || 38) * 52;
+  }
+  return 0;
+}
+
 export function TeamActions({ members }: { members: TeamMember[] }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [editMember, setEditMember] = useState<TeamMember | null>(null);
   const [deleteMember, setDeleteMember] = useState<TeamMember | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const activeMembers = members.filter((m) => m.active);
+  const totalTeamExpense = activeMembers.reduce((sum, m) => sum + getMemberAnnualCost(m), 0);
+
+  const costByDivision = activeMembers.reduce<Record<string, { cost: number; count: number }>>((acc, m) => {
+    const div = normaliseDivision(m.division);
+    if (!acc[div]) acc[div] = { cost: 0, count: 0 };
+    acc[div].cost += getMemberAnnualCost(m);
+    acc[div].count++;
+    return acc;
+  }, {});
+
+  const divisionRows = [...SERVICE_DIVISIONS, "Other"]
+    .filter((d) => costByDivision[d])
+    .map((d) => ({ division: d, ...costByDivision[d] }));
 
   function handleEdit(member: TeamMember) {
     setEditMember(member);
@@ -198,6 +233,46 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StatCard
+          title="Total Team Expense (Annual)"
+          value={formatCurrency(totalTeamExpense)}
+          description={`${activeMembers.length} active members`}
+          icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Team Cost by Division</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 px-3 font-medium">Division</th>
+                <th className="text-right py-2 px-3 font-medium">Members</th>
+                <th className="text-right py-2 px-3 font-medium">Annual Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {divisionRows.map((row) => (
+                <tr key={row.division} className="border-b last:border-0">
+                  <td className="py-2 px-3">{row.division}</td>
+                  <td className="text-right py-2 px-3">{row.count}</td>
+                  <td className="text-right py-2 px-3">{formatCurrency(row.cost)}</td>
+                </tr>
+              ))}
+              <tr className="border-t bg-muted/50">
+                <td className="py-2 px-3 font-semibold">Total</td>
+                <td className="text-right py-2 px-3 font-semibold">{activeMembers.length}</td>
+                <td className="text-right py-2 px-3 font-semibold">{formatCurrency(totalTeamExpense)}</td>
+              </tr>
+            </tbody>
+          </table>
         </CardContent>
       </Card>
 
