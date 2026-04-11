@@ -6,14 +6,12 @@ import {
   getLTVData,
   getRevenueByServiceType,
   getClientHealthData,
-  getTeamUtilizationData,
   getSourceDiscrepancy,
   getIndustryBreakdown,
   getXeroMarginTrend,
   getNewClientDealSize,
 } from "@/lib/analytics/advanced-analytics";
 import {
-  getTimesheetClientMargin,
   getMonthlyChurn,
 } from "@/lib/analytics/margin-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -21,8 +19,8 @@ import { StatCard } from "@/components/charts/stat-card";
 import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
-import { TimesheetMarginSection } from "@/components/dashboard/timesheet-margin-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
+import { DealSizeChart } from "@/components/dashboard/deal-size-chart";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { DollarSign, Building, UserCheck, Receipt } from "lucide-react";
@@ -40,12 +38,10 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     ltv,
     revenueByType,
     clientHealth,
-    teamUtilization,
     discrepancy,
     industryBreakdown,
     xeroMargin,
     newClientDealSize,
-    timesheetMargin,
     monthlyChurn,
     avgDealSizeResult,
     appSettings,
@@ -56,12 +52,10 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getLTVData(),
     getRevenueByServiceType(months),
     getClientHealthData(months),
-    getTeamUtilizationData(months),
     getSourceDiscrepancy(months),
     getIndustryBreakdown(),
     getXeroMarginTrend(months),
     getNewClientDealSize(months),
-    getTimesheetClientMargin(months),
     getMonthlyChurn(12),
     db.client.aggregate({
       where: { status: "active", hubspotDealId: { not: null }, retainerValue: { gt: 0 } },
@@ -134,24 +128,22 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         xeroMargin={xeroMargin}
       />
 
-      {/* 3. Client Margin Breakdown */}
-      <TimesheetMarginSection data={timesheetMargin} />
-
-      {/* 4. Monthly Churn Rate */}
+      {/* 3. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
 
       {/* 6. KPI Charts (Utilization & Margin Trend, Hours by Division) */}
       <KpiCharts data={data} />
+
+      {/* Average Deal Size Over Time */}
+      <DealSizeChart data={newClientDealSize} />
 
       {/* 7. Advanced Charts */}
       <AdvancedCharts
         ltv={ltv}
         revenueByType={revenueByType}
         clientHealth={clientHealth}
-        teamUtilization={teamUtilization}
         industryBreakdown={industryBreakdown}
         kpiData={data}
-        newClientDealSize={newClientDealSize}
       />
 
     </div>

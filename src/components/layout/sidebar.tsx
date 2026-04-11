@@ -14,6 +14,7 @@ import {
   Settings,
   BarChart3,
   MessageSquare,
+  FileSpreadsheet,
 } from "lucide-react";
 
 const navItems = [
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/team", label: "Team", icon: UserCog },
   { href: "/financials", label: "Financials", icon: DollarSign },
   { href: "/time-entries", label: "Time Entries", icon: Clock },
+  { href: "/client-data", label: "Client Data", icon: FileSpreadsheet },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/chat", label: "AI Chat", icon: MessageSquare },
   { href: "/integrations", label: "Integrations", icon: Plug },

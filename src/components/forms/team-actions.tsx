@@ -30,7 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TeamMemberForm } from "./team-member-form";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getAnnualRate } from "@/lib/utils";
 
 interface TeamMember {
   id: string;
@@ -107,7 +107,8 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
                   <TableHead>Role</TableHead>
                   <TableHead>Division</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Rate</TableHead>
+                  <TableHead>Salary</TableHead>
+                  <TableHead>Annual Rate</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
@@ -148,6 +149,13 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
                         ? `${formatCurrency(member.hourlyRate)}/hr`
                         : member.annualSalary
                         ? `${formatCurrency(member.annualSalary)}/yr`
+                        : "\u2014"}
+                    </TableCell>
+                    <TableCell>
+                      {member.annualSalary
+                        ? `${formatCurrency(getAnnualRate(member.annualSalary)!)}/yr`
+                        : member.hourlyRate
+                        ? `${formatCurrency(member.hourlyRate)}/hr`
                         : "\u2014"}
                     </TableCell>
                     <TableCell>

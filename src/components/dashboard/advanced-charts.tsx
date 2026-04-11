@@ -1,38 +1,31 @@
 "use client";
 
 import { BarChartCard } from "@/components/charts/bar-chart";
-import { PieChartCard } from "@/components/charts/pie-chart";
 import { ComboChartCard } from "@/components/charts/combo-chart";
 import { ScatterChartCard } from "@/components/charts/scatter-chart";
 import { formatMonth, formatCurrency } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
   LTVData,
   RevenueByServiceType,
   ClientHealthData,
-  TeamUtilizationData,
   IndustryBreakdown,
 } from "@/lib/analytics/advanced-analytics";
-import type { AgencyKPIs, NewClientDealSizeData } from "@/lib/analytics/types";
+import type { AgencyKPIs } from "@/lib/analytics/types";
 
 interface Props {
   ltv: LTVData;
   revenueByType: RevenueByServiceType;
   clientHealth: ClientHealthData;
-  teamUtilization: TeamUtilizationData;
   industryBreakdown: IndustryBreakdown;
   kpiData: AgencyKPIs;
-  newClientDealSize: NewClientDealSizeData;
 }
 
 export function AdvancedCharts({
   ltv,
   revenueByType,
   clientHealth,
-  teamUtilization,
   industryBreakdown,
   kpiData,
-  newClientDealSize,
 }: Props) {
   // Client health matrix: x = monthly revenue, y = months retained
   const healthData = clientHealth.clients.map((c) => ({
@@ -40,12 +33,6 @@ export function AdvancedCharts({
     x: c.monthlyRevenue ?? Math.round(c.revenue / Math.max(1, c.monthsRetained)),
     y: c.monthsRetained,
     z: 10, // uniform bubble size
-  }));
-
-  // Client Revenue by Division (from contentPackageType — no double-up)
-  const ltvDivisionData = kpiData.clientLTVByDivision.map((d) => ({
-    name: d.division,
-    value: d.revenue,
   }));
 
   // LTV by cohort
@@ -74,24 +61,10 @@ export function AdvancedCharts({
       churnedClients: d.churnedClients,
     }));
 
-  // New client deal size — months with new clients
-  const dealSizeMonths = newClientDealSize.months.filter((m) => m.clientCount > 0);
-
-  // Churned client months
-  const churnedMonths = newClientDealSize.churnedMonths.filter((m) => m.clientCount > 0);
-
   // Revenue by service type combo chart
   const revenueData = revenueByType.monthlyBreakdown.map((m) => ({
     ...m,
     month: formatMonth(m.month),
-  }));
-
-  // Team utilization horizontal bar
-  const utilizationData = teamUtilization.members.map((m) => ({
-    name: m.memberName,
-    billable: m.billableHours,
-    remaining: Math.max(0, m.capacity - m.billableHours),
-    utilization: m.utilizationPercent,
   }));
 
   const fmtCurrency = (v: number) => formatCurrency(v);
@@ -118,17 +91,7 @@ export function AdvancedCharts({
         />
       )}
 
-      {/* 2. Client Revenue by Division */}
-      {ltvDivisionData.length > 0 && (
-        <PieChartCard
-          title="Client Revenue by Division"
-          data={ltvDivisionData}
-          donut
-          formatValue={fmtCurrency}
-        />
-      )}
-
-      {/* 3. Client Lifetime Value */}
+      {/* 2. Client Lifetime Value */}
       <div>
         <h2 className="text-xl font-semibold">Client Lifetime Value</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -159,130 +122,6 @@ export function AdvancedCharts({
           />
         )}
       </div>
-
-      {/* 4. New Revenue Won */}
-      {dealSizeMonths.length > 0 && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">New Revenue Won</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              New clients by start month with division and monthly retainer
-            </p>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">New Clients by Month</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 px-3 font-medium">Month</th>
-                      <th className="text-left py-2 px-3 font-medium">Client</th>
-                      <th className="text-left py-2 px-3 font-medium">Division</th>
-                      <th className="text-right py-2 px-3 font-medium">Monthly Retainer</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dealSizeMonths.map((m) => (
-                      <>
-                        {m.clients.map((client, i) => (
-                          <tr
-                            key={`new-${m.month}-${client.clientId}`}
-                            className="border-b last:border-0"
-                          >
-                            <td className="py-2 px-3 font-medium">
-                              {i === 0 ? formatMonth(m.month) : ""}
-                            </td>
-                            <td className="py-2 px-3">{client.clientName}</td>
-                            <td className="py-2 px-3 text-muted-foreground">{client.division}</td>
-                            <td className="text-right py-2 px-3">
-                              {client.dealSize > 0 ? formatCurrency(client.dealSize) : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                        <tr key={`new-total-${m.month}`} className="border-b bg-muted/50">
-                          <td className="py-2 px-3 font-semibold">{formatMonth(m.month)} Total</td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            {m.clientCount} client{m.clientCount !== 1 ? "s" : ""}
-                          </td>
-                          <td />
-                          <td className="text-right py-2 px-3 font-semibold">
-                            {formatCurrency(m.totalDealSize)}
-                          </td>
-                        </tr>
-                      </>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* 5. Clients Churned */}
-      {churnedMonths.length > 0 && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">Clients Churned</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Churned clients by end month with division and lost monthly retainer
-            </p>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Churned Clients by Month</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 px-3 font-medium">Month</th>
-                      <th className="text-left py-2 px-3 font-medium">Client</th>
-                      <th className="text-left py-2 px-3 font-medium">Division</th>
-                      <th className="text-right py-2 px-3 font-medium">Lost Retainer</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {churnedMonths.map((m) => (
-                      <>
-                        {m.clients.map((client, i) => (
-                          <tr
-                            key={`churn-${m.month}-${client.clientId}`}
-                            className="border-b last:border-0"
-                          >
-                            <td className="py-2 px-3 font-medium">
-                              {i === 0 ? formatMonth(m.month) : ""}
-                            </td>
-                            <td className="py-2 px-3">{client.clientName}</td>
-                            <td className="py-2 px-3 text-muted-foreground">{client.division}</td>
-                            <td className="text-right py-2 px-3 text-red-600">
-                              {client.dealSize > 0 ? formatCurrency(client.dealSize) : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                        <tr key={`churn-total-${m.month}`} className="border-b bg-muted/50">
-                          <td className="py-2 px-3 font-semibold">{formatMonth(m.month)} Total</td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            {m.clientCount} client{m.clientCount !== 1 ? "s" : ""}
-                          </td>
-                          <td />
-                          <td className="text-right py-2 px-3 font-semibold text-red-600">
-                            {formatCurrency(m.totalDealSize)}
-                          </td>
-                        </tr>
-                      </>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
 
       {/* Clients by Industry Type */}
       <div>
@@ -328,27 +167,6 @@ export function AdvancedCharts({
         />
       )}
 
-      {/* Team Utilisation */}
-      <div>
-        <h2 className="text-xl font-semibold">Team Utilisation</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Billable hours vs capacity by team member
-        </p>
-      </div>
-
-      {utilizationData.length > 0 && (
-        <BarChartCard
-          title="Utilisation Rate by Team Member"
-          data={utilizationData}
-          xKey="name"
-          yKeys={["billable", "remaining"]}
-          yLabels={["Billable Hours", "Remaining Capacity"]}
-          horizontal
-          stacked
-          height={Math.max(300, utilizationData.length * 30)}
-          formatY={(v) => `${v}h`}
-        />
-      )}
     </div>
   );
 }

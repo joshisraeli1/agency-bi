@@ -53,6 +53,15 @@ export function getMonthRange(n: number): string[] {
   return months;
 }
 
+/** Markup applied to base salary to cover leave entitlements and superannuation */
+export const SALARY_MARKUP = 1.25;
+
+/** Annual salary × markup (leave + super) */
+export function getAnnualRate(annualSalary: number | null | undefined): number | null {
+  if (!annualSalary) return null;
+  return annualSalary * SALARY_MARKUP;
+}
+
 export function getEffectiveHourlyRate(member: {
   costType?: string | null;
   hourlyRate?: number | null;
@@ -64,7 +73,8 @@ export function getEffectiveHourlyRate(member: {
   }
   if (member.annualSalary) {
     const weeklyHours = member.weeklyHours || 38;
-    return member.annualSalary / (52 * weeklyHours);
+    const annualRate = member.annualSalary * SALARY_MARKUP;
+    return annualRate / (52 * weeklyHours);
   }
   return null;
 }

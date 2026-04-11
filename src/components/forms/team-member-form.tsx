@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
+import { formatCurrency, getAnnualRate } from "@/lib/utils";
 
 interface TeamMemberFormProps {
   open: boolean;
@@ -53,6 +54,7 @@ export function TeamMemberForm({ open, onOpenChange, defaultValues, onSuccess }:
   });
 
   const costType = form.watch("costType");
+  const watchedSalary = form.watch("annualSalary");
 
   async function onSubmit(data: CreateTeamMemberInput) {
     setSubmitting(true);
@@ -214,28 +216,37 @@ export function TeamMemberForm({ open, onOpenChange, defaultValues, onSuccess }:
             )}
           />
           {costType === "salary" && (
-            <FormField
-              control={form.control}
-              name="annualSalary"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Annual Salary</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={field.value ?? ""}
-                      onChange={(e) =>
-                        field.onChange(e.target.value === "" ? null : Number(e.target.value))
-                      }
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+            <>
+              <FormField
+                control={form.control}
+                name="annualSalary"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Annual Salary (base)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={field.value ?? ""}
+                        onChange={(e) =>
+                          field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                        }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {watchedSalary != null && watchedSalary > 0 && (
+                <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Annual Rate:</span>{" "}
+                  {formatCurrency(getAnnualRate(watchedSalary)!)}
+                  <span className="ml-1">(incl. 25% leave + super)</span>
+                </div>
               )}
-            />
+            </>
           )}
           {costType === "hourly" && (
             <FormField

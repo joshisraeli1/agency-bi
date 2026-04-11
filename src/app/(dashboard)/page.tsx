@@ -17,7 +17,7 @@ interface Props {
 
 export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
-  const months = parseInt(monthsParam || "6", 10);
+  const months = parseInt(monthsParam || "12", 10);
 
   const [clientCount, teamCount, recentImports, revenue, revenueVsChurn] = await Promise.all([
     db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
