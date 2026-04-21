@@ -51,11 +51,13 @@ interface TeamMember {
   _count: { timeEntries: number };
 }
 
-const SERVICE_DIVISIONS = ["Content Delivery", "Paid Ads Management", "Social Media Management"];
+const SERVICE_DIVISIONS = ["Content Delivery", "Social Media Management", "Ads Management"];
+const ALL_DIVISIONS = [...SERVICE_DIVISIONS, "Overhead"];
 
 function normaliseDivision(division: string | null): string {
   if (!division) return "Other";
-  if (SERVICE_DIVISIONS.includes(division)) return division;
+  if (division === "Content Delivery (Paid)") return "Content Delivery";
+  if (ALL_DIVISIONS.includes(division)) return division;
   return "Other";
 }
 
@@ -69,15 +71,22 @@ function getMemberAnnualCost(member: TeamMember): number {
   return 0;
 }
 
+type DivisionFilter = "all" | "Content Delivery" | "Social Media Management" | "Ads Management" | "Overhead" | "Other";
+
 export function TeamActions({ members }: { members: TeamMember[] }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [editMember, setEditMember] = useState<TeamMember | null>(null);
   const [deleteMember, setDeleteMember] = useState<TeamMember | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [divisionFilter, setDivisionFilter] = useState<DivisionFilter>("all");
 
   const activeMembers = members.filter((m) => m.active);
   const totalTeamExpense = activeMembers.reduce((sum, m) => sum + getMemberAnnualCost(m), 0);
+
+  const displayedMembers = divisionFilter === "all"
+    ? members
+    : members.filter((m) => normaliseDivision(m.division) === divisionFilter);
 
   const costByDivision = activeMembers.reduce<Record<string, { cost: number; count: number }>>((acc, m) => {
     const div = normaliseDivision(m.division);
@@ -87,7 +96,7 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
     return acc;
   }, {});
 
-  const divisionRows = [...SERVICE_DIVISIONS, "Other"]
+  const divisionRows = [...ALL_DIVISIONS, "Other"]
     .filter((d) => costByDivision[d])
     .map((d) => ({ division: d, ...costByDivision[d] }));
 
@@ -116,7 +125,9 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
         <div>
           <h1 className="text-3xl font-bold">Team</h1>
           <p className="text-muted-foreground mt-1">
-            {members.length} team members from all data sources.
+            {displayedMembers.length}
+            {divisionFilter !== "all" && ` of ${members.length}`} team members
+            {divisionFilter !== "all" && ` in ${divisionFilter}`}.
           </p>
         </div>
         <Button onClick={handleAdd}>
@@ -125,12 +136,38 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
         </Button>
       </div>
 
+      <div className="flex items-center rounded-md border w-fit flex-wrap">
+        {(["all", ...ALL_DIVISIONS, "Other"] as DivisionFilter[]).map((d, i, arr) => {
+          const count = d === "all"
+            ? members.length
+            : members.filter((m) => normaliseDivision(m.division) === d).length;
+          if (d !== "all" && count === 0) return null;
+          return (
+            <Button
+              key={d}
+              variant={divisionFilter === d ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setDivisionFilter(d)}
+              className={
+                i === 0
+                  ? "rounded-r-none"
+                  : i === arr.length - 1
+                  ? "rounded-l-none border-l"
+                  : "rounded-none border-l"
+              }
+            >
+              {d === "all" ? "All" : d} ({count})
+            </Button>
+          );
+        })}
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>All Team Members</CardTitle>
         </CardHeader>
         <CardContent>
-          {members.length === 0 ? (
+          {displayedMembers.length === 0 ? (
             <p className="text-muted-foreground text-sm py-8 text-center">
               No team members yet. Add one or sync from Integrations.
             </p>
@@ -151,7 +188,7 @@ export function TeamActions({ members }: { members: TeamMember[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((member) => (
+                {displayedMembers.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell>
                       <div>

@@ -149,10 +149,8 @@ export function TeamMemberForm({ open, onOpenChange, defaultValues, onSuccess }:
                     <SelectContent>
                       <SelectItem value="Content Delivery">Content Delivery</SelectItem>
                       <SelectItem value="Social Media Management">Social Media Management</SelectItem>
-                      <SelectItem value="Paid Ads Management">Paid Ads Management</SelectItem>
-                      <SelectItem value="Creative">Creative</SelectItem>
-                      <SelectItem value="Strategy">Strategy</SelectItem>
-                      <SelectItem value="Production">Production</SelectItem>
+                      <SelectItem value="Ads Management">Ads Management</SelectItem>
+                      <SelectItem value="Overhead">Overhead</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

@@ -50,7 +50,6 @@ model Client {
   updatedAt          DateTime  @updatedAt
 
   aliases           ClientAlias[]
-  divisions         Division[]
   financialRecords  FinancialRecord[]
   timeEntries       TimeEntry[]
   clientAssignments ClientAssignment[]
@@ -69,47 +68,6 @@ model ClientAlias {
   @@unique([alias, source])
 }
 
-model Division {
-  id        String   @id @default(cuid())
-  clientId  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  client   Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  expenses DivisionExpense[]
-  targets  DivisionTarget[]
-
-  @@unique([clientId, name])
-}
-
-model DivisionExpense {
-  id         String   @id @default(cuid())
-  divisionId String
-  month      String // YYYY-MM
-  category   String
-  amount     Float
-  createdAt  DateTime @default(now())
-
-  division Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-
-  @@unique([divisionId, month, category])
-}
-
-model DivisionTarget {
-  id         String   @id @default(cuid())
-  divisionId String
-  month      String // YYYY-MM
-  metric     String
-  target     Float
-  actual     Float?
-  createdAt  DateTime @default(now())
-
-  division Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-
-  @@unique([divisionId, month, metric])
-}
-
 model Package {
   id            String   @id @default(cuid())
   name          String   @unique
@@ -122,26 +80,27 @@ model Package {
 }
 
 model TeamMember {
-  id             String   @id @default(cuid())
-  name           String
-  email          String?  @unique
-  role           String?
-  division       String?
-  location       String?
-  employmentType String? // full-time | part-time | contractor
-  costType       String? // salary | hourly
-  annualSalary   Float?
-  hourlyRate     Float?
-  weeklyHours    Float?
-  mondayUserId   String?  @unique
-  sheetsRowIndex Int?
-  source         String // monday | sheets | manual
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String
+  email               String?  @unique
+  role                String?
+  division            String?
+  divisionAllocations Json? // optional { "Content Delivery": 0.3, "Overhead": 0.7 } - overrides single division for cost allocation
+  location            String?
+  employmentType      String? // full-time | part-time | contractor | eor
+  costType            String? // salary | hourly
+  annualSalary        Float?
+  hourlyRate          Float?
+  weeklyHours         Float?
+  mondayUserId        String?  @unique
+  sheetsRowIndex      Int?
+  source              String // monday | sheets | manual
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  timeEntries            TimeEntry[]
-  clientAssignments      ClientAssignment[]
+  timeEntries       TimeEntry[]
+  clientAssignments ClientAssignment[]
 }
 
 model FinancialRecord {

@@ -20,7 +20,7 @@ const REMOVE_SUFFIXES = [
   "au",
 ];
 
-export function normalizeCompanyName(name: string): string {
+function normalizeCompanyName(name: string): string {
   let normalized = name.toLowerCase().trim();
   // Remove common suffixes
   for (const suffix of REMOVE_SUFFIXES) {
@@ -32,14 +32,12 @@ export function normalizeCompanyName(name: string): string {
   return normalized;
 }
 
-export function normalizePersonName(name: string): string {
+function normalizePersonName(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-/**
- * Jaro-Winkler similarity score (0 to 1, where 1 = identical)
- */
-export function jaroWinkler(s1: string, s2: string): number {
+/** Jaro-Winkler similarity score (0 to 1, where 1 = identical) */
+function jaroWinkler(s1: string, s2: string): number {
   if (s1 === s2) return 1;
   if (s1.length === 0 || s2.length === 0) return 0;
 

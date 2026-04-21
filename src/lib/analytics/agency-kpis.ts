@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, formatMonth } from "@/lib/utils";
+import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost, parseDivisionAllocations } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
-const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
+const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
 const EXCLUDED_ROLES = ["Director", "BDM"];
 
 export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
@@ -66,14 +66,10 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
     .reduce((sum, f) => sum + f.amount, 0);
 
-  // Cost: billable team salary cost over the period
+  // Cost: billable team salary cost over the period (incl. 25% super/leave markup)
   let monthlyBillableSalaryCost = 0;
   for (const m of billableMembers) {
-    if (m.annualSalary) {
-      monthlyBillableSalaryCost += m.annualSalary / 12;
-    } else if (m.hourlyRate && m.weeklyHours) {
-      monthlyBillableSalaryCost += m.hourlyRate * m.weeklyHours * 52 / 12;
-    }
+    monthlyBillableSalaryCost += getLoadedMonthlyCost(m);
   }
   const totalCost = monthlyBillableSalaryCost * months;
 
@@ -305,29 +301,35 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     allocateToDivision(f.clientId, f.amount, hubspotDivRevenue);
   }
 
-  // Cost: monthly salary per billable team member, grouped by division
-  const DIVISION_NAMES = new Set(["Content Delivery (Paid)", "Social Media Management", "Ads Management"]);
+  // Cost: monthly salary per team member (incl. 25% super/leave markup), grouped by division.
+  // Legacy "Content Delivery (Paid)" is treated as "Content Delivery". "Overhead" is excluded
+  // from divisional rollups. If a member has divisionAllocations set, we split their cost by
+  // those weights across named divisions (only "Content Delivery", "Social Media Management",
+  // "Ads Management" are recognized — anything else in the allocation map is dropped).
   const normalizeDivision = (div: string): string | null => {
-    if (div === "Content Delivery (Paid)") return "Content Delivery";
+    if (div === "Content Delivery" || div === "Content Delivery (Paid)") return "Content Delivery";
     if (div === "Social Media Management") return "Social Media Management";
     if (div === "Ads Management") return "Ads Management";
     return null;
   };
 
   const hubspotDivCost = new Map<string, number>();
-  for (const m of billableMembers) {
-    const div = m.division || "Unassigned";
-    const mappedDiv = normalizeDivision(div);
-    if (!mappedDiv) continue; // skip divisions not mapped (directors, sales, etc.)
-    let monthlyCost = 0;
-    if (m.annualSalary) {
-      monthlyCost = m.annualSalary / 12;
-    } else if (m.hourlyRate && m.weeklyHours) {
-      monthlyCost = m.hourlyRate * m.weeklyHours * 52 / 12;
-    }
-    if (monthlyCost > 0) {
-      // Multiply by months to match revenue which is summed over the full period
-      hubspotDivCost.set(mappedDiv, (hubspotDivCost.get(mappedDiv) || 0) + monthlyCost * monthRange.length);
+  // Include all active members (not just billableMembers) because divisionAllocations lets
+  // overhead staff (founders) contribute a fraction of their cost to divisions.
+  for (const m of teamMembers) {
+    const loadedMonthly = getLoadedMonthlyCost(m);
+    if (loadedMonthly <= 0) continue;
+    const alloc = parseDivisionAllocations(m.divisionAllocations);
+    if (alloc) {
+      for (const [div, frac] of Object.entries(alloc)) {
+        const mapped = normalizeDivision(div);
+        if (!mapped) continue;
+        hubspotDivCost.set(mapped, (hubspotDivCost.get(mapped) || 0) + loadedMonthly * frac * monthRange.length);
+      }
+    } else {
+      const mapped = normalizeDivision(m.division || "");
+      if (!mapped) continue; // unassigned, sales, overhead, directors, etc. — not divisional
+      hubspotDivCost.set(mapped, (hubspotDivCost.get(mapped) || 0) + loadedMonthly * monthRange.length);
     }
   }
 

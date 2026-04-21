@@ -2,12 +2,14 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { getRevenueOverview, getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
+import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
+import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle, Calendar, PiggyBank, Receipt } from "lucide-react";
 
@@ -19,18 +21,22 @@ export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "12", 10);
 
-  const [clientCount, teamCount, recentImports, revenue, revenueVsChurn] = await Promise.all([
-    db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
+  const [clientCount, teamCount, recentImports, revenue, revenueVsChurn, activeSnapshot, settings] = await Promise.all([
+    db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.teamMember.count(),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
     getRevenueVsChurn(12),
+    getActiveRevenueSnapshot(),
+    db.appSettings.findFirst(),
   ]);
 
-  // Current month revenue (last entry in trend)
-  const currentMonth = revenue.monthlyTrend[revenue.monthlyTrend.length - 1];
-  const monthlyRevenueExGst = currentMonth?.activeRevenue ?? 0;
-  const monthlyRevenueIncGst = currentMonth?.activeRevenueIncGst ?? 0;
+  // Current monthly revenue = sum of active client retainerValue (source of truth from HubSpot,
+  // stored ex-GST). This matches HubSpot's "Revenue Summary" and avoids the FinancialRecord
+  // sync staleness that would otherwise make current-month revenue look artificially low.
+  const monthlyRevenueExGst = activeSnapshot.monthlyRevenueExGst;
+  const gstRate = settings?.gstRate ?? 10;
+  const monthlyRevenueIncGst = Math.round(monthlyRevenueExGst * (1 + gstRate / 100));
 
   return (
     <div className="space-y-6">
@@ -82,6 +88,12 @@ export default async function OverviewPage({ searchParams }: Props) {
           />
         </Link>
       </div>
+
+      <RevenueByPackageChart
+        data={activeSnapshot.byPackageType}
+        totalDeals={activeSnapshot.dealCount}
+        totalRevenue={activeSnapshot.monthlyRevenueExGst}
+      />
 
       <RevenueCharts data={revenue} />
 

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
+import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
 import {
   getLTVData,
   getRevenueByServiceType,
@@ -46,6 +47,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     avgDealSizeResult,
     appSettings,
     clientCount,
+    activeSnapshot,
   ] = await Promise.all([
     getRevenueOverview(months),
     getAgencyKPIs(months),
@@ -58,20 +60,22 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getNewClientDealSize(months),
     getMonthlyChurn(12),
     db.client.aggregate({
-      where: { status: "active", hubspotDealId: { not: null }, retainerValue: { gt: 0 } },
+      where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }], retainerValue: { gt: 0 } },
       _avg: { retainerValue: true },
     }),
     db.appSettings.findFirst(),
-    db.client.count({ where: { status: "active", hubspotDealId: { not: null } } }),
+    db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
+    getActiveRevenueSnapshot(),
   ]);
 
-  const gstDivisor = 1 + (appSettings?.gstRate ?? 10) / 100;
-  // retainerValue is GST-inclusive; convert to ex-GST for avg deal size
-  const avgDealSize = Math.round((avgDealSizeResult._avg.retainerValue ?? 0) / gstDivisor);
+  const gstRate = appSettings?.gstRate ?? 10;
+  const gstDivisor = 1 + gstRate / 100;
+  // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
+  const avgDealSize = Math.round(avgDealSizeResult._avg.retainerValue ?? 0);
 
-  const currentMonth = revenueOverview.monthlyTrend[revenueOverview.monthlyTrend.length - 1];
-  const monthlyRevenueExGst = currentMonth?.activeRevenue ?? 0;
-  const monthlyRevenueIncGst = currentMonth?.activeRevenueIncGst ?? 0;
+  // Current monthly revenue uses sum-of-active-retainers (matches HubSpot Revenue Summary).
+  const monthlyRevenueExGst = activeSnapshot.monthlyRevenueExGst;
+  const monthlyRevenueIncGst = Math.round(monthlyRevenueExGst * gstDivisor);
 
   return (
     <div className="space-y-6">

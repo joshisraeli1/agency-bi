@@ -39,12 +39,31 @@ interface Client {
   industry: string | null;
   website: string | null;
   retainerValue: number | null;
+  contentRetainer: number | null;
+  smRetainer: number | null;
+  growthRetainer: number | null;
+  productionRetainer: number | null;
   dealStage: string | null;
   source: string;
   notes: string | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
   _count: { timeEntries: number; aliases: number };
+}
+
+type ServiceFilter = "all" | "content" | "social" | "ads";
+
+const SERVICE_LABELS: Record<Exclude<ServiceFilter, "all">, string> = {
+  content: "Content Delivery",
+  social: "Social Media Management",
+  ads: "Ads Management",
+};
+
+function serviceAmount(client: Client, filter: ServiceFilter): number {
+  if (filter === "content") return (client.contentRetainer ?? 0) + (client.productionRetainer ?? 0);
+  if (filter === "social") return client.smRetainer ?? 0;
+  if (filter === "ads") return client.growthRetainer ?? 0;
+  return client.retainerValue ?? 0;
 }
 
 function formatTenure(startDate: Date | string | null, endDate: Date | string | null, status: string): string {
@@ -82,10 +101,19 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
   const [deleteClient, setDeleteClient] = useState<Client | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("all");
 
-  const filteredClients = statusFilter === "all"
-    ? clients
-    : clients.filter((c) => c.status === statusFilter);
+  const filteredClients = (() => {
+    let list = statusFilter === "all" ? clients : clients.filter((c) => c.status === statusFilter);
+    if (serviceFilter !== "all") {
+      list = list.filter((c) => serviceAmount(c, serviceFilter) > 0);
+    }
+    return [...list].sort((a, b) => serviceAmount(b, serviceFilter) - serviceAmount(a, serviceFilter));
+  })();
+
+  const divisionTotal = serviceFilter === "all"
+    ? 0
+    : filteredClients.reduce((sum, c) => sum + serviceAmount(c, serviceFilter), 0);
 
   function handleEdit(client: Client) {
     setEditClient(client);
@@ -153,9 +181,60 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
         </div>
       </div>
 
+      <div className="flex items-center rounded-md border w-fit">
+        <Button
+          variant={serviceFilter === "all" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setServiceFilter("all")}
+          className="rounded-r-none"
+        >
+          All Services
+        </Button>
+        <Button
+          variant={serviceFilter === "content" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setServiceFilter("content")}
+          className="rounded-none border-l"
+        >
+          Content Delivery
+        </Button>
+        <Button
+          variant={serviceFilter === "social" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setServiceFilter("social")}
+          className="rounded-none border-l"
+        >
+          Social Media Management
+        </Button>
+        <Button
+          variant={serviceFilter === "ads" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setServiceFilter("ads")}
+          className="rounded-l-none border-l"
+        >
+          Ads Management
+        </Button>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>{statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Churned"} Clients</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>
+              {serviceFilter === "all"
+                ? `${statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Churned"} Clients`
+                : SERVICE_LABELS[serviceFilter]}
+            </CardTitle>
+            {serviceFilter !== "all" && (
+              <div className="text-right">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Divisional Revenue
+                </div>
+                <div className="text-2xl font-bold tabular-nums">
+                  {formatCurrency(divisionTotal)}
+                </div>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {filteredClients.length === 0 ? (
@@ -169,7 +248,9 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                   <TableHead>Name</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Tenure</TableHead>
-                  <TableHead>Retainer</TableHead>
+                  <TableHead className="text-right">
+                    {serviceFilter === "all" ? "Deal Size" : "Amount"}
+                  </TableHead>
                   <TableHead>Industry</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
@@ -201,10 +282,11 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                     <TableCell className="text-sm text-muted-foreground">
                       {formatTenure(client.startDate, client.endDate, client.status)}
                     </TableCell>
-                    <TableCell>
-                      {client.retainerValue
-                        ? formatCurrency(client.retainerValue)
-                        : "\u2014"}
+                    <TableCell className="text-right tabular-nums">
+                      {(() => {
+                        const amt = serviceAmount(client, serviceFilter);
+                        return amt > 0 ? formatCurrency(amt) : "\u2014";
+                      })()}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={client.industry || ""}>
                       {client.industry || "\u2014"}

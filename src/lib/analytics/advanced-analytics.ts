@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey } from "@/lib/utils";
+import { getMonthRange, toMonthKey, getLoadedMonthlyCost } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
@@ -265,14 +265,10 @@ export async function getRevenueByServiceType(
     clientAlloc.set(c.id, { sm, growth, content, total });
   }
 
-  // Monthly team overhead
+  // Monthly team overhead (incl. 25% super/leave markup)
   let monthlyTeamCost = 0;
   for (const m of teamMembers) {
-    if (m.annualSalary) {
-      monthlyTeamCost += m.annualSalary / 12;
-    } else if (m.hourlyRate) {
-      monthlyTeamCost += (m.hourlyRate * (m.weeklyHours ?? 38) * 52) / 12;
-    }
+    monthlyTeamCost += getLoadedMonthlyCost(m);
   }
 
   const monthlyBreakdown = monthRange.map((month) => {

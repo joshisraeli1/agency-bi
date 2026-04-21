@@ -78,13 +78,7 @@ export function FinancialsActions({ records, clients, typeColors }: Props) {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Financial Records</h1>
-          <p className="text-muted-foreground mt-1">
-            {records.length} financial records across all clients.
-          </p>
-        </div>
+      <div className="flex justify-end">
         <Button onClick={handleAdd}>
           <Plus className="h-4 w-4 mr-2" />
           Add Record

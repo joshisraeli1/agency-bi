@@ -30,16 +30,6 @@ export async function POST() {
     const { count: financials } = await db.financialRecord.deleteMany({});
     results.financialRecords = financials;
 
-    // Division expenses → division targets → divisions
-    const { count: divExpenses } = await db.divisionExpense.deleteMany({});
-    results.divisionExpenses = divExpenses;
-
-    const { count: divTargets } = await db.divisionTarget.deleteMany({});
-    results.divisionTargets = divTargets;
-
-    const { count: divisions } = await db.division.deleteMany({});
-    results.divisions = divisions;
-
     // Client aliases → clients
     const { count: aliases } = await db.clientAlias.deleteMany({});
     results.clientAliases = aliases;

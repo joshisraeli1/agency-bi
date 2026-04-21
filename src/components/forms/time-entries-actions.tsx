@@ -78,13 +78,7 @@ export function TimeEntriesActions({ entries, clients, teamMembers }: Props) {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Time Entries</h1>
-          <p className="text-muted-foreground mt-1">
-            {entries.length} time entries logged.
-          </p>
-        </div>
+      <div className="flex justify-end">
         <Button onClick={handleAdd}>
           <Plus className="h-4 w-4 mr-2" />
           Add Entry

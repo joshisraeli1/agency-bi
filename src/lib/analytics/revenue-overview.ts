@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, formatMonth } from "@/lib/utils";
+import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { RevenueOverview } from "./types";
 
@@ -8,7 +8,7 @@ export async function getRevenueOverview(
 ): Promise<RevenueOverview> {
   const monthRange = getMonthRange(months);
 
-  const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales"];
+  const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
   const EXCLUDED_ROLES = ["Director", "BDM"];
 
   const [excludedIds, financialsRaw, settings, teamMembers] = await Promise.all([
@@ -37,12 +37,7 @@ export async function getRevenueOverview(
 
   let monthlyTeamCost = 0;
   for (const member of billableMembers) {
-    if (member.annualSalary) {
-      monthlyTeamCost += member.annualSalary / 12;
-    } else if (member.hourlyRate) {
-      const weeklyHrs = member.weeklyHours ?? 38;
-      monthlyTeamCost += (member.hourlyRate * weeklyHrs * 52) / 12;
-    }
+    monthlyTeamCost += getLoadedMonthlyCost(member);
   }
 
   // Filter out excluded clients (prospects + legacy)
@@ -151,7 +146,13 @@ export async function getRevenueOverview(
       cost: Math.round(d.cost),
       margin: Math.round(d.revenue - d.cost),
     }))
-    .sort((a, b) => a.quarter.localeCompare(b.quarter));
+    .sort((a, b) => {
+      const [aQ, aY] = a.quarter.split(" ");
+      const [bQ, bY] = b.quarter.split(" ");
+      const yd = parseInt(aY, 10) - parseInt(bY, 10);
+      if (yd !== 0) return yd;
+      return parseInt(aQ.slice(1), 10) - parseInt(bQ.slice(1), 10);
+    });
 
   // By client (revenue ex-GST)
   const clientRevMap = new Map<
@@ -261,59 +262,97 @@ export interface RevenueVsChurnRow {
   churnedClients: RevenueVsChurnClient[];
 }
 
+function shiftMonth(monthKey: string, delta: number): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Detects new/churned revenue per-deal from HubSpot FinancialRecord data.
+ *
+ * Each deal is identified by (clientId, category) — category typically holds "deal:<hubspotDealId>".
+ * A deal is counted as "new" in the first month it appears and "churned" in the month after its
+ * last recorded month (retainers only — one-off projects don't churn, they simply end).
+ *
+ * This correctly handles:
+ *  - One-off project deals (show as new, never churn)
+ *  - Multiple deals per client (each counted separately)
+ *  - Deals that start on existing clients (counted as new, even though client isn't new)
+ */
 export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
   const monthRange = getMonthRange(months);
+  const firstMonth = monthRange[0];
+  // Need one extra month BEFORE the range to detect "new in first month" correctly
+  const lookbackMonth = shiftMonth(firstMonth, -1);
 
-  const [excludedIds, clients] = await Promise.all([
+  const [excludedIds, records] = await Promise.all([
     getExcludedClientIds(),
-    db.client.findMany({
+    db.financialRecord.findMany({
       where: {
-        hubspotDealId: { not: null },
-        status: { not: "prospect" },
+        source: "hubspot",
+        type: { in: ["retainer", "project"] },
+        month: { gte: lookbackMonth },
       },
-      select: {
-        id: true,
-        name: true,
-        startDate: true,
-        endDate: true,
-        retainerValue: true,
+      include: {
+        client: { select: { id: true, name: true, status: true } },
       },
     }),
   ]);
 
-  const filtered = clients.filter((c) => !excludedIds.has(c.id));
+  const filtered = records.filter(
+    (r) => !excludedIds.has(r.clientId) && r.client.status !== "prospect"
+  );
+
+  // Group by (clientId, category) → deal. category holds the HubSpot deal id.
+  type Deal = {
+    clientId: string;
+    clientName: string;
+    type: string; // retainer | project
+    byMonth: Map<string, number>;
+  };
+  const deals = new Map<string, Deal>();
+  for (const r of filtered) {
+    const key = `${r.clientId}|${r.category ?? "no-category"}`;
+    let d = deals.get(key);
+    if (!d) {
+      d = { clientId: r.clientId, clientName: r.client.name, type: r.type, byMonth: new Map() };
+      deals.set(key, d);
+    }
+    d.byMonth.set(r.month, (d.byMonth.get(r.month) ?? 0) + r.amount);
+  }
 
   return monthRange.map((month) => {
-    // New revenue: clients whose startDate falls in this month
-    const newClients = filtered.filter((c) => {
-      if (!c.startDate) return false;
-      return toMonthKey(c.startDate) === month;
-    });
-    // retainerValue is already ex-GST (populated from amount__excl_gst_)
-    const newRevenue = newClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
+    const prev = shiftMonth(month, -1);
+    let newRevenue = 0;
+    let churnedRevenue = 0;
+    const newClients: RevenueVsChurnClient[] = [];
+    const churnedClients: RevenueVsChurnClient[] = [];
 
-    // Churned revenue: clients whose endDate falls in this month
-    const churnedClients = filtered.filter((c) => {
-      if (!c.endDate) return false;
-      return toMonthKey(c.endDate) === month;
-    });
-    const churnedRevenue = churnedClients.reduce((s, c) => s + (c.retainerValue || 0), 0);
+    for (const d of deals.values()) {
+      const thisAmt = d.byMonth.get(month);
+      const prevAmt = d.byMonth.get(prev);
+
+      // New deal: has revenue this month but not last month
+      if (thisAmt && !prevAmt) {
+        newRevenue += thisAmt;
+        newClients.push({ id: d.clientId, name: d.clientName, retainerValue: Math.round(thisAmt) });
+      }
+      // Churn: retainer existed last month but not this month (the "off ramp" month)
+      // Projects don't churn — they're one-off by definition.
+      if (!thisAmt && prevAmt && d.type === "retainer") {
+        churnedRevenue += prevAmt;
+        churnedClients.push({ id: d.clientId, name: d.clientName, retainerValue: Math.round(prevAmt) });
+      }
+    }
 
     return {
       month,
       newRevenue: Math.round(newRevenue),
       churnedRevenue: Math.round(churnedRevenue),
       net: Math.round(newRevenue - churnedRevenue),
-      newClients: newClients.map((c) => ({
-        id: c.id,
-        name: c.name,
-        retainerValue: Math.round(c.retainerValue || 0),
-      })),
-      churnedClients: churnedClients.map((c) => ({
-        id: c.id,
-        name: c.name,
-        retainerValue: Math.round(c.retainerValue || 0),
-      })),
+      newClients,
+      churnedClients,
     };
   });
 }
