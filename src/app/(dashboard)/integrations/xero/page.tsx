@@ -525,11 +525,6 @@ export default function XeroIntegrationPage() {
                   <span className="text-2xl font-bold">
                     {dataCounts?.total ?? 0}
                   </span>
-                  <Link href="/financials?source=xero">
-                    <Button variant="outline" size="sm">
-                      View All
-                    </Button>
-                  </Link>
                 </div>
               )}
             </CardContent>

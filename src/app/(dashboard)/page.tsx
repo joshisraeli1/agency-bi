@@ -58,20 +58,16 @@ export default async function OverviewPage({ searchParams }: Props) {
           value={formatCurrency(monthlyRevenueExGst)}
           icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
         />
-        <Link href="/financials" className="h-full">
-          <StatCard
-            title="Annualized Rev ex GST"
-            value={formatCurrency(revenue.annualizedRevenue)}
-            icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
-          />
-        </Link>
-        <Link href="/financials" className="h-full">
-          <StatCard
-            title="Annualized Gross Profit"
-            value={formatCurrency(revenue.annualizedProfit)}
-            icon={<PiggyBank className="h-4 w-4 text-muted-foreground" />}
-          />
-        </Link>
+        <StatCard
+          title="Annualized Rev ex GST"
+          value={formatCurrency(revenue.annualizedRevenue)}
+          icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Annualized Gross Profit"
+          value={formatCurrency(revenue.annualizedProfit)}
+          icon={<PiggyBank className="h-4 w-4 text-muted-foreground" />}
+        />
         <Link href="/clients" className="h-full">
           <StatCard
             title="Clients"

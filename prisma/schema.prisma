@@ -53,6 +53,7 @@ model Client {
   financialRecords  FinancialRecord[]
   timeEntries       TimeEntry[]
   clientAssignments ClientAssignment[]
+  hubspotDeals      HubspotDeal[]
 }
 
 model ClientAlias {
@@ -101,6 +102,35 @@ model TeamMember {
 
   timeEntries       TimeEntry[]
   clientAssignments ClientAssignment[]
+}
+
+model HubspotDeal {
+  id                 String    @id // HubSpot deal ID
+  clientId           String?
+  name               String
+  amount             Float?
+  amountExGst        Float?
+  ownerId            String?
+  ownerName          String?
+  stage              String? // mapped: closed_won | churned | prospect | qualified | proposal | negotiation | backburner | legacy
+  stageLabel         String? // raw HubSpot stage label
+  pipeline           String?
+  createDate         DateTime? // HubSpot createdate
+  startDate          DateTime?
+  closeDate          DateTime? // HubSpot closedate
+  churnDate          DateTime?
+  contentPackageType String?
+  industry           String?
+  lastSyncedAt       DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
+  @@index([createDate])
+  @@index([closeDate])
+  @@index([stage])
 }
 
 model FinancialRecord {
