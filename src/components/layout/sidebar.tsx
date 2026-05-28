@@ -14,6 +14,7 @@ import {
   MessageSquare,
   FileSpreadsheet,
   TrendingUp,
+  Scale,
 } from "lucide-react";
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/client-data", label: "Client Data", icon: FileSpreadsheet },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/michael", label: "Michael", icon: TrendingUp },
+  { href: "/reconciliation", label: "Reconciliation", icon: Scale },
   { href: "/chat", label: "AI Chat", icon: MessageSquare },
   { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/entities", label: "Entity Resolution", icon: GitMerge },

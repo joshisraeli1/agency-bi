@@ -293,6 +293,40 @@ export async function* fetchExpenses(
   } while (true);
 }
 
+export interface XeroRepeatingInvoice {
+  RepeatingInvoiceID: string;
+  Type: string; // ACCREC | ACCPAY
+  Status: string; // DRAFT | AUTHORISED | DELETED
+  Contact: {
+    ContactID: string;
+    Name: string;
+  };
+  Schedule: {
+    Period?: number;
+    Unit?: string; // WEEKLY | MONTHLY | YEARLY
+    NextScheduledDate?: string; // "/Date(1234567890000)/" or ISO
+    NextScheduledDateString?: string;
+  };
+  SubTotal: number;
+  TotalTax: number;
+  Total: number;
+  CurrencyCode: string;
+  Reference?: string;
+  LineItems?: XeroLineItem[];
+}
+
+export async function fetchRepeatingInvoices(
+  accessToken: string,
+  tenantId: string
+): Promise<XeroRepeatingInvoice[]> {
+  const response = await xeroFetch<{ RepeatingInvoices: XeroRepeatingInvoice[] }>(
+    accessToken,
+    tenantId,
+    "/RepeatingInvoices",
+  );
+  return response.RepeatingInvoices ?? [];
+}
+
 export async function* fetchContacts(
   accessToken: string,
   tenantId: string

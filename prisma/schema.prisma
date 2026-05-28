@@ -127,10 +127,59 @@ model HubspotDeal {
 
   client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
+  reconciliation Reconciliation?
+
   @@index([ownerId])
   @@index([createDate])
   @@index([closeDate])
   @@index([stage])
+}
+
+model XeroRepeatingInvoice {
+  id                  String    @id // Xero RepeatingInvoiceID
+  xeroContactId       String?
+  xeroContactName     String?
+  status              String? // DRAFT | AUTHORISED | DELETED
+  type                String? // ACCREC | ACCPAY
+  scheduleUnit        String? // WEEKLY | MONTHLY | YEARLY
+  scheduleInterval    Int?
+  nextScheduledDate   DateTime?
+  subTotal            Float? // ex-tax
+  totalTax            Float?
+  total               Float? // inc-tax
+  currencyCode        String?
+  reference           String?
+  lineItemDescription String?
+  lastSyncedAt        DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  reconciliations Reconciliation[]
+
+  @@index([xeroContactId])
+  @@index([status])
+}
+
+model Reconciliation {
+  id                     String   @id @default(cuid())
+  hubspotDealId          String   @unique
+  xeroRepeatingInvoiceId String?
+  status                 String // aligned | missing_in_xero | amount_mismatch | multiple_matches
+  matchMethod            String? // xero_contact_id | name_exact | name_fuzzy
+  hubspotAmount          Float?
+  xeroAmount             Float?
+  amountDelta            Float?
+  reviewStatus           String   @default("open") // open | resolved | ignored
+  notes                  String?
+  lastCheckedAt          DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  hubspotDeal          HubspotDeal           @relation(fields: [hubspotDealId], references: [id], onDelete: Cascade)
+  xeroRepeatingInvoice XeroRepeatingInvoice? @relation(fields: [xeroRepeatingInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([reviewStatus])
 }
 
 model FinancialRecord {
