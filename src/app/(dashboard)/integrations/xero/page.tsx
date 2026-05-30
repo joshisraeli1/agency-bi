@@ -69,9 +69,53 @@ export default function XeroIntegrationPage() {
     total: number;
   } | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
+  const [connection, setConnection] = useState<{
+    status: "loading" | "connected" | "disconnected";
+    org?: string;
+    error?: string;
+  }>({ status: "loading" });
+  const [banner, setBanner] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const invoiceInputRef = useRef<HTMLInputElement>(null);
   const expenseInputRef = useRef<HTMLInputElement>(null);
+
+  // Show banner from the OAuth callback redirect (?connected / ?error)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected") === "true") {
+      setBanner({ type: "success", message: "Xero connected successfully." });
+    }
+    const err = params.get("error");
+    if (err) {
+      setBanner({ type: "error", message: decodeURIComponent(err) });
+    }
+  }, []);
+
+  // Check live Xero connection status on mount
+  useEffect(() => {
+    async function checkConnection() {
+      try {
+        const res = await fetch("/api/integrations/xero/test", {
+          method: "POST",
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setConnection({
+            status: "connected",
+            org: (data.message || "").replace(/^Connected to /, ""),
+          });
+        } else {
+          setConnection({ status: "disconnected", error: data.error });
+        }
+      } catch {
+        setConnection({ status: "disconnected" });
+      }
+    }
+    checkConnection();
+  }, []);
 
   // Load existing data counts on mount
   useEffect(() => {
@@ -429,6 +473,77 @@ export default function XeroIntegrationPage() {
           </p>
         </div>
       </div>
+
+      {/* Callback banner */}
+      {banner && (
+        <Alert variant={banner.type === "error" ? "destructive" : "default"}>
+          {banner.type === "error" ? (
+            <XCircle className="h-4 w-4" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+          )}
+          <AlertDescription>{banner.message}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Section 0: Connection */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Connection</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Xero OAuth</CardTitle>
+            <CardDescription>
+              Connect directly to Xero to pull invoices, expenses, and contacts
+              via the API.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                {connection.status === "loading" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      Checking connection...
+                    </span>
+                  </>
+                ) : connection.status === "connected" ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="font-medium text-green-600">
+                      Connected
+                    </span>
+                    {connection.org && (
+                      <span className="text-muted-foreground">
+                        — {connection.org}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      Not connected
+                      {connection.error ? ` — ${connection.error}` : ""}
+                    </span>
+                  </>
+                )}
+              </div>
+              <Button
+                onClick={() => {
+                  window.location.href = "/api/integrations/xero/auth";
+                }}
+              >
+                {connection.status === "connected"
+                  ? "Reconnect"
+                  : "Connect to Xero"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Separator />
 
       {/* Section 1: CSV Upload */}
       <div>
