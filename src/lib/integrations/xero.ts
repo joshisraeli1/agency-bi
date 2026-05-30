@@ -141,7 +141,9 @@ export function getAuthUrl(): string {
   url.searchParams.set("scope", scopes);
   url.searchParams.set("state", "xero-oauth");
 
-  return url.toString();
+  // Xero's identity server does not decode "+" to a space in the scope param,
+  // so URLSearchParams' default "+" encoding causes invalid_scope. Force %20.
+  return `${url.origin}${url.pathname}?${url.searchParams.toString().replace(/\+/g, "%20")}`;
 }
 
 export async function exchangeCode(code: string): Promise<{
