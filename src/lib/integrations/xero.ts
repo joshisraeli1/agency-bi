@@ -132,7 +132,12 @@ export function getAuthUrl(): string {
   if (!clientId) throw new Error("XERO_CLIENT_ID not set");
 
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback`;
-  const scopes = "openid profile email accounting.transactions.read accounting.contacts.read offline_access";
+  // Granular scopes (required for apps created on/after 2 Mar 2026 — the broad
+  // accounting.transactions/.read scopes are rejected with invalid_scope).
+  // Maps to the endpoints this integration calls: /Invoices + /RepeatingInvoices
+  // (invoices.read), /BankTransactions (banktransactions.read), /Contacts.
+  const scopes =
+    "openid profile email accounting.invoices.read accounting.banktransactions.read accounting.contacts.read offline_access";
 
   const url = new URL("https://login.xero.com/identity/connect/authorize");
   url.searchParams.set("response_type", "code");
