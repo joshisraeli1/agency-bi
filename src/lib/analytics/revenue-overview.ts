@@ -11,7 +11,7 @@ export async function getRevenueOverview(
   const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
   const EXCLUDED_ROLES = ["Director", "BDM"];
 
-  const [excludedIds, financialsRaw, settings, teamMembers] = await Promise.all([
+  const [excludedIds, financialsRaw, settings, teamMembers, hubspotDeals] = await Promise.all([
     getExcludedClientIds(),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
@@ -33,7 +33,37 @@ export async function getRevenueOverview(
       where: { active: true },
       select: { annualSalary: true, hourlyRate: true, weeklyHours: true, costType: true, division: true, role: true },
     }),
+    // Closed-won + churned deals — source of truth for monthly HubSpot MRR
+    // (FinancialRecord is double-counted by category drift and misses the
+    // current month, so we compute MRR from deal active windows instead).
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true },
+    }),
   ]);
+
+  // HubSpot monthly recurring revenue from deal active windows: a deal counts
+  // in every month from its start (startDate, fallback closeDate) up to but not
+  // including its churn month. ex-GST = amountExGst, inc-GST = amount.
+  const dealMonthKey = (d: Date | null | undefined): string | null =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
+  const hubspotMrrEx: Record<string, number> = {};
+  const hubspotMrrInc: Record<string, number> = {};
+  for (const m of monthRange) { hubspotMrrEx[m] = 0; hubspotMrrInc[m] = 0; }
+  for (const d of hubspotDeals) {
+    if (d.clientId && excludedIds.has(d.clientId)) continue;
+    const startKey = dealMonthKey(d.startDate ?? d.closeDate);
+    if (!startKey) continue;
+    const churnKey = dealMonthKey(d.churnDate);
+    const ex = d.amountExGst ?? 0;
+    const inc = d.amount ?? 0;
+    for (const m of monthRange) {
+      if (m >= startKey && (!churnKey || m < churnKey)) {
+        hubspotMrrEx[m] += ex;
+        hubspotMrrInc[m] += inc;
+      }
+    }
+  }
 
   // GST divisor: revenue amounts are GST-inclusive, convert to ex-GST
   const gstRate = settings?.gstRate ?? 10;
@@ -53,13 +83,6 @@ export async function getRevenueOverview(
 
   // Filter out excluded clients (prospects + legacy)
   const financials = financialsRaw.filter((f) => !excludedIds.has(f.clientId));
-
-  // Active client IDs — used for monthly revenue stat cards
-  const activeClientIds = new Set(
-    financialsRaw
-      .filter((f) => f.client.status === "active")
-      .map((f) => f.clientId)
-  );
 
   const marginWarning = settings?.marginWarning ?? 20;
 
@@ -108,13 +131,10 @@ export async function getRevenueOverview(
   // Monthly trend (includes team salary overhead per month, revenue ex-GST)
   const monthlyTrend = monthRange.map((month) => {
     const monthFinancials = financials.filter((f) => f.month === month);
-    const hubspotRevenue = monthFinancials
-      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot")
-      .reduce((s, f) => s + f.amount, 0);
-    // Closed Won only — for monthly revenue stat cards
-    const activeRevenue = monthFinancials
-      .filter((f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot" && activeClientIds.has(f.clientId))
-      .reduce((s, f) => s + f.amount, 0);
+    // HubSpot MRR from deal active windows (not the double-counted/partial
+    // FinancialRecord rows). inc-GST uses the deals' actual Amount, not ×1.1.
+    const hubspotRevenue = hubspotMrrEx[month] ?? 0;
+    const activeRevenue = hubspotRevenue; // closed-won MRR
     // Xero revenue from ALL records (including synthetic P&L client, unfiltered)
     const xeroRevenue = financialsRaw
       .filter((f) => f.month === month && (f.type === "retainer" || f.type === "project") && f.source === "xero")
@@ -124,10 +144,9 @@ export async function getRevenueOverview(
       .filter((f) => f.type === "cost")
       .reduce((s, f) => s + f.amount, 0);
     const cost = monthExplicitCost + monthlyTeamCost;
-    // Inc-GST amounts (financial records are ex-GST, multiply back)
-    const hubspotRevenueIncGst = hubspotRevenue * gstDivisor;
+    const hubspotRevenueIncGst = hubspotMrrInc[month] ?? 0;
     const xeroRevenueIncGst = xeroRevenue * gstDivisor;
-    const activeRevenueIncGst = activeRevenue * gstDivisor;
+    const activeRevenueIncGst = hubspotRevenueIncGst;
     return { month, revenue: rev, cost, margin: rev - cost, hubspotRevenue, xeroRevenue, hubspotRevenueIncGst, xeroRevenueIncGst, activeRevenue, activeRevenueIncGst };
   });
 

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { ClientsActions } from "@/components/forms/clients-actions";
 
 export default async function ClientsPage() {
-  const clients = await db.client.findMany({
+  const raw = await db.client.findMany({
     where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
     orderBy: { name: "asc" },
     select: {
@@ -21,6 +21,12 @@ export default async function ClientsPage() {
       notes: true,
       startDate: true,
       endDate: true,
+      // Closed-won deals are the source of truth for pricing — Client.retainerValue
+      // drifts stale, so derive the displayed retainer from the deals.
+      hubspotDeals: {
+        where: { stage: "closed_won" },
+        select: { amountExGst: true, amount: true },
+      },
       _count: {
         select: {
           timeEntries: true,
@@ -28,6 +34,11 @@ export default async function ClientsPage() {
         },
       },
     },
+  });
+
+  const clients = raw.map(({ hubspotDeals, ...c }) => {
+    const dealRetainer = hubspotDeals.reduce((s, d) => s + (d.amountExGst ?? d.amount ?? 0), 0);
+    return { ...c, retainerValue: dealRetainer > 0 ? dealRetainer : c.retainerValue };
   });
 
   return (
