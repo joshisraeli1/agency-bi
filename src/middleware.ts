@@ -50,6 +50,18 @@ export function middleware(request: NextRequest) {
       const json = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
       const payload = JSON.parse(json);
 
+      // Redirect expired sessions to login instead of letting the request
+      // through to a confusing server-side 401. (Signature is still verified
+      // in getSession(); this just catches the common expiry case early and
+      // clears the stale cookie so the user actually sees the login screen.)
+      if (payload.exp && Date.now() > payload.exp) {
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("redirect", pathname);
+        const res = NextResponse.redirect(loginUrl);
+        res.cookies.delete("session");
+        return res;
+      }
+
       if (payload.totpEnabled === false) {
         // User hasn't set up 2FA — only allow setup-related paths
         if (!SETUP_2FA_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
