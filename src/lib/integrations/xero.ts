@@ -124,6 +124,79 @@ async function xeroFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
+// Profit & Loss report (actual revenue, accrual basis)
+// ---------------------------------------------------------------------------
+
+export interface PnlMonth {
+  month: string; // YYYY-MM
+  totalIncome: number; // ex-GST (P&L is always ex-GST)
+}
+
+const MONTH_NAMES: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+/** Parse a Xero P&L period header like "31 May 26" -> "2026-05". */
+function parseXeroPeriodLabel(label: string): string | null {
+  const m = label.trim().match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})/);
+  if (!m) return null;
+  const mon = MONTH_NAMES[m[2].toLowerCase()];
+  if (!mon) return null;
+  const yr = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${yr}-${mon}`;
+}
+
+/**
+ * Fetch monthly Total Income from Xero's Profit & Loss report (accrual basis,
+ * standard layout). Returns one entry per period column. Total Income is the
+ * actual revenue line and is reported ex-GST.
+ */
+export async function fetchProfitAndLoss(
+  accessToken: string,
+  tenantId: string,
+  periods = 11
+): Promise<PnlMonth[]> {
+  // Xero limits `periods` to 1–11 (so up to 12 monthly columns per request).
+  const safePeriods = Math.max(1, Math.min(periods, 11));
+  const report = await xeroFetch<{ Reports?: { Rows?: XeroReportRow[] }[] }>(
+    accessToken,
+    tenantId,
+    "/Reports/ProfitAndLoss",
+    { timeframe: "MONTH", periods: String(safePeriods), standardLayout: "true" }
+  );
+  const rep = report.Reports?.[0];
+  const rows = rep?.Rows ?? [];
+
+  const header = rows.find((r) => r.RowType === "Header");
+  const labels = (header?.Cells ?? []).map((c) => c.Value ?? "");
+
+  let totalCells: string[] = [];
+  for (const sec of rows) {
+    if (sec.RowType !== "Section" || sec.Title !== "Income") continue;
+    const totalRow = (sec.Rows ?? []).find(
+      (r) => r.RowType === "SummaryRow" && r.Cells?.[0]?.Value === "Total Income"
+    );
+    if (totalRow) totalCells = (totalRow.Cells ?? []).map((c) => c.Value ?? "");
+  }
+
+  const out: PnlMonth[] = [];
+  for (let i = 1; i < labels.length; i++) {
+    const month = parseXeroPeriodLabel(labels[i]);
+    if (!month) continue;
+    out.push({ month, totalIncome: parseFloat(totalCells[i] ?? "0") || 0 });
+  }
+  return out;
+}
+
+interface XeroReportRow {
+  RowType: string;
+  Title?: string;
+  Cells?: { Value?: string }[];
+  Rows?: XeroReportRow[];
+}
+
+// ---------------------------------------------------------------------------
 // OAuth2
 // ---------------------------------------------------------------------------
 
