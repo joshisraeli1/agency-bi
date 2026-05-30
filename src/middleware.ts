@@ -1,5 +1,30 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import CryptoJS from "crypto-js";
+
+const SESSION_SECRET = process.env.SESSION_SECRET || "";
+
+// Lightweight session validity check for the Edge middleware: verifies the
+// HMAC signature AND expiry, mirroring verifySession() in lib/auth.ts. This
+// lets the middleware redirect *any* invalid session (expired OR wrongly
+// signed) to /login, instead of letting it through to a route that then
+// returns a confusing 401 JSON. The authoritative check still runs server-side
+// in getSession(); a plain string compare is fine here (this is a UX gate, not
+// the security boundary).
+function readValidPayload(token: string): { totpEnabled?: boolean } | null {
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) return null;
+  try {
+    const json = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    const expectedSig = CryptoJS.HmacSHA256(json, SESSION_SECRET).toString();
+    if (signature !== expectedSig) return null;
+    const payload = JSON.parse(json);
+    if (!payload.exp || Date.now() > payload.exp) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
 
 const PUBLIC_PATHS = [
   "/login",
@@ -33,45 +58,25 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for session cookie
+  // Validate the session cookie (signature + expiry). Any invalid session —
+  // missing, expired, or wrongly signed — redirects to /login and clears the
+  // stale cookie, so the user always lands on the login screen instead of a
+  // confusing server-side 401.
   const session = request.cookies.get("session")?.value;
-  if (!session) {
+  const payload = session ? readValidPayload(session) : null;
+  if (!payload) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    const res = NextResponse.redirect(loginUrl);
+    res.cookies.delete("session");
+    return res;
   }
 
-  // Decode session payload to check totpEnabled.
-  // Full signature verification happens in getSession() on the server side;
-  // here we only need a lightweight read of the payload for the 2FA gate.
-  try {
-    const [encoded] = session.split(".");
-    if (encoded) {
-      const json = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
-      const payload = JSON.parse(json);
-
-      // Redirect expired sessions to login instead of letting the request
-      // through to a confusing server-side 401. (Signature is still verified
-      // in getSession(); this just catches the common expiry case early and
-      // clears the stale cookie so the user actually sees the login screen.)
-      if (payload.exp && Date.now() > payload.exp) {
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("redirect", pathname);
-        const res = NextResponse.redirect(loginUrl);
-        res.cookies.delete("session");
-        return res;
-      }
-
-      if (payload.totpEnabled === false) {
-        // User hasn't set up 2FA — only allow setup-related paths
-        if (!SETUP_2FA_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
-          return NextResponse.redirect(new URL("/setup-2fa", request.url));
-        }
-      }
+  // User hasn't set up 2FA — only allow setup-related paths
+  if (payload.totpEnabled === false) {
+    if (!SETUP_2FA_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
+      return NextResponse.redirect(new URL("/setup-2fa", request.url));
     }
-  } catch {
-    // If we can't decode the session, let the request through —
-    // the server-side getSession() will reject invalid sessions.
   }
 
   return NextResponse.next();
