@@ -1,8 +1,7 @@
 import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
-import { LineChartCard } from "@/components/charts/line-chart";
-import { BarChartCard } from "@/components/charts/bar-chart";
+import { MichaelCharts } from "@/components/dashboard/michael-charts";
 import { DollarSign, TrendingUp, FileCheck, FilePlus } from "lucide-react";
 
 export default async function MichaelPage() {
@@ -57,43 +56,10 @@ export default async function MichaelPage() {
         />
       </div>
 
-      <LineChartCard
-        title="Monthly Recurring Revenue — line"
-        data={revenueChartData}
-        xKey="month"
-        yKeys={["revenue"]}
-        yLabels={["MRR"]}
-        formatY={(v) => formatCurrency(v)}
-        height={320}
-      />
-
-      <BarChartCard
-        title="Monthly Recurring Revenue — bar"
-        data={revenueChartData}
-        xKey="month"
-        yKeys={["revenue"]}
-        yLabels={["MRR"]}
-        formatY={(v) => formatCurrency(v)}
-        height={320}
-      />
-
-      <BarChartCard
-        title="New Revenue Won per Month"
-        data={newRevenueChartData}
-        xKey="month"
-        yKeys={["newRevenue"]}
-        yLabels={["New Revenue"]}
-        formatY={(v) => formatCurrency(v)}
-        height={320}
-      />
-
-      <BarChartCard
-        title="New Deals Created per Month"
-        data={dealsCreatedChartData}
-        xKey="month"
-        yKeys={["deals"]}
-        yLabels={["Deals Created"]}
-        height={320}
+      <MichaelCharts
+        revenueData={revenueChartData}
+        newRevenueData={newRevenueChartData}
+        dealsCreatedData={dealsCreatedChartData}
       />
     </div>
   );
