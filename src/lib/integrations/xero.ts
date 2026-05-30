@@ -135,9 +135,10 @@ export function getAuthUrl(): string {
   // Granular scopes (required for apps created on/after 2 Mar 2026 — the broad
   // accounting.transactions/.read scopes are rejected with invalid_scope).
   // Maps to the endpoints this integration calls: /Invoices + /RepeatingInvoices
-  // (invoices.read), /BankTransactions (banktransactions.read), /Contacts.
+  // (invoices.read), /BankTransactions (banktransactions.read), /Contacts, and
+  // the Profit & Loss report (reports.profitandloss.read) for actual revenue.
   const scopes =
-    "openid profile email accounting.invoices.read accounting.banktransactions.read accounting.contacts.read offline_access";
+    "openid profile email accounting.invoices.read accounting.banktransactions.read accounting.contacts.read accounting.reports.profitandloss.read offline_access";
 
   const url = new URL("https://login.xero.com/identity/connect/authorize");
   url.searchParams.set("response_type", "code");
