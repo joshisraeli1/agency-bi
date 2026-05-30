@@ -273,93 +273,61 @@ export interface RevenueVsChurnRow {
   churnedClients: RevenueVsChurnClient[];
 }
 
-function shiftMonth(monthKey: string, delta: number): string {
-  const [y, m] = monthKey.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 /**
- * Detects new/churned revenue per-deal from HubSpot FinancialRecord data.
+ * New vs churned revenue per month, derived from HubSpot deal dates directly:
+ *  - A deal counts as NEW revenue in the month of its startDate (fallback closeDate).
+ *  - A deal counts as CHURNED revenue in the month of its churnDate.
+ * Amount is the deal's ex-GST value.
  *
- * Each deal is identified by (clientId, category) — category typically holds "deal:<hubspotDealId>".
- * A deal is counted as "new" in the first month it appears and "churned" in the month after its
- * last recorded month (retainers only — one-off projects don't churn, they simply end).
- *
- * This correctly handles:
- *  - One-off project deals (show as new, never churn)
- *  - Multiple deals per client (each counted separately)
- *  - Deals that start on existing clients (counted as new, even though client isn't new)
+ * This replaces the previous approach of inferring churn from the presence of
+ * monthly FinancialRecord rows, which produced phantom churn when the current
+ * month was only partially synced and broke when category formats drifted
+ * (deal:* vs hubspot:*). Reading deal dates is exact and immune to both.
  */
 export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
   const monthRange = getMonthRange(months);
-  const firstMonth = monthRange[0];
-  // Need one extra month BEFORE the range to detect "new in first month" correctly
-  const lookbackMonth = shiftMonth(firstMonth, -1);
 
-  const [excludedIds, records] = await Promise.all([
+  const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
-    db.financialRecord.findMany({
-      where: {
-        source: "hubspot",
-        type: { in: ["retainer", "project"] },
-        month: { gte: lookbackMonth },
-      },
-      // Only the fields used below — avoids transferring unused columns.
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
       select: {
+        id: true,
         clientId: true,
-        category: true,
-        month: true,
+        name: true,
         amount: true,
-        type: true,
-        client: { select: { name: true, status: true } },
+        amountExGst: true,
+        startDate: true,
+        closeDate: true,
+        churnDate: true,
       },
     }),
   ]);
 
-  const filtered = records.filter(
-    (r) => !excludedIds.has(r.clientId) && r.client.status !== "prospect"
-  );
-
-  // Group by (clientId, category) → deal. category holds the HubSpot deal id.
-  type Deal = {
-    clientId: string;
-    clientName: string;
-    type: string; // retainer | project
-    byMonth: Map<string, number>;
+  const monthKeyOf = (d: Date | null | undefined): string | null => {
+    if (!d) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
-  const deals = new Map<string, Deal>();
-  for (const r of filtered) {
-    const key = `${r.clientId}|${r.category ?? "no-category"}`;
-    let d = deals.get(key);
-    if (!d) {
-      d = { clientId: r.clientId, clientName: r.client.name, type: r.type, byMonth: new Map() };
-      deals.set(key, d);
-    }
-    d.byMonth.set(r.month, (d.byMonth.get(r.month) ?? 0) + r.amount);
-  }
 
   return monthRange.map((month) => {
-    const prev = shiftMonth(month, -1);
     let newRevenue = 0;
     let churnedRevenue = 0;
     const newClients: RevenueVsChurnClient[] = [];
     const churnedClients: RevenueVsChurnClient[] = [];
 
-    for (const d of deals.values()) {
-      const thisAmt = d.byMonth.get(month);
-      const prevAmt = d.byMonth.get(prev);
+    for (const d of deals) {
+      if (d.clientId && excludedIds.has(d.clientId)) continue;
+      const amt = d.amountExGst ?? d.amount ?? 0;
+      if (!amt) continue;
 
-      // New deal: has revenue this month but not last month
-      if (thisAmt && !prevAmt) {
-        newRevenue += thisAmt;
-        newClients.push({ id: d.clientId, name: d.clientName, retainerValue: Math.round(thisAmt) });
+      if (monthKeyOf(d.startDate ?? d.closeDate) === month) {
+        newRevenue += amt;
+        newClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
       }
-      // Churn: retainer existed last month but not this month (the "off ramp" month)
-      // Projects don't churn — they're one-off by definition.
-      if (!thisAmt && prevAmt && d.type === "retainer") {
-        churnedRevenue += prevAmt;
-        churnedClients.push({ id: d.clientId, name: d.clientName, retainerValue: Math.round(prevAmt) });
+      if (monthKeyOf(d.churnDate) === month) {
+        churnedRevenue += amt;
+        churnedClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
       }
     }
 
