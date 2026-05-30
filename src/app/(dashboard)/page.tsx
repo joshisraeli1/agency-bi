@@ -11,7 +11,7 @@ import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { Users, UserCog, DollarSign, TrendingUp, AlertTriangle, Calendar, PiggyBank, Receipt } from "lucide-react";
+import { Users, UserCog, AlertTriangle, Calendar, Receipt } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -21,22 +21,20 @@ export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "12", 10);
 
-  const [clientCount, teamCount, recentImports, revenue, revenueVsChurn, activeSnapshot, settings] = await Promise.all([
+  const [clientCount, teamCount, recentImports, revenue, revenueVsChurn, activeSnapshot] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.teamMember.count(),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
     getRevenueVsChurn(12),
     getActiveRevenueSnapshot(),
-    db.appSettings.findFirst(),
   ]);
 
-  // Current monthly revenue = sum of active client retainerValue (source of truth from HubSpot,
-  // stored ex-GST). This matches HubSpot's "Revenue Summary" and avoids the FinancialRecord
-  // sync staleness that would otherwise make current-month revenue look artificially low.
+  // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
+  // deal-level amounts (inc-GST = Amount property, ex-GST = ex-GST property) so they match
+  // HubSpot exactly, rather than applying a flat GST multiplier to a single figure.
   const monthlyRevenueExGst = activeSnapshot.monthlyRevenueExGst;
-  const gstRate = settings?.gstRate ?? 10;
-  const monthlyRevenueIncGst = Math.round(monthlyRevenueExGst * (1 + gstRate / 100));
+  const monthlyRevenueIncGst = activeSnapshot.monthlyRevenueIncGst;
 
   return (
     <div className="space-y-6">
@@ -47,7 +45,7 @@ export default async function OverviewPage({ searchParams }: Props) {
         </Suspense>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           title="Monthly Revenue (inc GST)"
           value={formatCurrency(monthlyRevenueIncGst)}
@@ -62,11 +60,6 @@ export default async function OverviewPage({ searchParams }: Props) {
           title="Annualized Rev ex GST"
           value={formatCurrency(revenue.annualizedRevenue)}
           icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Annualized Gross Profit"
-          value={formatCurrency(revenue.annualizedProfit)}
-          icon={<PiggyBank className="h-4 w-4 text-muted-foreground" />}
         />
         <Link href="/clients" className="h-full">
           <StatCard

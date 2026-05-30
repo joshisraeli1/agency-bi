@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { getExcludedClientIds } from "./excluded-clients";
 
 export interface PackageTypeRow {
   packageType: string;
@@ -9,7 +8,8 @@ export interface PackageTypeRow {
 
 export interface ActiveRevenueSnapshot {
   dealCount: number;
-  monthlyRevenueExGst: number; // sum of active retainers — source-of-truth for current month
+  monthlyRevenueIncGst: number; // sum of closed-won deal Amount (inc-GST) — matches HubSpot
+  monthlyRevenueExGst: number; // sum of closed-won deal ex-GST property
   byPackageType: PackageTypeRow[];
 }
 
@@ -27,37 +27,31 @@ function classifyPackageType(raw: string | null | undefined): string {
 }
 
 /**
- * Current snapshot of active HubSpot deals — mirrors the "Revenue Summary" + "Revenue by
- * Package Type" tiles in HubSpot (all-time filter, status=active). Treats each active client's
- * retainerValue as the current monthly revenue (ex-GST, as HubSpot stores it).
+ * Current snapshot of closed-won HubSpot deals — mirrors HubSpot's "Revenue Summary" +
+ * "Revenue by Package Type". Source of truth is the deal-level amounts (matching HubSpot
+ * exactly), NOT a flat GST multiplier:
+ *   - inc-GST = sum of each deal's Amount property (`amount`)
+ *   - ex-GST  = sum of each deal's ex-GST property (`amountExGst`)
+ * Counts every closed-won deal in the pipeline (HubSpot's closed-won total).
  */
 export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot> {
-  const [excludedIds, clients] = await Promise.all([
-    getExcludedClientIds(),
-    db.client.findMany({
-      where: {
-        status: "active",
-        OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }],
-      },
-      select: {
-        id: true,
-        retainerValue: true,
-        contentPackageType: true,
-      },
-    }),
-  ]);
-
-  const active = clients.filter((c) => !excludedIds.has(c.id));
+  const deals = await db.hubspotDeal.findMany({
+    where: { stage: "closed_won" },
+    select: { amount: true, amountExGst: true, contentPackageType: true },
+  });
 
   const byPkg = new Map<string, { count: number; revenue: number }>();
-  let total = 0;
-  for (const c of active) {
-    const amt = c.retainerValue ?? 0;
-    total += amt;
-    const pkg = classifyPackageType(c.contentPackageType);
+  let totalInc = 0;
+  let totalEx = 0;
+  for (const d of deals) {
+    const inc = d.amount ?? 0;
+    const ex = d.amountExGst ?? 0;
+    totalInc += inc;
+    totalEx += ex;
+    const pkg = classifyPackageType(d.contentPackageType);
     const row = byPkg.get(pkg) ?? { count: 0, revenue: 0 };
     row.count++;
-    row.revenue += amt;
+    row.revenue += ex;
     byPkg.set(pkg, row);
   }
 
@@ -66,8 +60,9 @@ export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot>
     .sort((a, b) => b.revenue - a.revenue);
 
   return {
-    dealCount: active.length,
-    monthlyRevenueExGst: Math.round(total),
+    dealCount: deals.length,
+    monthlyRevenueIncGst: Math.round(totalInc),
+    monthlyRevenueExGst: Math.round(totalEx),
     byPackageType,
   };
 }
