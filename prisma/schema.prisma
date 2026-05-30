@@ -54,6 +54,9 @@ model Client {
   timeEntries       TimeEntry[]
   clientAssignments ClientAssignment[]
   hubspotDeals      HubspotDeal[]
+
+  @@index([status])
+  @@index([dealStage])
 }
 
 model ClientAlias {
@@ -199,6 +202,8 @@ model FinancialRecord {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, month, type, category])
+  @@index([month])
+  @@index([source, type, month])
 }
 
 model TimeEntry {

@@ -15,7 +15,18 @@ export async function getRevenueOverview(
     getExcludedClientIds(),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
-      include: { client: true },
+      // Only the client fields actually used below — avoids hauling the full
+      // client row (20+ columns) joined onto every record across the WAN.
+      select: {
+        clientId: true,
+        month: true,
+        type: true,
+        source: true,
+        amount: true,
+        client: {
+          select: { name: true, status: true, contentPackageType: true },
+        },
+      },
     }),
     db.appSettings.findFirst(),
     db.teamMember.findMany({
@@ -294,8 +305,14 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
         type: { in: ["retainer", "project"] },
         month: { gte: lookbackMonth },
       },
-      include: {
-        client: { select: { id: true, name: true, status: true } },
+      // Only the fields used below — avoids transferring unused columns.
+      select: {
+        clientId: true,
+        category: true,
+        month: true,
+        amount: true,
+        type: true,
+        client: { select: { name: true, status: true } },
       },
     }),
   ]);
