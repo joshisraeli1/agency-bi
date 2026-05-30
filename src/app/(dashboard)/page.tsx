@@ -11,6 +11,7 @@ import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
+import { RefreshDataButton } from "@/components/dashboard/refresh-data-button";
 import { Users, UserCog, AlertTriangle, Calendar, Receipt } from "lucide-react";
 
 interface Props {
@@ -40,9 +41,12 @@ export default async function OverviewPage({ searchParams }: Props) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Overview</h1>
-        <Suspense>
-          <DateRangePicker />
-        </Suspense>
+        <div className="flex items-center gap-2">
+          <RefreshDataButton />
+          <Suspense>
+            <DateRangePicker />
+          </Suspense>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
