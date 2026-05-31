@@ -1,7 +1,11 @@
 import { db } from "@/lib/db";
 import { ClientsActions } from "@/components/forms/clients-actions";
+import { getLTVData } from "@/lib/analytics/advanced-analytics";
 
 export default async function ClientsPage() {
+  const ltvData = await getLTVData();
+  const ltvByClient = new Map(ltvData.clients.map((c) => [c.clientId, c.totalRevenue]));
+
   const raw = await db.client.findMany({
     where: { status: "active", hubspotDealId: { not: null } },
     orderBy: { name: "asc" },
@@ -38,7 +42,11 @@ export default async function ClientsPage() {
 
   const clients = raw.map(({ hubspotDeals, ...c }) => {
     const dealRetainer = hubspotDeals.reduce((s, d) => s + (d.amountExGst ?? d.amount ?? 0), 0);
-    return { ...c, retainerValue: dealRetainer > 0 ? dealRetainer : c.retainerValue };
+    return {
+      ...c,
+      retainerValue: dealRetainer > 0 ? dealRetainer : c.retainerValue,
+      ltv: ltvByClient.get(c.id) ?? null,
+    };
   });
 
   return (

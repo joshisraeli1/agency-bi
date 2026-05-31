@@ -48,6 +48,7 @@ interface Client {
   notes: string | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
+  ltv?: number | null;
   _count: { timeEntries: number; aliases: number };
 }
 
@@ -251,6 +252,7 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                   <TableHead className="text-right">
                     {serviceFilter === "all" ? "Deal Size" : "Amount"}
                   </TableHead>
+                  <TableHead className="text-right">LTV</TableHead>
                   <TableHead>Industry</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
@@ -287,6 +289,9 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                         const amt = serviceAmount(client, serviceFilter);
                         return amt > 0 ? formatCurrency(amt) : "\u2014";
                       })()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {client.ltv ? formatCurrency(client.ltv) : "\u2014"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={client.industry || ""}>
                       {client.industry || "\u2014"}
