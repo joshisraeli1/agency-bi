@@ -10,6 +10,7 @@ export default async function MichaelPage() {
   const revenueChartData = data.monthlyRevenue.map((m) => ({
     month: formatMonth(m.month),
     revenue: Math.round(m.value),
+    deals: (data.mrrDealsByMonth[m.month] ?? []).map((d) => ({ name: d.name, amount: Math.round(d.amount) })),
   }));
 
   const newRevenueChartData = data.newRevenuePerMonth.map((m) => ({
@@ -20,6 +21,7 @@ export default async function MichaelPage() {
   const dealsCreatedChartData = data.dealsCreatedPerMonth.map((m) => ({
     month: formatMonth(m.month),
     deals: m.value,
+    dealList: (data.createdDealsByMonth[m.month] ?? []).map((d) => ({ name: d.name, amount: Math.round(d.amount) })),
   }));
 
   return (
@@ -60,6 +62,8 @@ export default async function MichaelPage() {
         revenueData={revenueChartData}
         newRevenueData={newRevenueChartData}
         dealsCreatedData={dealsCreatedChartData}
+        mrrGoal={data.mrrGoal}
+        dealsGoal={data.dealsGoal}
       />
     </div>
   );

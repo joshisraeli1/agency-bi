@@ -4,13 +4,24 @@ import { getMonthRange } from "@/lib/utils";
 export const MICHAEL_OWNER_ID = "76570622";
 export const MICHAEL_NAME = "Michael Shenfield";
 
+// Monthly goals
+export const MICHAEL_MRR_GOAL = 100_000;
+export const MICHAEL_DEALS_GOAL = 5;
+
 export interface MonthlyValue {
   month: string; // YYYY-MM
   value: number;
 }
 
+export interface DealRef {
+  name: string;
+  amount: number;
+}
+
 export interface MichaelSalesData {
   ownerName: string;
+  mrrGoal: number;
+  dealsGoal: number;
   // Headline tiles
   currentMrr: number;
   lifetimeRevenue: number;
@@ -20,6 +31,9 @@ export interface MichaelSalesData {
   monthlyRevenue: MonthlyValue[];
   newRevenuePerMonth: MonthlyValue[];
   dealsCreatedPerMonth: MonthlyValue[];
+  // Per-month deal detail for drill-down (keyed by YYYY-MM)
+  mrrDealsByMonth: Record<string, DealRef[]>;
+  createdDealsByMonth: Record<string, DealRef[]>;
 }
 
 function emptySeries(months: string[]): MonthlyValue[] {
@@ -50,6 +64,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     where: { ownerId: MICHAEL_OWNER_ID },
     select: {
       id: true,
+      name: true,
       stage: true,
       amountExGst: true,
       amount: true,
@@ -59,6 +74,10 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
       churnDate: true,
     },
   });
+
+  // Per-month deal detail for drill-down
+  const mrrDealsByMonth: Record<string, DealRef[]> = {};
+  const createdDealsByMonth: Record<string, DealRef[]> = {};
 
   // Active deals = stage closed_won and not yet churned (or no churn date)
   const now = new Date();
@@ -74,6 +93,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     if (!key) continue;
     applyToSeries(dealsCreatedPerMonth, key, 1);
     if (key >= twelveMonthsAgoKey) dealsCreatedLast12mo += 1;
+    (createdDealsByMonth[key] ??= []).push({ name: d.name, amount: d.amountExGst ?? d.amount ?? 0 });
   }
 
   // New revenue per month = closed-won deals' ex-GST amount, bucketed by startDate
@@ -115,6 +135,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     for (const m of months24) {
       if (m >= startKey && (!churnKey || m < churnKey)) {
         applyToSeries(monthlyRevenue, m, amt);
+        (mrrDealsByMonth[m] ??= []).push({ name: d.name, amount: amt });
         if (m === currentMonth) currentMrr += amt;
       }
     }
@@ -127,6 +148,8 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
 
   return {
     ownerName: MICHAEL_NAME,
+    mrrGoal: MICHAEL_MRR_GOAL,
+    dealsGoal: MICHAEL_DEALS_GOAL,
     currentMrr,
     lifetimeRevenue,
     activeDealCount,
@@ -134,5 +157,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     monthlyRevenue,
     newRevenuePerMonth,
     dealsCreatedPerMonth,
+    mrrDealsByMonth,
+    createdDealsByMonth,
   };
 }
