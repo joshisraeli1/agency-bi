@@ -2,9 +2,8 @@
 
 import { BarChartCard } from "@/components/charts/bar-chart";
 import { PieChartCard } from "@/components/charts/pie-chart";
-import { ComboChartCard } from "@/components/charts/combo-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatMonth, formatCurrency } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import type { DivisionProfitabilityRow, XeroMarginTrend } from "@/lib/analytics/types";
 
 interface Props {
@@ -150,15 +149,7 @@ function DivisionSummaryBlock({
 
 export function ProfitabilitySection({
   hubspotProfitability,
-  xeroProfitability,
-  xeroMargin,
 }: Props) {
-  // Xero margin trend
-  const marginData = xeroMargin.monthlyData.map((m) => ({
-    ...m,
-    month: formatMonth(m.month),
-  }));
-
   return (
     <div className="space-y-6">
       {/* HubSpot Profitability (revenue from HubSpot + team salary costs) */}
@@ -168,32 +159,6 @@ export function ProfitabilitySection({
         data={hubspotProfitability}
       />
 
-      {/* Xero Profitability — hidden, awaiting P&L upload with division breakdowns */}
-
-      {/* Xero Margin Over Time */}
-      {marginData.length > 0 && xeroMargin.totalRevenue > 0 && (
-        <>
-          <div>
-            <h2 className="text-xl font-semibold">Margin Over Time (Xero)</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Monthly revenue, cost, and margin % from Xero data — avg margin{" "}
-              {xeroMargin.avgMarginPercent}%
-            </p>
-          </div>
-          <ComboChartCard
-            title="Xero Revenue & Margin Trend"
-            data={marginData}
-            xKey="month"
-            barKeys={["revenue", "cost"]}
-            barLabels={["Revenue", "Cost"]}
-            lineKey="marginPercent"
-            lineLabel="Margin %"
-            stacked={false}
-            formatBar={(v) => formatCurrency(v)}
-            formatLine={(v) => `${v}%`}
-          />
-        </>
-      )}
     </div>
   );
 }

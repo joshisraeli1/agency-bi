@@ -17,7 +17,6 @@ import {
 } from "@/lib/analytics/margin-analytics";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
-import { KpiCharts } from "@/components/dashboard/kpi-charts";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
@@ -134,9 +133,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* 3. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
-
-      {/* 6. KPI Charts (Utilization & Margin Trend, Hours by Division) */}
-      <KpiCharts data={data} />
 
       {/* Average Deal Size Over Time */}
       <DealSizeChart data={newClientDealSize} />
