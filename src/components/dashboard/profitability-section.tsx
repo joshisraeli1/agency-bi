@@ -33,7 +33,8 @@ function DivisionSummaryBlock({
   const totalClientCount = data.reduce((s, d) => s + d.clientCount, 0);
 
   const pieData = data.map((d) => ({ name: d.division, value: d.revenue }));
-  const marginBarData = data.map((d) => ({ name: d.division, marginPercent: d.marginPercent }));
+  // Include the revenue/cost multiple in the bar label so it shows on the graph.
+  const marginBarData = data.map((d) => ({ name: `${d.division} (${d.ratio}x)`, marginPercent: d.marginPercent }));
 
   return (
     <>
