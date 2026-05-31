@@ -4,9 +4,26 @@ import { getMonthRange } from "@/lib/utils";
 export const MICHAEL_OWNER_ID = "76570622";
 export const MICHAEL_NAME = "Michael Shenfield";
 
-// Monthly goals
+// Default monthly goals (overridable via the "michael_goals" config row)
 export const MICHAEL_MRR_GOAL = 100_000;
 export const MICHAEL_DEALS_GOAL = 5;
+export const MICHAEL_GOALS_PROVIDER = "michael_goals";
+
+export async function getMichaelGoals(): Promise<{ mrrGoal: number; dealsGoal: number }> {
+  const row = await db.integrationConfig.findUnique({ where: { provider: MICHAEL_GOALS_PROVIDER } });
+  let mrrGoal = MICHAEL_MRR_GOAL;
+  let dealsGoal = MICHAEL_DEALS_GOAL;
+  if (row?.configJson && row.configJson !== "{}") {
+    try {
+      const g = JSON.parse(row.configJson);
+      if (typeof g.mrrGoal === "number" && g.mrrGoal > 0) mrrGoal = g.mrrGoal;
+      if (typeof g.dealsGoal === "number" && g.dealsGoal > 0) dealsGoal = g.dealsGoal;
+    } catch {
+      // fall back to defaults
+    }
+  }
+  return { mrrGoal, dealsGoal };
+}
 
 export interface MonthlyValue {
   month: string; // YYYY-MM
@@ -56,6 +73,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   const months24 = getMonthRange(24);
   const currentMonth = months24[months24.length - 1];
   const twelveMonthsAgoKey = months24[months24.length - 12];
+  const goals = await getMichaelGoals();
 
   // -----------------------------------------------------------------------
   // Deal-level data (HubspotDeal)
@@ -148,8 +166,8 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
 
   return {
     ownerName: MICHAEL_NAME,
-    mrrGoal: MICHAEL_MRR_GOAL,
-    dealsGoal: MICHAEL_DEALS_GOAL,
+    mrrGoal: goals.mrrGoal,
+    dealsGoal: goals.dealsGoal,
     currentMrr,
     lifetimeRevenue,
     activeDealCount,
