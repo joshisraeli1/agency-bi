@@ -189,6 +189,61 @@ export async function fetchProfitAndLoss(
   return out;
 }
 
+export interface PnlCostLine {
+  account: string;
+  section: "cogs" | "opex";
+  byMonth: Record<string, number>; // YYYY-MM -> amount (ex-GST)
+}
+
+/**
+ * Fetch the individual expense lines from the P&L — "Less Cost of Sales" and
+ * "Less Operating Expenses" — per account, per month. Used to build divisional
+ * team/cost margins from actual Xero data.
+ */
+export async function fetchPnlCostLines(
+  accessToken: string,
+  tenantId: string,
+  periods = 11
+): Promise<PnlCostLine[]> {
+  const safePeriods = Math.max(1, Math.min(periods, 11));
+  const report = await xeroFetch<{ Reports?: { Rows?: XeroReportRow[] }[] }>(
+    accessToken,
+    tenantId,
+    "/Reports/ProfitAndLoss",
+    { timeframe: "MONTH", periods: String(safePeriods), standardLayout: "true" }
+  );
+  const rows = report.Reports?.[0]?.Rows ?? [];
+  const header = rows.find((r) => r.RowType === "Header");
+  const months = (header?.Cells ?? []).map((c) => parseXeroPeriodLabel(c.Value ?? ""));
+
+  const sectionKind = (title: string | undefined): "cogs" | "opex" | null => {
+    const t = (title ?? "").toLowerCase();
+    if (t.includes("cost of sales")) return "cogs";
+    if (t.includes("operating expense")) return "opex";
+    return null;
+  };
+
+  const lines: PnlCostLine[] = [];
+  for (const sec of rows) {
+    if (sec.RowType !== "Section") continue;
+    const kind = sectionKind(sec.Title);
+    if (!kind) continue;
+    for (const row of sec.Rows ?? []) {
+      if (row.RowType !== "Row") continue; // skip SummaryRow (Total ...)
+      const account = row.Cells?.[0]?.Value ?? "";
+      if (!account) continue;
+      const byMonth: Record<string, number> = {};
+      for (let i = 1; i < (row.Cells?.length ?? 0); i++) {
+        const month = months[i];
+        if (!month) continue;
+        byMonth[month] = parseFloat(row.Cells?.[i]?.Value ?? "0") || 0;
+      }
+      lines.push({ account, section: kind, byMonth });
+    }
+  }
+  return lines;
+}
+
 interface XeroReportRow {
   RowType: string;
   Title?: string;

@@ -8,7 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
-import { fetchProfitAndLoss, refreshToken } from "@/lib/integrations/xero";
+import { fetchProfitAndLoss, fetchPnlCostLines, refreshToken } from "@/lib/integrations/xero";
 
 // ---------------------------------------------------------------------------
 // HubSpot deals
@@ -156,7 +156,7 @@ const PNL_CATEGORY = "xero_pnl_income";
 
 interface XeroConfig { accessToken: string; refreshToken: string; tenantId: string; tenantName?: string; expiresAt?: number }
 
-export async function syncXeroPnl(): Promise<{ months: number; removed: number; tenant?: string }> {
+export async function syncXeroPnl(): Promise<{ months: number; removed: number; tenant?: string; costLines?: number; costRows?: number }> {
   const cfgRow = await db.integrationConfig.findUnique({ where: { provider: "xero" } });
   if (!cfgRow || cfgRow.configJson === "{}") throw new Error("Xero not connected");
   let cfg = decryptJson<XeroConfig>(cfgRow.configJson);
@@ -184,5 +184,19 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
     });
   }
 
-  return { months: pnl.length, removed: removed.count, tenant: cfg.tenantName };
+  // Cost lines (Cost of Sales + Operating Expenses) per account/month — used to
+  // build divisional margins from actual Xero costs. Stored as type="cost" on
+  // the synthetic client; division mapping happens at read time.
+  const costLines = await fetchPnlCostLines(cfg.accessToken, cfg.tenantId, 11);
+  await db.financialRecord.deleteMany({ where: { clientId: synth.id, source: "xero", type: "cost" } });
+  const costRows: { clientId: string; month: string; type: string; category: string; amount: number; source: string; description: string }[] = [];
+  for (const line of costLines) {
+    for (const [month, amount] of Object.entries(line.byMonth)) {
+      if (!amount) continue;
+      costRows.push({ clientId: synth.id, month, type: "cost", category: line.account, amount, source: "xero", description: line.section });
+    }
+  }
+  if (costRows.length) await db.financialRecord.createMany({ data: costRows });
+
+  return { months: pnl.length, removed: removed.count, tenant: cfg.tenantName, costLines: costLines.length, costRows: costRows.length };
 }
