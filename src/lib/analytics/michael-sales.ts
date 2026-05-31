@@ -60,8 +60,6 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     },
   });
 
-  const dealIds = deals.map((d) => d.id);
-
   // Active deals = stage closed_won and not yet churned (or no churn date)
   const now = new Date();
   const activeDealCount = deals.filter(
@@ -91,27 +89,40 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   }
 
   // -----------------------------------------------------------------------
-  // Monthly revenue trend (FinancialRecord, restricted to Michael's dealIds)
+  // Monthly recurring revenue from deal active windows (closed_won / churned),
+  // ex-GST. Avoids the stale/partial FinancialRecord store that made the
+  // current month collapse.
   // -----------------------------------------------------------------------
   const monthlyRevenue = emptySeries(months24);
   let lifetimeRevenue = 0;
   let currentMrr = 0;
 
-  if (dealIds.length > 0) {
-    const records = await db.financialRecord.findMany({
-      where: {
-        source: "hubspot",
-        type: "retainer",
-        externalId: { in: dealIds },
-      },
-      select: { month: true, amount: true },
-    });
+  const monthIndex = (key: string): number => {
+    const [y, m] = key.split("-").map(Number);
+    return y * 12 + (m - 1);
+  };
+  const currentIdx = monthIndex(currentMonth);
 
-    for (const r of records) {
-      lifetimeRevenue += r.amount;
-      if (r.month === currentMonth) currentMrr += r.amount;
-      applyToSeries(monthlyRevenue, r.month, r.amount);
+  for (const d of deals) {
+    if (d.stage !== "closed_won" && !d.churnDate) continue;
+    const startKey = toMonthKey(d.startDate ?? d.closeDate);
+    if (!startKey) continue;
+    const churnKey = toMonthKey(d.churnDate);
+    const amt = d.amountExGst ?? d.amount ?? 0;
+    if (!amt) continue;
+
+    // Monthly series within the visible 24-month window
+    for (const m of months24) {
+      if (m >= startKey && (!churnKey || m < churnKey)) {
+        applyToSeries(monthlyRevenue, m, amt);
+        if (m === currentMonth) currentMrr += amt;
+      }
     }
+
+    // Lifetime = amount × number of active months (start → churn, else → now)
+    const endIdx = churnKey ? monthIndex(churnKey) - 1 : currentIdx;
+    const activeMonths = Math.max(0, endIdx - monthIndex(startKey) + 1);
+    lifetimeRevenue += amt * activeMonths;
   }
 
   return {
