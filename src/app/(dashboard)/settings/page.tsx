@@ -34,6 +34,7 @@ import {
 import { Save, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { UserForm } from "@/components/forms/user-form";
 import { format } from "date-fns";
+import Link from "next/link";
 
 interface Settings {
   agencyName: string;
@@ -173,6 +174,16 @@ export default function SettingsPage() {
           <AlertDescription>{message.text}</AlertDescription>
         </Alert>
       )}
+
+      <Link
+        href="/settings/cost-allocation"
+        className="block rounded-lg border p-4 hover:bg-muted/50 transition-colors max-w-2xl"
+      >
+        <div className="font-medium">Cost Allocation →</div>
+        <div className="text-sm text-muted-foreground">
+          Assign Xero P&amp;L expense lines to divisions (drives divisional margins).
+        </div>
+      </Link>
 
       <div className="max-w-2xl space-y-6">
         <Card>

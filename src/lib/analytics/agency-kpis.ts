@@ -362,9 +362,17 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     where: { source: "xero", type: "cost", month: currentMonth },
     select: { category: true, amount: true },
   });
+  // Manual division overrides for cost accounts (set in Settings → Cost
+  // Allocation), stored as plain JSON on the "cost_allocation" config row.
+  let costOverrides: Record<string, string> = {};
+  const allocRow = await db.integrationConfig.findUnique({ where: { provider: "cost_allocation" } });
+  if (allocRow?.configJson && allocRow.configJson !== "{}") {
+    try { costOverrides = JSON.parse(allocRow.configJson); } catch { costOverrides = {}; }
+  }
   const divXeroCost = new Map<string, number>();
   for (const r of xeroCostRecords) {
-    const div = autoMapAccountToDivision(r.category || "");
+    const account = r.category || "";
+    const div = costOverrides[account] ?? autoMapAccountToDivision(account);
     divXeroCost.set(div, (divXeroCost.get(div) || 0) + r.amount);
   }
 
