@@ -3,7 +3,7 @@ import { ClientsActions } from "@/components/forms/clients-actions";
 
 export default async function ClientsPage() {
   const raw = await db.client.findMany({
-    where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
+    where: { status: "active", hubspotDealId: { not: null } },
     orderBy: { name: "asc" },
     select: {
       id: true,
