@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getMonthRange, toMonthKey, getLoadedMonthlyCost } from "@/lib/utils";
+import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
@@ -68,7 +68,7 @@ export interface TeamUtilizationData {
 }
 
 export async function getLTVData(): Promise<LTVData> {
-  const [allClients, financials, settings, excludedIds] = await Promise.all([
+  const [allClients, deals, , excludedIds] = await Promise.all([
     db.client.findMany({
       where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
       select: {
@@ -81,9 +81,9 @@ export async function getLTVData(): Promise<LTVData> {
         createdAt: true,
       },
     }),
-    db.financialRecord.findMany({
-      where: { type: { in: ["retainer", "project"] }, source: "hubspot" },
-      select: { clientId: true, amount: true },
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }], clientId: { not: null } },
+      select: { clientId: true, amount: true, amountExGst: true },
     }),
     db.appSettings.findFirst(),
     getExcludedClientIds(),
@@ -91,12 +91,11 @@ export async function getLTVData(): Promise<LTVData> {
 
   const clients = allClients.filter((c) => !excludedIds.has(c.id));
 
-  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-
-  // Sum revenue per client (ex-GST)
-  const revenueMap = new Map<string, number>();
-  for (const f of financials) {
-    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
+  // Per-client monthly MRR (ex-GST) from their closed-won/churned deals
+  const clientMrr = new Map<string, number>();
+  for (const d of deals) {
+    if (!d.clientId) continue;
+    clientMrr.set(d.clientId, (clientMrr.get(d.clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
   }
 
   const now = new Date();
@@ -117,7 +116,7 @@ export async function getLTVData(): Promise<LTVData> {
     : 12; // default fallback if no churned data
 
   const clientData = clients.map((c) => {
-    const totalRevenue = revenueMap.get(c.id) || 0;
+    const mrr = clientMrr.get(c.id) || 0;
     const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
 
     let monthsActive: number;
@@ -134,6 +133,10 @@ export async function getLTVData(): Promise<LTVData> {
       monthsActive = Math.max(currentTenure, Math.round(avgChurnedTenure));
     }
 
+    // Lifetime value = monthly MRR × months active (deal-based, not the old
+    // double-counted FinancialRecord sum).
+    const totalRevenue = mrr * monthsActive;
+
     return {
       clientId: c.id,
       clientName: c.name,
@@ -141,7 +144,7 @@ export async function getLTVData(): Promise<LTVData> {
       industry: c.industry || "Unknown",
       totalRevenue,
       monthsActive,
-      monthlyAvgRevenue: totalRevenue / monthsActive,
+      monthlyAvgRevenue: mrr,
       startDate: effectiveStart,
     };
   });
@@ -222,85 +225,54 @@ export async function getRevenueByServiceType(
 ): Promise<RevenueByServiceType> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, financials, clients, teamMembers, settings] = await Promise.all([
+  const [excludedIds, deals, cogsRecords] = await Promise.all([
     getExcludedClientIds(),
+    // Closed-won + churned deals — revenue per service line from active windows
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
+    }),
+    // Xero Cost of Sales (COGS) per month — for true gross profit/margin
     db.financialRecord.findMany({
-      where: { month: { in: monthRange } },
+      where: { source: "xero", type: "cost", description: "cogs", month: { in: monthRange } },
+      select: { month: true, amount: true },
     }),
-    db.client.findMany({
-      where: { hubspotDealId: { not: null } },
-      select: {
-        id: true,
-        contentPackageType: true,
-      },
-    }),
-    db.teamMember.findMany({
-      where: { active: true },
-      select: { annualSalary: true, hourlyRate: true, weeklyHours: true },
-    }),
-    db.appSettings.findFirst(),
   ]);
 
-  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-  const filtered = financials.filter((f) => !excludedIds.has(f.clientId));
+  const monthKeyOf = (d: Date | null | undefined): string | null =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
 
-  // Build client service allocation lookup based on contentPackageType
-  // Returns proportions for: sm (Organic Social), growth (Paid Media), content (Ad Creative)
-  const clientAlloc = new Map<string, { sm: number; growth: number; content: number; total: number }>();
-  for (const c of clients) {
-    const pkg = (c.contentPackageType || "").toLowerCase();
-    let sm = 0, growth = 0, content = 0;
-    if (pkg === "social media" || pkg === "social media management") {
-      sm = 1;
-    } else if (pkg === "social and ads management") {
-      sm = 0.5; growth = 0.5;
-    } else if (pkg === "meta ads" || pkg === "ads management") {
-      growth = 1;
-    } else {
-      // Content Only, Full Suite, One-off, Content Delivery Paid/Organic,
-      // Content +, Legacy Urban Swan Package, Other, null → Ad Creative
-      content = 1;
-    }
-    const total = sm + growth + content;
-    clientAlloc.set(c.id, { sm, growth, content, total });
-  }
-
-  // Monthly team overhead (incl. 25% super/leave markup)
-  let monthlyTeamCost = 0;
-  for (const m of teamMembers) {
-    monthlyTeamCost += getLoadedMonthlyCost(m);
-  }
+  const cogsByMonth: Record<string, number> = {};
+  for (const r of cogsRecords) cogsByMonth[r.month] = (cogsByMonth[r.month] || 0) + r.amount;
 
   const monthlyBreakdown = monthRange.map((month) => {
-    const mf = filtered.filter((f) => f.month === month);
     let socialMedia = 0;
     let adsManagement = 0;
     let contentDelivery = 0;
 
-    // Revenue records from HubSpot, allocated proportionally by service type
-    const revenueRecords = mf.filter(
-      (f) => (f.type === "retainer" || f.type === "project") && f.source === "hubspot"
-    );
-    for (const r of revenueRecords) {
-      const exGst = r.amount;
-      const alloc = clientAlloc.get(r.clientId);
-      if (alloc && alloc.total > 0) {
-        socialMedia += exGst * (alloc.sm / alloc.total);
-        adsManagement += exGst * (alloc.growth / alloc.total);
-        contentDelivery += exGst * (alloc.content / alloc.total);
+    for (const d of deals) {
+      if (d.clientId && excludedIds.has(d.clientId)) continue;
+      const startKey = monthKeyOf(d.startDate ?? d.closeDate);
+      if (!startKey) continue;
+      const churnKey = monthKeyOf(d.churnDate);
+      if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
+      const amt = d.amountExGst ?? 0;
+      if (!amt) continue;
+      const pkg = (d.contentPackageType || "").toLowerCase().trim();
+      if (pkg === "social media" || pkg === "social media management") {
+        socialMedia += amt;
+      } else if (pkg === "social and ads management") {
+        socialMedia += amt * 0.5;
+        adsManagement += amt * 0.5;
+      } else if (pkg === "meta ads" || pkg === "ads management") {
+        adsManagement += amt;
       } else {
-        // No allocation data — split equally across 3 buckets
-        socialMedia += exGst / 3;
-        adsManagement += exGst / 3;
-        contentDelivery += exGst / 3;
+        contentDelivery += amt;
       }
     }
 
-    const explicitCost = mf
-      .filter((f) => f.type === "cost")
-      .reduce((s, f) => s + f.amount, 0);
     const total = socialMedia + adsManagement + contentDelivery;
-    const cost = explicitCost + monthlyTeamCost;
+    const cost = Math.round(cogsByMonth[month] || 0); // Xero Cost of Sales (gross)
     const marginPercent = total > 0 ? ((total - cost) / total) * 100 : 0;
     return {
       month,
@@ -308,7 +280,7 @@ export async function getRevenueByServiceType(
       adsManagement: Math.round(adsManagement),
       contentDelivery: Math.round(contentDelivery),
       total: Math.round(total),
-      cost: Math.round(cost),
+      cost,
       marginPercent: Number(marginPercent.toFixed(1)),
     };
   });
