@@ -333,6 +333,27 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     }
   }
 
+  // Avg deal size = current monthly MRR per division ÷ active deals in that
+  // division (deal-based). The old calc divided period-summed revenue by a
+  // client count that included churned clients, inflating it ~N×.
+  const cwDeals = await db.hubspotDeal.findMany({
+    where: { stage: "closed_won" },
+    select: { amountExGst: true, amount: true, contentPackageType: true },
+  });
+  const classifyDealDivision = (pkg: string | null): string => {
+    const p = (pkg || "").toLowerCase().trim();
+    if (p === "social media" || p === "social media management") return "Social Media Management";
+    if (p === "meta ads" || p === "ads management" || p === "social and ads management") return "Ads Management";
+    return "Content Delivery";
+  };
+  const divDealMrr = new Map<string, number>();
+  const divDealCount = new Map<string, number>();
+  for (const d of cwDeals) {
+    const div = classifyDealDivision(d.contentPackageType);
+    divDealMrr.set(div, (divDealMrr.get(div) || 0) + (d.amountExGst ?? d.amount ?? 0));
+    divDealCount.set(div, (divDealCount.get(div) || 0) + 1);
+  }
+
   const hubspotDivisions = new Set([...hubspotDivRevenue.keys(), ...hubspotDivCost.keys()]);
   const hubspotProfitability: DivisionProfitabilityRow[] = Array.from(hubspotDivisions)
     .map((division) => {
@@ -346,8 +367,10 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
         cost: Math.round(cost),
         ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
-        clientCount: divClientCount,
-        avgDealSize: divClientCount > 0 ? Math.round(rev / divClientCount) : 0,
+        clientCount: divDealCount.get(division) || divClientCount,
+        avgDealSize: (divDealCount.get(division) || 0) > 0
+          ? Math.round((divDealMrr.get(division) || 0) / (divDealCount.get(division) || 1))
+          : 0,
       };
     })
     .filter((d) => d.revenue > 0 || d.cost > 0)
