@@ -38,7 +38,7 @@ export async function getRevenueOverview(
     // current month, so we compute MRR from deal active windows instead).
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true },
+      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
     }),
   ]);
 
@@ -214,26 +214,33 @@ export async function getRevenueOverview(
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // Division revenue trend — map each client's revenue to its service line based on contentPackageType
+  // Division revenue trend — deal-based MRR per service line (active windows),
+  // ex-GST, by the deal's contentPackageType. "social and ads management"
+  // splits 50/50 between SMM and Ads.
   const divisionRevenueTrend = monthRange.map((month) => {
-    const monthFinancials = financials.filter((f) => f.month === month);
     const divRev: Record<string, number> = {
       "Content Delivery": 0,
       "Social Media Management": 0,
       "Ads Management": 0,
     };
-    for (const f of monthFinancials) {
-      if (!((f.type === "retainer" || f.type === "project") && f.source === "hubspot")) continue;
-      const pkg = (f.client.contentPackageType || "").toLowerCase();
+    for (const d of hubspotDeals) {
+      if (d.clientId && excludedIds.has(d.clientId)) continue;
+      const startKey = dealMonthKey(d.startDate ?? d.closeDate);
+      if (!startKey) continue;
+      const churnKey = dealMonthKey(d.churnDate);
+      if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
+      const amt = d.amountExGst ?? 0;
+      if (!amt) continue;
+      const pkg = (d.contentPackageType || "").toLowerCase().trim();
       if (pkg === "social media" || pkg === "social media management") {
-        divRev["Social Media Management"] += f.amount;
+        divRev["Social Media Management"] += amt;
       } else if (pkg === "social and ads management") {
-        divRev["Social Media Management"] += f.amount * 0.5;
-        divRev["Ads Management"] += f.amount * 0.5;
+        divRev["Social Media Management"] += amt * 0.5;
+        divRev["Ads Management"] += amt * 0.5;
       } else if (pkg === "meta ads" || pkg === "ads management") {
-        divRev["Ads Management"] += f.amount;
+        divRev["Ads Management"] += amt;
       } else {
-        divRev["Content Delivery"] += f.amount;
+        divRev["Content Delivery"] += amt;
       }
     }
     return {
