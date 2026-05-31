@@ -36,6 +36,9 @@ export default async function OverviewPage({ searchParams }: Props) {
   // HubSpot exactly, rather than applying a flat GST multiplier to a single figure.
   const monthlyRevenueExGst = activeSnapshot.monthlyRevenueExGst;
   const monthlyRevenueIncGst = activeSnapshot.monthlyRevenueIncGst;
+  // Annualized = current monthly recurring revenue × 12 (ex-GST, to match the
+  // card label), rather than the old FinancialRecord-derived figure.
+  const annualizedRevenueExGst = monthlyRevenueExGst * 12;
 
   return (
     <div className="space-y-6">
@@ -62,7 +65,7 @@ export default async function OverviewPage({ searchParams }: Props) {
         />
         <StatCard
           title="Annualized Rev ex GST"
-          value={formatCurrency(revenue.annualizedRevenue)}
+          value={formatCurrency(annualizedRevenueExGst)}
           icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
         />
         <Link href="/clients" className="h-full">
