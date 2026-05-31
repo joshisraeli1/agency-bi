@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost, parseDivisionAllocations } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
+import { autoMapAccountToDivision, DIVISIONS } from "./cost-allocation";
 import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
 const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
@@ -354,20 +355,33 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     divDealCount.set(div, (divDealCount.get(div) || 0) + 1);
   }
 
-  const hubspotDivisions = new Set([...hubspotDivRevenue.keys(), ...hubspotDivCost.keys()]);
-  const hubspotProfitability: DivisionProfitabilityRow[] = Array.from(hubspotDivisions)
+  // Divisional cost from actual Xero P&L lines (current month), auto-mapped by
+  // account name. Replaces the team-salary/time-entry estimate.
+  const currentMonth = monthRange[monthRange.length - 1];
+  const xeroCostRecords = await db.financialRecord.findMany({
+    where: { source: "xero", type: "cost", month: currentMonth },
+    select: { category: true, amount: true },
+  });
+  const divXeroCost = new Map<string, number>();
+  for (const r of xeroCostRecords) {
+    const div = autoMapAccountToDivision(r.category || "");
+    divXeroCost.set(div, (divXeroCost.get(div) || 0) + r.amount);
+  }
+
+  // Revenue = current deal MRR per division; cost = mapped Xero cost. Include
+  // "Shared/Overhead" so unallocated cost is visible until reassigned.
+  const hubspotProfitability: DivisionProfitabilityRow[] = DIVISIONS
     .map((division) => {
-      const rev = hubspotDivRevenue.get(division) || 0;
-      const cost = hubspotDivCost.get(division) || 0;
+      const rev = divDealMrr.get(division) || 0;
+      const cost = divXeroCost.get(division) || 0;
       const margin = rev - cost;
-      const divClientCount = clientsInDivision.get(division)?.size || 0;
       return {
         division,
         revenue: Math.round(rev),
         cost: Math.round(cost),
         ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
-        clientCount: divDealCount.get(division) || divClientCount,
+        clientCount: divDealCount.get(division) || 0,
         avgDealSize: (divDealCount.get(division) || 0) > 0
           ? Math.round((divDealMrr.get(division) || 0) / (divDealCount.get(division) || 1))
           : 0,
