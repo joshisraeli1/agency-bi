@@ -1,9 +1,15 @@
 import { db } from "@/lib/db";
 
+export interface PackageDeal {
+  name: string;
+  revenue: number; // monthly ex-GST
+}
+
 export interface PackageTypeRow {
   packageType: string;
   count: number;
   revenue: number; // monthly, ex-GST
+  deals: PackageDeal[]; // deals under this package type (for drill-down)
 }
 
 export interface ActiveRevenueSnapshot {
@@ -37,10 +43,10 @@ function classifyPackageType(raw: string | null | undefined): string {
 export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot> {
   const deals = await db.hubspotDeal.findMany({
     where: { stage: "closed_won" },
-    select: { amount: true, amountExGst: true, contentPackageType: true },
+    select: { name: true, amount: true, amountExGst: true, contentPackageType: true },
   });
 
-  const byPkg = new Map<string, { count: number; revenue: number }>();
+  const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;
   let totalEx = 0;
   for (const d of deals) {
@@ -49,14 +55,20 @@ export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot>
     totalInc += inc;
     totalEx += ex;
     const pkg = classifyPackageType(d.contentPackageType);
-    const row = byPkg.get(pkg) ?? { count: 0, revenue: 0 };
+    const row = byPkg.get(pkg) ?? { count: 0, revenue: 0, deals: [] };
     row.count++;
     row.revenue += ex;
+    row.deals.push({ name: d.name, revenue: Math.round(ex) });
     byPkg.set(pkg, row);
   }
 
   const byPackageType = Array.from(byPkg.entries())
-    .map(([packageType, r]) => ({ packageType, count: r.count, revenue: Math.round(r.revenue) }))
+    .map(([packageType, r]) => ({
+      packageType,
+      count: r.count,
+      revenue: Math.round(r.revenue),
+      deals: r.deals.sort((a, b) => b.revenue - a.revenue),
+    }))
     .sort((a, b) => b.revenue - a.revenue);
 
   return {

@@ -1,5 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { ChevronRight } from "lucide-react";
 import type { PackageTypeRow } from "@/lib/analytics/active-revenue";
 
 interface Props {
@@ -9,7 +13,9 @@ interface Props {
 }
 
 export function RevenueByPackageChart({ data, totalDeals, totalRevenue }: Props) {
+  const [expanded, setExpanded] = useState<string | null>(null);
   const max = Math.max(...data.map((d) => d.revenue), 1);
+
   return (
     <Card>
       <CardHeader>
@@ -30,23 +36,49 @@ export function RevenueByPackageChart({ data, totalDeals, totalRevenue }: Props)
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {data.map((row) => (
-            <div key={row.packageType}>
-              <div className="flex items-baseline justify-between text-sm mb-1">
-                <span className="font-medium">{row.packageType}</span>
-                <span className="tabular-nums">
-                  <span className="text-muted-foreground mr-2">{row.count} deals</span>
-                  <span className="font-semibold">{formatCurrency(row.revenue)}</span>
-                </span>
+          {data.map((row) => {
+            const isOpen = expanded === row.packageType;
+            return (
+              <div key={row.packageType}>
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : row.packageType)}
+                  className="w-full text-left group"
+                  aria-expanded={isOpen}
+                >
+                  <div className="flex items-baseline justify-between text-sm mb-1">
+                    <span className="font-medium flex items-center gap-1">
+                      <ChevronRight
+                        className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      />
+                      {row.packageType}
+                    </span>
+                    <span className="tabular-nums">
+                      <span className="text-muted-foreground mr-2">{row.count} deals</span>
+                      <span className="font-semibold">{formatCurrency(row.revenue)}</span>
+                    </span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary group-hover:opacity-80 transition-opacity"
+                      style={{ width: `${(row.revenue / max) * 100}%` }}
+                    />
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <div className="mt-2 ml-5 border-l pl-3 space-y-1">
+                    {row.deals.map((deal, i) => (
+                      <div key={`${deal.name}-${i}`} className="flex items-baseline justify-between text-sm">
+                        <span className="text-muted-foreground truncate mr-2">{deal.name}</span>
+                        <span className="tabular-nums">{formatCurrency(deal.revenue)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary"
-                  style={{ width: `${(row.revenue / max) * 100}%` }}
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
