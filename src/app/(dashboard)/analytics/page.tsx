@@ -52,7 +52,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getAgencyKPIs(months),
     getLTVData(),
     getRevenueByServiceType(months),
-    getClientHealthData(months),
+    getClientHealthData(),
     getSourceDiscrepancy(months),
     getIndustryBreakdown(),
     getXeroMarginTrend(months),

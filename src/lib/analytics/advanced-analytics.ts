@@ -53,6 +53,7 @@ export interface ClientHealthData {
     marginPercent: number;
     monthsRetained: number;
     monthlyRevenue: number;
+    division: string;
   }[];
 }
 
@@ -288,19 +289,16 @@ export async function getRevenueByServiceType(
   return { monthlyBreakdown };
 }
 
-export async function getClientHealthData(
-  months = 6
-): Promise<ClientHealthData> {
-  const monthRange = getMonthRange(months);
-
-  const [excludedIds, clients, financials] = await Promise.all([
+export async function getClientHealthData(): Promise<ClientHealthData> {
+  const [excludedIds, clients, deals] = await Promise.all([
     getExcludedClientIds(),
     db.client.findMany({
       where: { status: "active", hubspotDealId: { not: null } },
-      select: { id: true, name: true, startDate: true, createdAt: true },
+      select: { id: true, name: true, startDate: true, createdAt: true, contentPackageType: true },
     }),
-    db.financialRecord.findMany({
-      where: { month: { in: monthRange }, source: "hubspot", type: { in: ["retainer", "project"] } },
+    db.hubspotDeal.findMany({
+      where: { stage: "closed_won", clientId: { not: null } },
+      select: { clientId: true, amount: true, amountExGst: true },
     }),
   ]);
 
@@ -308,24 +306,17 @@ export async function getClientHealthData(
   const activeClients = clients.filter((c) => !excludedIds.has(c.id));
   const clientMap = new Map(activeClients.map((c) => [c.id, c]));
 
-  // Aggregate financials per client (already ex-GST)
-  const clientRevenue = new Map<string, number>();
-  for (const f of financials) {
-    if (!clientMap.has(f.clientId)) continue;
-    clientRevenue.set(f.clientId, (clientRevenue.get(f.clientId) || 0) + f.amount);
+  // Per-client monthly MRR from closed-won deals (ex-GST)
+  const clientMrr = new Map<string, number>();
+  for (const d of deals) {
+    if (!d.clientId || !clientMap.has(d.clientId)) continue;
+    clientMrr.set(d.clientId, (clientMrr.get(d.clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
   }
 
-  const periodMonths = monthRange.length;
-
   const result = activeClients
-    .filter((c) => {
-      const rev = clientRevenue.get(c.id);
-      return rev && rev > 0;
-    })
+    .filter((c) => (clientMrr.get(c.id) || 0) > 0)
     .map((c) => {
-      const totalRevenue = clientRevenue.get(c.id)!;
-      // Monthly revenue = total revenue in period / number of months in period
-      const monthlyRevenue = totalRevenue / periodMonths;
+      const monthlyRevenue = clientMrr.get(c.id)!;
       const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
       const monthsRetained = Math.max(
         1,
@@ -337,10 +328,11 @@ export async function getClientHealthData(
       return {
         clientId: c.id,
         clientName: c.name,
-        revenue: Math.round(totalRevenue),
+        revenue: Math.round(monthlyRevenue),
         marginPercent: 0, // Cost data not available in this view
         monthsRetained,
         monthlyRevenue: Math.round(monthlyRevenue),
+        division: getClientDivision(c.contentPackageType),
       };
     });
 

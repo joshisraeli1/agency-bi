@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChartCard } from "@/components/charts/bar-chart";
 import { ComboChartCard } from "@/components/charts/combo-chart";
 import { ScatterChartCard } from "@/components/charts/scatter-chart";
@@ -28,12 +30,17 @@ export function AdvancedCharts({
   kpiData,
 }: Props) {
   // Client health matrix: x = monthly revenue, y = months retained
-  const healthData = clientHealth.clients.map((c) => ({
+  const [healthDivision, setHealthDivision] = useState<string>("all");
+  const allHealth = clientHealth.clients.map((c) => ({
     name: c.clientName,
     x: c.monthlyRevenue ?? Math.round(c.revenue / Math.max(1, c.monthsRetained)),
     y: c.monthsRetained,
     z: 10, // uniform bubble size
+    division: c.division,
   }));
+  const healthDivisions = Array.from(new Set(allHealth.map((d) => d.division))).sort();
+  const healthData =
+    healthDivision === "all" ? allHealth : allHealth.filter((d) => d.division === healthDivision);
 
   // LTV by cohort
   const cohortData = ltv.byCohort.map((c) => ({
@@ -72,11 +79,24 @@ export function AdvancedCharts({
   return (
     <div className="space-y-6">
       {/* 1. Client Health Matrix */}
-      <div>
-        <h2 className="text-xl font-semibold">Client Health Matrix</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Monthly revenue vs months retained — bubble size represents margin %
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">Client Health Matrix</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            Monthly revenue vs months retained, by division
+          </p>
+        </div>
+        <Select value={healthDivision} onValueChange={setHealthDivision}>
+          <SelectTrigger className="w-[220px]">
+            <SelectValue placeholder="All divisions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All divisions</SelectItem>
+            {healthDivisions.map((d) => (
+              <SelectItem key={d} value={d}>{d}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {healthData.length > 0 && (
