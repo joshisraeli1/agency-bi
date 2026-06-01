@@ -91,15 +91,15 @@ export default async function OverviewPage({ searchParams }: Props) {
         />
       </div>
 
+      <RevenueCharts data={revenue} />
+
+      <RevenueVsChurnChart data={revenueVsChurn} />
+
       <RevenueByPackageChart
         data={activeSnapshot.byPackageType}
         totalDeals={activeSnapshot.dealCount}
         totalRevenue={activeSnapshot.monthlyRevenueExGst}
       />
-
-      <RevenueCharts data={revenue} />
-
-      <RevenueVsChurnChart data={revenueVsChurn} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {revenue.atRiskClients.length > 0 && (
