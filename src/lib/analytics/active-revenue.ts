@@ -1,5 +1,30 @@
 import { db } from "@/lib/db";
 
+export const DIVISION_GOALS_PROVIDER = "division_goals";
+
+// Monthly revenue goals per package/division (editable in-app)
+export const DEFAULT_DIVISION_GOALS: Record<string, number> = {
+  "Content Delivery Paid": 400_000,
+  "Social Media Management": 100_000,
+  "Ads Management": 100_000,
+};
+
+export async function getDivisionGoals(): Promise<Record<string, number>> {
+  const row = await db.integrationConfig.findUnique({ where: { provider: DIVISION_GOALS_PROVIDER } });
+  const goals = { ...DEFAULT_DIVISION_GOALS };
+  if (row?.configJson && row.configJson !== "{}") {
+    try {
+      const g = JSON.parse(row.configJson) as Record<string, unknown>;
+      for (const k of Object.keys(goals)) {
+        if (typeof g[k] === "number" && (g[k] as number) > 0) goals[k] = g[k] as number;
+      }
+    } catch {
+      // defaults
+    }
+  }
+  return goals;
+}
+
 export interface PackageDeal {
   name: string;
   revenue: number; // monthly ex-GST

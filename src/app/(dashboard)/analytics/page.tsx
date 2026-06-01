@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
-import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
+import { getActiveRevenueSnapshot, getDivisionGoals } from "@/lib/analytics/active-revenue";
+import { DivisionGoals } from "@/components/dashboard/division-goals";
 import {
   getLTVData,
   getRevenueByServiceType,
@@ -47,6 +48,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     appSettings,
     clientCount,
     activeSnapshot,
+    divisionGoals,
   ] = await Promise.all([
     getRevenueOverview(months),
     getAgencyKPIs(months),
@@ -65,6 +67,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     db.appSettings.findFirst(),
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     getActiveRevenueSnapshot(),
+    getDivisionGoals(),
   ]);
 
   const gstRate = appSettings?.gstRate ?? 10;
@@ -123,6 +126,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
           icon={<UserCheck className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
+
+      {/* Revenue by Division vs Goal (editable monthly targets) */}
+      <DivisionGoals byPackageType={activeSnapshot.byPackageType} goals={divisionGoals} />
 
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection

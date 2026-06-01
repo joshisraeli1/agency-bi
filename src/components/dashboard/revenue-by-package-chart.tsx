@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-import { ChevronRight } from "lucide-react";
 import type { PackageTypeRow } from "@/lib/analytics/active-revenue";
 
 interface Props {
@@ -12,9 +20,11 @@ interface Props {
   totalRevenue: number;
 }
 
+const PRIMARY = "#6366f1";
+
 export function RevenueByPackageChart({ data, totalDeals, totalRevenue }: Props) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const max = Math.max(...data.map((d) => d.revenue), 1);
+  const [selected, setSelected] = useState<PackageTypeRow | null>(null);
+  const chartData = data.map((d) => ({ name: d.packageType, revenue: d.revenue }));
 
   return (
     <Card>
@@ -27,59 +37,49 @@ export function RevenueByPackageChart({ data, totalDeals, totalRevenue }: Props)
             </div>
             <div className="text-2xl font-bold tabular-nums">
               {formatCurrency(totalRevenue)}
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                · {totalDeals} deals
-              </span>
+              <span className="ml-2 text-sm font-normal text-muted-foreground">· {totalDeals} deals</span>
             </div>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {data.map((row) => {
-            const isOpen = expanded === row.packageType;
-            return (
-              <div key={row.packageType}>
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isOpen ? null : row.packageType)}
-                  className="w-full text-left group"
-                  aria-expanded={isOpen}
-                >
-                  <div className="flex items-baseline justify-between text-sm mb-1">
-                    <span className="font-medium flex items-center gap-1">
-                      <ChevronRight
-                        className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
-                      />
-                      {row.packageType}
-                    </span>
-                    <span className="tabular-nums">
-                      <span className="text-muted-foreground mr-2">{row.count} deals</span>
-                      <span className="font-semibold">{formatCurrency(row.revenue)}</span>
-                    </span>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary group-hover:opacity-80 transition-opacity"
-                      style={{ width: `${(row.revenue / max) * 100}%` }}
-                    />
-                  </div>
-                </button>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => formatCurrency(v)} width={80} />
+            <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+            <Bar
+              dataKey="revenue"
+              fill={PRIMARY}
+              radius={[4, 4, 0, 0]}
+              cursor="pointer"
+              onClick={(_, index) => setSelected(data[index] ?? null)}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+        <p className="text-xs text-muted-foreground mt-2">Click a bar to see the deals in that package type.</p>
 
-                {isOpen && (
-                  <div className="mt-2 ml-5 border-l pl-3 space-y-1">
-                    {row.deals.map((deal, i) => (
-                      <div key={`${deal.name}-${i}`} className="flex items-baseline justify-between text-sm">
-                        <span className="text-muted-foreground truncate mr-2">{deal.name}</span>
-                        <span className="tabular-nums">{formatCurrency(deal.revenue)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {selected && (
+          <div className="mt-4 border-t pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-sm">
+                {selected.packageType} · {selected.count} deals · {formatCurrency(selected.revenue)}
+              </span>
+              <button onClick={() => setSelected(null)} className="text-sm text-muted-foreground hover:underline">
+                Close
+              </button>
+            </div>
+            <div className="space-y-1">
+              {selected.deals.map((deal, i) => (
+                <div key={`${deal.name}-${i}`} className="flex items-baseline justify-between text-sm border-b py-1 last:border-0">
+                  <span className="truncate mr-2">{deal.name}</span>
+                  <span className="tabular-nums">{formatCurrency(deal.revenue)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
