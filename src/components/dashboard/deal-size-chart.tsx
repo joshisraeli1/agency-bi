@@ -89,9 +89,9 @@ export function DealSizeChart({ data }: Props) {
           <ResponsiveContainer width="100%" height={280}>
             <LineChart
               data={rolling}
-              onClick={(state: { activeTooltipIndex?: number }) => {
+              onClick={(state) => {
                 const i = state?.activeTooltipIndex;
-                if (i != null && rolling[i]) setSelected({ title: `Through ${rolling[i].month}`, clients: rolling[i].clients });
+                if (typeof i === "number" && rolling[i]) setSelected({ title: `Through ${rolling[i].month}`, clients: rolling[i].clients });
               }}
             >
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
