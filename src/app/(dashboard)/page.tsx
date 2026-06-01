@@ -12,7 +12,7 @@ import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-cha
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { RefreshDataButton } from "@/components/dashboard/refresh-data-button";
-import { Users, UserCog, AlertTriangle, Calendar, Receipt } from "lucide-react";
+import { Users, TrendingUp, AlertTriangle, Calendar, Receipt } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -22,9 +22,8 @@ export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "12", 10);
 
-  const [clientCount, teamCount, recentImports, revenue, revenueVsChurn, activeSnapshot] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
-    db.teamMember.count(),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
     getRevenueVsChurn(12),
@@ -39,6 +38,13 @@ export default async function OverviewPage({ searchParams }: Props) {
   // Annualized = current monthly recurring revenue × 12 (ex-GST, to match the
   // card label), rather than the old FinancialRecord-derived figure.
   const annualizedRevenueExGst = monthlyRevenueExGst * 12;
+
+  // Monthly growth = month-over-month change in HubSpot MRR (deal-based)
+  const trend = revenue.monthlyTrend;
+  const curMrr = trend.length ? trend[trend.length - 1].hubspotRevenue : 0;
+  const prevMrr = trend.length > 1 ? trend[trend.length - 2].hubspotRevenue : 0;
+  const monthlyGrowth = Math.round(curMrr - prevMrr);
+  const monthlyGrowthPct = prevMrr > 0 ? (monthlyGrowth / prevMrr) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -76,13 +82,13 @@ export default async function OverviewPage({ searchParams }: Props) {
             icon={<Users className="h-4 w-4 text-muted-foreground" />}
           />
         </Link>
-        <Link href="/team" className="h-full">
-          <StatCard
-            title="Team Members"
-            value={String(teamCount)}
-            icon={<UserCog className="h-4 w-4 text-muted-foreground" />}
-          />
-        </Link>
+        <StatCard
+          title="Monthly Growth"
+          value={`${monthlyGrowth >= 0 ? "+" : "-"}${formatCurrency(Math.abs(monthlyGrowth))}`}
+          trend={monthlyGrowthPct}
+          description="MRR vs last month"
+          icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
+        />
       </div>
 
       <RevenueByPackageChart

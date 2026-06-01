@@ -13,11 +13,11 @@ interface StatCardProps {
 export function StatCard({ title, value, description, trend, icon }: StatCardProps) {
   return (
     <Card className="h-full">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+      <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground leading-tight min-h-[2.5rem]">
           {title}
         </CardTitle>
-        {icon}
+        <span className="shrink-0">{icon}</span>
       </CardHeader>
       <CardContent className="overflow-hidden">
         <div className="text-2xl font-bold truncate">{value}</div>
