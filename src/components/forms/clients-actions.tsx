@@ -49,6 +49,7 @@ interface Client {
   startDate: Date | string | null;
   endDate: Date | string | null;
   ltv?: number | null;
+  division: string;
   _count: { timeEntries: number; aliases: number };
 }
 
@@ -60,11 +61,11 @@ const SERVICE_LABELS: Record<Exclude<ServiceFilter, "all">, string> = {
   ads: "Ads Management",
 };
 
+// Deal-based: a client belongs to one division; its amount is the full
+// (deal-derived) retainer. Matches the Revenue by Package Type grouping.
 function serviceAmount(client: Client, filter: ServiceFilter): number {
-  if (filter === "content") return (client.contentRetainer ?? 0) + (client.productionRetainer ?? 0);
-  if (filter === "social") return client.smRetainer ?? 0;
-  if (filter === "ads") return client.growthRetainer ?? 0;
-  return client.retainerValue ?? 0;
+  if (filter === "all") return client.retainerValue ?? 0;
+  return client.division === SERVICE_LABELS[filter] ? (client.retainerValue ?? 0) : 0;
 }
 
 function formatTenure(startDate: Date | string | null, endDate: Date | string | null, status: string): string {
