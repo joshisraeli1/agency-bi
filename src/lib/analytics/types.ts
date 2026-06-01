@@ -244,6 +244,7 @@ export interface MonthlyChurnRow {
   churned: number;
   churnPercent: number;
   churnedRevenue: number;
+  churnedClientList: { name: string; revenue: number }[];
 }
 
 export interface MonthlyChurnData {

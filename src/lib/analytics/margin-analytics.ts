@@ -316,6 +316,7 @@ export async function getMonthlyChurn(
       },
       select: {
         id: true,
+        name: true,
         startDate: true,
         endDate: true,
         retainerValue: true,
@@ -365,6 +366,9 @@ export async function getMonthlyChurn(
       churned,
       churnPercent,
       churnedRevenue: Math.round(churnedRevenue),
+      churnedClientList: churnedClients
+        .map((c) => ({ name: c.name, revenue: Math.round(c.retainerValue || 0) }))
+        .sort((a, b) => b.revenue - a.revenue),
     };
   });
 
