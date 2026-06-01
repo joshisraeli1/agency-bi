@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChartCard } from "@/components/charts/bar-chart";
-import { ComboChartCard } from "@/components/charts/combo-chart";
 import { ScatterChartCard } from "@/components/charts/scatter-chart";
-import { formatMonth, formatCurrency } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import type {
   LTVData,
   RevenueByServiceType,
@@ -24,10 +23,8 @@ interface Props {
 
 export function AdvancedCharts({
   ltv,
-  revenueByType,
   clientHealth,
   industryBreakdown,
-  kpiData,
 }: Props) {
   // Client health matrix: x = monthly revenue, y = months retained
   const [healthDivision, setHealthDivision] = useState<string>("all");
@@ -67,12 +64,6 @@ export function AdvancedCharts({
       activeClients: d.activeClients,
       churnedClients: d.churnedClients,
     }));
-
-  // Revenue by service type combo chart
-  const revenueData = revenueByType.monthlyBreakdown.map((m) => ({
-    ...m,
-    month: formatMonth(m.month),
-  }));
 
   const fmtCurrency = (v: number) => formatCurrency(v);
 
@@ -161,29 +152,6 @@ export function AdvancedCharts({
           horizontal
           stacked
           height={Math.max(300, industryBreakdownData.length * 35)}
-        />
-      )}
-
-      {/* Revenue & Gross Profit */}
-      <div>
-        <h2 className="text-xl font-semibold">Revenue & Gross Profit</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Monthly revenue by service type with gross margin overlay
-        </p>
-      </div>
-
-      {revenueData.length > 0 && (
-        <ComboChartCard
-          title="Revenue & Gross Profit Over Time"
-          data={revenueData}
-          xKey="month"
-          barKeys={["socialMedia", "adsManagement", "contentDelivery"]}
-          barLabels={["Social Media Management", "Ads Management", "Content Delivery"]}
-          lineKey="marginPercent"
-          lineLabel="Margin %"
-          stacked
-          formatBar={fmtCurrency}
-          formatLine={(v) => `${v}%`}
         />
       )}
 
