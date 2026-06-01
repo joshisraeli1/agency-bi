@@ -33,8 +33,6 @@ export default async function MichaelPage() {
         <p className="text-muted-foreground mt-1">Sales activity · last 24 months</p>
       </div>
 
-      <MichaelGoals goals={data.goals} progress={data.progress} />
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Current MRR"
@@ -61,6 +59,8 @@ export default async function MichaelPage() {
           icon={<FilePlus className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
+
+      <MichaelGoals goals={data.goals} progress={data.progress} />
 
       <MichaelCharts
         revenueData={revenueChartData}

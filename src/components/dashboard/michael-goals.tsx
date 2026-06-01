@@ -98,7 +98,7 @@ export function MichaelGoals({ goals, progress }: Props) {
       <CardContent>
         {editing ? (
           <div className="space-y-4 text-sm">
-            <GoalInput label="Recurring Revenue (MRR) target" value={form.recurringRevenue} onChange={(v) => setField("recurringRevenue", v)} />
+            <GoalInput label="MRR goal (graph red line)" value={form.recurringRevenue} onChange={(v) => setField("recurringRevenue", v)} />
             <div>
               <p className="font-medium mb-2">New Revenue goals</p>
               <div className="grid grid-cols-3 gap-3">
@@ -117,11 +117,7 @@ export function MichaelGoals({ goals, progress }: Props) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="space-y-3">
-              <p className="font-medium text-sm">Recurring Revenue</p>
-              <ProgressBar label="Current MRR" actual={progress.recurringRevenue.actual} goal={progress.recurringRevenue.goal} currency />
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-3">
               <p className="font-medium text-sm">New Revenue</p>
               <ProgressBar label="This month" actual={progress.newRevenue.monthly.actual} goal={progress.newRevenue.monthly.goal} currency />
