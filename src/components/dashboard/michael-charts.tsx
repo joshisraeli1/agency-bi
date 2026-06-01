@@ -32,12 +32,19 @@ interface DealsPoint {
   dealList: DealRef[];
 }
 
+interface NewRevPoint {
+  month: string;
+  newRevenue: number;
+  deals: DealRef[];
+}
+
 interface Props {
   revenueData: RevenuePoint[];
-  newRevenueData: { month: string; newRevenue: number }[];
+  newRevenueData: NewRevPoint[];
   dealsCreatedData: DealsPoint[];
   mrrGoal: number;
   dealsGoal: number;
+  newRevGoal: number;
 }
 
 interface Selection {
@@ -55,6 +62,7 @@ export function MichaelCharts({
   dealsCreatedData,
   mrrGoal,
   dealsGoal,
+  newRevGoal,
 }: Props) {
   const [selected, setSelected] = useState<Selection | null>(null);
 
@@ -132,21 +140,37 @@ export function MichaelCharts({
         </CardContent>
       </Card>
 
-      {/* New revenue won per month */}
+      {/* New revenue won per month vs goal — clickable */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">New Revenue Won per Month</CardTitle>
+          <CardTitle className="text-base">
+            New Revenue Won per Month vs Goal ({formatCurrency(newRevGoal)}/mo)
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={300}>
             <BarChart data={newRevenueData}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis dataKey="month" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => formatCurrency(v)} width={80} />
               <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-              <Bar dataKey="newRevenue" fill={PRIMARY} radius={[4, 4, 0, 0]} />
+              <ReferenceLine y={newRevGoal} stroke={GOAL} strokeDasharray="4 4" label={{ value: "Goal", position: "right", fill: GOAL, fontSize: 11 }} />
+              <Bar
+                dataKey="newRevenue"
+                radius={[4, 4, 0, 0]}
+                cursor="pointer"
+                onClick={(_, index) => {
+                  const d = newRevenueData[index];
+                  if (d) setSelected({ title: `New revenue — ${d.month}`, deals: d.deals ?? [], formatAmount: true });
+                }}
+              >
+                {newRevenueData.map((d, i) => (
+                  <Cell key={i} fill={d.newRevenue >= newRevGoal ? "#16a34a" : PRIMARY} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
+          <p className="text-xs text-muted-foreground mt-2">Click a bar to see the deals won that month.</p>
         </CardContent>
       </Card>
 

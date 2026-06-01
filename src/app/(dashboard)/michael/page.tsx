@@ -2,7 +2,7 @@ import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { MichaelCharts } from "@/components/dashboard/michael-charts";
-import { MichaelGoalsEditor } from "@/components/dashboard/michael-goals-editor";
+import { MichaelGoals } from "@/components/dashboard/michael-goals";
 import { DollarSign, TrendingUp, FileCheck, FilePlus } from "lucide-react";
 
 export default async function MichaelPage() {
@@ -17,6 +17,7 @@ export default async function MichaelPage() {
   const newRevenueChartData = data.newRevenuePerMonth.map((m) => ({
     month: formatMonth(m.month),
     newRevenue: Math.round(m.value),
+    deals: (data.newRevenueDealsByMonth[m.month] ?? []).map((d) => ({ name: d.name, amount: Math.round(d.amount) })),
   }));
 
   const dealsCreatedChartData = data.dealsCreatedPerMonth.map((m) => ({
@@ -27,13 +28,12 @@ export default async function MichaelPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">{data.ownerName}</h1>
-          <p className="text-muted-foreground mt-1">Sales activity · last 24 months</p>
-        </div>
-        <MichaelGoalsEditor mrrGoal={data.mrrGoal} dealsGoal={data.dealsGoal} />
+      <div>
+        <h1 className="text-3xl font-bold">{data.ownerName}</h1>
+        <p className="text-muted-foreground mt-1">Sales activity · last 24 months</p>
       </div>
+
+      <MichaelGoals goals={data.goals} progress={data.progress} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -66,8 +66,9 @@ export default async function MichaelPage() {
         revenueData={revenueChartData}
         newRevenueData={newRevenueChartData}
         dealsCreatedData={dealsCreatedChartData}
-        mrrGoal={data.mrrGoal}
-        dealsGoal={data.dealsGoal}
+        mrrGoal={data.goals.recurringRevenue}
+        dealsGoal={data.goals.dealsCreated.monthly}
+        newRevGoal={data.goals.newRevenue.monthly}
       />
     </div>
   );
