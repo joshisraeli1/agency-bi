@@ -355,13 +355,21 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     divDealCount.set(div, (divDealCount.get(div) || 0) + 1);
   }
 
-  // Divisional cost from actual Xero P&L lines (current month), auto-mapped by
-  // account name. Replaces the team-salary/time-entry estimate.
-  const currentMonth = monthRange[monthRange.length - 1];
-  const xeroCostRecords = await db.financialRecord.findMany({
-    where: { source: "xero", type: "cost", month: currentMonth },
-    select: { category: true, amount: true },
+  // Divisional cost from actual Xero P&L lines, auto-mapped by account name.
+  // Use the latest month that HAS cost data (the current calendar month's P&L
+  // costs aren't booked yet early in the month, which would zero out margins).
+  const allXeroCost = await db.financialRecord.findMany({
+    where: { source: "xero", type: "cost" },
+    select: { category: true, amount: true, month: true },
   });
+  // Latest COMPLETE month (strictly before the current calendar month), so a
+  // partial/unbooked current month doesn't zero out the cost.
+  const curMonthKey = monthRange[monthRange.length - 1];
+  const latestCostMonth = allXeroCost
+    .map((r) => r.month)
+    .filter((m) => m < curMonthKey)
+    .reduce((mx, m) => (m > mx ? m : mx), "");
+  const xeroCostRecords = allXeroCost.filter((r) => r.month === latestCostMonth);
   // Manual division overrides for cost accounts (set in Settings → Cost
   // Allocation), stored as plain JSON on the "cost_allocation" config row.
   let costOverrides: Record<string, string> = {};

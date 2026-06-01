@@ -1,7 +1,7 @@
 "use client";
 
-import { BarChartCard } from "@/components/charts/bar-chart";
 import { PieChartCard } from "@/components/charts/pie-chart";
+import { DivisionMarginsChart } from "@/components/dashboard/division-margins-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
 import type { DivisionProfitabilityRow, XeroMarginTrend } from "@/lib/analytics/types";
@@ -32,9 +32,17 @@ function DivisionSummaryBlock({
   const totalMultiple = totalCost > 0 ? Number((totalRevenue / totalCost).toFixed(1)) : 0;
   const totalClientCount = data.reduce((s, d) => s + d.clientCount, 0);
 
-  const pieData = data.map((d) => ({ name: d.division, value: d.revenue }));
+  // Charts show only revenue-bearing divisions — exclude the Shared/Overhead
+  // bucket (it has no revenue; its unallocated cost stays in the table below).
+  const revenueDivisions = data.filter((d) => d.revenue > 0);
+  const pieData = revenueDivisions.map((d) => ({ name: d.division, value: d.revenue }));
   // Include the revenue/cost multiple in the bar label so it shows on the graph.
-  const marginBarData = data.map((d) => ({ name: `${d.division} (${d.ratio}x)`, marginPercent: d.marginPercent }));
+  const marginBarData = revenueDivisions.map((d) => ({
+    name: d.division,
+    marginPercent: d.marginPercent,
+    ratio: d.ratio,
+    label: `${d.marginPercent}% · ${d.ratio}x`,
+  }));
 
   return (
     <>
@@ -135,14 +143,7 @@ function DivisionSummaryBlock({
             formatValue={(v) => formatCurrency(v)}
           />
         )}
-        <BarChartCard
-          title="Division Margins"
-          data={marginBarData}
-          xKey="name"
-          yKeys={["marginPercent"]}
-          yLabels={["Margin %"]}
-          formatY={(v) => `${v}%`}
-        />
+        <DivisionMarginsChart data={marginBarData} />
       </div>
     </>
   );
