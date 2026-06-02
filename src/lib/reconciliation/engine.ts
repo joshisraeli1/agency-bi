@@ -149,17 +149,12 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
     unchanged: 0,
   };
 
-  // Name aliases: map a Xero contact name to the HubSpot client/deal name it
-  // represents (e.g. "HC Operating" in Xero -> "Everlab" in HubSpot). Stored in
-  // the DB so the correction sticks across re-runs.
+  // Name aliases: declare that a Xero contact name and a HubSpot client/deal
+  // name are the SAME client (e.g. "HC Operating" = "Everlab"). Applied below
+  // as explicit union links, so they fix name differences AND bridge a client
+  // whose deals + invoices are split across two business names. Stored in the
+  // DB so the correction sticks across re-runs.
   const aliases = await getReconciliationAliases();
-  const aliasByClientNorm = new Map<string, string[]>();
-  for (const a of aliases) {
-    const key = normalizeName(a.clientName);
-    const arr = aliasByClientNorm.get(key) ?? [];
-    arr.push(normalizeName(a.xeroName));
-    aliasByClientNorm.set(key, arr);
-  }
 
   // 3. For a single deal, find its matching active invoices + how they matched.
   function matchInvoices(deal: (typeof deals)[number]): {
@@ -176,15 +171,6 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
     for (const n of names) {
       const m = byNormName.get(normalizeName(n));
       if (m?.length) return { invoices: m, method: "name_exact" };
-    }
-    // (b2) alias: this client maps to one or more Xero contact names
-    for (const n of names) {
-      const xnames = aliasByClientNorm.get(normalizeName(n));
-      if (xnames?.length) {
-        const inv: Repeating[] = [];
-        for (const xn of xnames) inv.push(...(byNormName.get(xn) ?? []));
-        if (inv.length) return { invoices: inv, method: "alias" };
-      }
     }
     // (c) fuzzy: substring containment either direction, on BOTH the client
     //     name and the deal name (so "Blue Light Card Ads Management" matches
@@ -251,6 +237,44 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
     for (const inv of invoices) {
       invById.set(inv.id, inv);
       union(dKey, `I:${inv.id}`);
+    }
+  }
+
+  // 4b. Apply name aliases as explicit "same client" links: union every deal
+  //     under the HubSpot name with every invoice under the Xero name. This
+  //     fixes pure name differences (HC Operating = Everlab) and bridges a
+  //     client split across two business names so it reconciles on the
+  //     combined total — e.g. Field to Fork = Naked Biltong: deals $3,000 +
+  //     $5,400 vs invoices $6,000 + $2,400.
+  if (aliases.length) {
+    const dealsByNorm = new Map<string, string[]>();
+    for (const { deal } of matchedDeals) {
+      for (const n of [deal.client?.name, deal.name]) {
+        if (!n) continue;
+        const arr = dealsByNorm.get(normalizeName(n)) ?? [];
+        arr.push(`D:${deal.id}`);
+        dealsByNorm.set(normalizeName(n), arr);
+      }
+    }
+    const aliasDealKeys = new Set<string>();
+    for (const a of aliases) {
+      const dealKeys = dealsByNorm.get(normalizeName(a.clientName)) ?? [];
+      const invs = byNormName.get(normalizeName(a.xeroName)) ?? [];
+      if (!dealKeys.length || !invs.length) continue;
+      const anchor = dealKeys[0];
+      for (const dk of dealKeys) {
+        union(anchor, dk);
+        aliasDealKeys.add(dk);
+      }
+      for (const inv of invs) {
+        invById.set(inv.id, inv);
+        union(anchor, `I:${inv.id}`);
+      }
+    }
+    // Surface "alias" as the match method for deals that matched nothing on
+    // their own and were linked purely by an alias.
+    for (const md of matchedDeals) {
+      if (md.method == null && aliasDealKeys.has(`D:${md.deal.id}`)) md.method = "alias";
     }
   }
 
