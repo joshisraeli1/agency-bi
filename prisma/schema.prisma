@@ -168,6 +168,7 @@ model Reconciliation {
   hubspotDealId          String   @unique
   xeroRepeatingInvoiceId String?
   status                 String // aligned | missing_in_xero | amount_mismatch | multiple_matches
+  reason                 String? // human-readable explanation of why the row is discrepant
   matchMethod            String? // xero_contact_id | name_exact | name_fuzzy
   hubspotAmount          Float?
   xeroAmount             Float?

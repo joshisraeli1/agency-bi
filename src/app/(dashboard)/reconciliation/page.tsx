@@ -95,12 +95,17 @@ function Section({
                 key={r.id}
                 className={r.reviewStatus !== "open" ? "opacity-50" : ""}
               >
-                <TableCell>
+                <TableCell className="max-w-sm">
                   <div className="font-medium">
                     {r.hubspotDeal.client?.name ?? r.hubspotDeal.name}
                   </div>
                   {r.hubspotDeal.client?.name && r.hubspotDeal.client.name !== r.hubspotDeal.name && (
                     <div className="text-xs text-muted-foreground">deal: {r.hubspotDeal.name}</div>
+                  )}
+                  {r.reason && r.status !== "aligned" && (
+                    <div className="mt-1 text-xs leading-snug text-muted-foreground whitespace-normal">
+                      {r.reason}
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
