@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/charts/stat-card";
 import { ReconciliationRowActions } from "@/components/dashboard/reconciliation-row-actions";
 import { ReconciliationRefresh } from "@/components/dashboard/reconciliation-refresh";
+import { ReconciliationAliases } from "@/components/dashboard/reconciliation-aliases";
+import { getReconciliationAliases } from "@/lib/reconciliation/aliases";
 import { AlertTriangle, AlertCircle, CheckCircle2, Shuffle } from "lucide-react";
 
 type Recon = Awaited<ReturnType<typeof getReconciliations>>[number];
@@ -158,9 +160,10 @@ function Section({
 }
 
 export default async function ReconciliationPage() {
-  const [all, xeroCount] = await Promise.all([
+  const [all, xeroCount, aliases] = await Promise.all([
     getReconciliations(),
     db.xeroRepeatingInvoice.count(),
+    getReconciliationAliases(),
   ]);
 
   // Split by status; collapse resolved/ignored under open status
@@ -169,7 +172,6 @@ export default async function ReconciliationPage() {
 
   const missing = open.filter((r) => r.status === "missing_in_xero");
   const mismatch = open.filter((r) => r.status === "amount_mismatch");
-  const multiple = open.filter((r) => r.status === "multiple_matches");
   const aligned = open.filter((r) => r.status === "aligned");
 
   const hubspotTotal = open.reduce((s, r) => s + (r.hubspotAmount ?? 0), 0);
@@ -229,6 +231,8 @@ export default async function ReconciliationPage() {
         />
       </div>
 
+      <ReconciliationAliases initial={aliases} />
+
       <Section
         title="Missing in Xero"
         icon={<AlertCircle className="h-5 w-5 text-red-500" />}
@@ -242,14 +246,6 @@ export default async function ReconciliationPage() {
         icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
         rows={mismatch}
         emptyHint="No deals are outside the 5% tolerance band."
-        showXero={true}
-      />
-
-      <Section
-        title="Multiple matches"
-        icon={<Shuffle className="h-5 w-5 text-blue-500" />}
-        rows={multiple}
-        emptyHint="No ambiguous matches."
         showXero={true}
       />
 

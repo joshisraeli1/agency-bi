@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
+import { getReconciliationAliases } from "@/lib/reconciliation/aliases";
 
 export type ReconciliationStatus =
   | "aligned"
@@ -7,7 +8,7 @@ export type ReconciliationStatus =
   | "amount_mismatch"
   | "multiple_matches";
 
-export type MatchMethod = "xero_contact_id" | "name_exact" | "name_fuzzy";
+export type MatchMethod = "xero_contact_id" | "name_exact" | "alias" | "name_fuzzy";
 
 const AMOUNT_TOLERANCE = 0.05; // 5%
 
@@ -148,166 +149,248 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
     unchanged: 0,
   };
 
-  for (const deal of deals) {
-    const dealAmt = deal.amountExGst ?? deal.amount ?? 0;
+  // Name aliases: map a Xero contact name to the HubSpot client/deal name it
+  // represents (e.g. "HC Operating" in Xero -> "Everlab" in HubSpot). Stored in
+  // the DB so the correction sticks across re-runs.
+  const aliases = await getReconciliationAliases();
+  const aliasByClientNorm = new Map<string, string[]>();
+  for (const a of aliases) {
+    const key = normalizeName(a.clientName);
+    const arr = aliasByClientNorm.get(key) ?? [];
+    arr.push(normalizeName(a.xeroName));
+    aliasByClientNorm.set(key, arr);
+  }
 
-    // 3. Find candidate match(es)
-    let candidates: typeof repeating = [];
-    let method: MatchMethod | null = null;
-
-    // (a) xero contact id on the linked Client
+  // 3. For a single deal, find its matching active invoices + how they matched.
+  function matchInvoices(deal: (typeof deals)[number]): {
+    invoices: Repeating[];
+    method: MatchMethod | null;
+  } {
     const contactId = deal.client?.xeroContactId;
     if (contactId) {
       const m = byContactId.get(contactId);
-      if (m && m.length > 0) {
-        candidates = m;
-        method = "xero_contact_id";
+      if (m?.length) return { invoices: m, method: "xero_contact_id" };
+    }
+    const names = [deal.client?.name, deal.name].filter(Boolean) as string[];
+    // (b) exact normalized name (client name OR deal name)
+    for (const n of names) {
+      const m = byNormName.get(normalizeName(n));
+      if (m?.length) return { invoices: m, method: "name_exact" };
+    }
+    // (b2) alias: this client maps to one or more Xero contact names
+    for (const n of names) {
+      const xnames = aliasByClientNorm.get(normalizeName(n));
+      if (xnames?.length) {
+        const inv: Repeating[] = [];
+        for (const xn of xnames) inv.push(...(byNormName.get(xn) ?? []));
+        if (inv.length) return { invoices: inv, method: "alias" };
       }
     }
-
-    // (b) exact normalized name match (client name OR deal name)
-    if (candidates.length === 0) {
-      const names = [deal.client?.name, deal.name].filter(Boolean) as string[];
-      for (const n of names) {
-        const m = byNormName.get(normalizeName(n));
-        if (m && m.length > 0) {
-          candidates = m;
-          method = "name_exact";
-          break;
-        }
-      }
-    }
-
     // (c) fuzzy: substring containment either direction
-    if (candidates.length === 0) {
-      const dealNorm = normalizeName(deal.client?.name || deal.name);
-      if (dealNorm) {
-        for (const [k, arr] of byNormName) {
-          if (k.includes(dealNorm) || dealNorm.includes(k)) {
-            candidates = arr;
-            method = "name_fuzzy";
-            break;
-          }
+    const dealNorm = normalizeName(deal.client?.name || deal.name);
+    if (dealNorm) {
+      for (const [k, arr] of byNormName) {
+        if (k.includes(dealNorm) || dealNorm.includes(k)) {
+          return { invoices: arr, method: "name_fuzzy" };
         }
       }
     }
+    return { invoices: [], method: null };
+  }
 
-    // 4. Status + amount delta + a human-readable reason for the discrepancy
-    let status: ReconciliationStatus;
-    let xeroAmount: number | null = null;
-    let amountDelta: number | null = null;
-    let matchedId: string | null = null;
-    let reason: string | null = null;
+  // 4. Match each deal to its invoices, then union deals + invoices that share
+  //    a match into connected components. A component reconciles on TOTALS,
+  //    which groups e.g. Elyos AI's two deals ($7,850 + $7,000) onto their
+  //    single $14,850 invoice, and BizCover / Credabl's "Ads Mgmt" deals onto
+  //    the same client's invoices — even when the HubSpot deals aren't linked
+  //    to a single client record.
+  interface Group {
+    clientId: string | null;
+    clientName: string;
+    contactId: string | null;
+    names: string[];
+    deals: { id: string; name: string; amt: number }[];
+    invoices: Map<string, Repeating>;
+    method: MatchMethod | null;
+  }
+  const methodRank: Record<MatchMethod, number> = {
+    xero_contact_id: 4,
+    name_exact: 3,
+    alias: 2,
+    name_fuzzy: 1,
+  };
 
+  // Union-Find over node keys `D:<dealId>` and `I:<invoiceId>`.
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    const p = parent.get(x);
+    if (p === undefined || p === x) {
+      parent.set(x, x);
+      return x;
+    }
+    const r = find(p);
+    parent.set(x, r);
+    return r;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  const matchedDeals: { deal: (typeof deals)[number]; amt: number; method: MatchMethod | null }[] = [];
+  const invById = new Map<string, Repeating>();
+  for (const deal of deals) {
+    const dKey = `D:${deal.id}`;
+    find(dKey); // register the deal even if it matches nothing
+    const { invoices, method } = matchInvoices(deal);
+    matchedDeals.push({ deal, amt: deal.amountExGst ?? deal.amount ?? 0, method });
+    for (const inv of invoices) {
+      invById.set(inv.id, inv);
+      union(dKey, `I:${inv.id}`);
+    }
+  }
+
+  // Assemble one Group per connected component.
+  const groups = new Map<string, Group>();
+  const ensureGroup = (root: string): Group => {
+    let g = groups.get(root);
+    if (!g) {
+      g = {
+        clientId: null,
+        clientName: "",
+        contactId: null,
+        names: [],
+        deals: [],
+        invoices: new Map(),
+        method: null,
+      };
+      groups.set(root, g);
+    }
+    return g;
+  };
+  for (const { deal, amt, method } of matchedDeals) {
+    const g = ensureGroup(find(`D:${deal.id}`));
+    g.deals.push({ id: deal.id, name: deal.name, amt });
+    for (const n of [deal.client?.name, deal.name]) if (n) g.names.push(n);
+    if (!g.clientName) g.clientName = deal.client?.name ?? deal.name;
+    if (!g.clientId && deal.clientId) g.clientId = deal.clientId;
+    if (!g.contactId && deal.client?.xeroContactId) g.contactId = deal.client.xeroContactId;
+    if (method && (!g.method || methodRank[method] > methodRank[g.method])) g.method = method;
+  }
+  for (const inv of invById.values()) {
+    ensureGroup(find(`I:${inv.id}`)).invoices.set(inv.id, inv);
+  }
+
+  // 5. Reconcile each client group on totals, then write one row per deal
+  //    carrying the client-level verdict. Each row stores the deal's
+  //    proportional share of the Xero total so the page's column totals stay
+  //    correct when several deals map to one client.
+  for (const g of groups.values()) {
+    const hubspotTotal = g.deals.reduce((s, d) => s + d.amt, 0);
+    const invs = [...g.invoices.values()];
+    const xeroTotal = invs.reduce(
+      (s, c) => s + monthlyAmount(c.subTotal ?? 0, c.scheduleUnit, c.scheduleInterval),
+      0,
+    );
+    const matchedId = invs[0]?.id ?? null;
+    const method = g.method;
     const fuzzyNote =
       method === "name_fuzzy"
-        ? " (matched on an approximate name — confirm it's the right invoice)"
+        ? " (matched on an approximate name — add a name mapping to lock it in)"
+        : "";
+    const nD = g.deals.length;
+    const nI = invs.length;
+    // Describe the multi-deal / multi-invoice shape once, reused in reasons.
+    const shape =
+      nD > 1 || nI > 1
+        ? `${g.clientName}: ${nD} HubSpot deal${nD > 1 ? "s" : ""} totalling ${formatCurrency(hubspotTotal)} vs ${nI} Xero invoice${nI > 1 ? "s" : ""} totalling ${formatCurrency(xeroTotal)}. `
         : "";
 
-    if (candidates.length === 0) {
-      status = "missing_in_xero";
-      result.missing++;
+    let status: ReconciliationStatus;
+    let reason: string | null = null;
 
-      const names = [deal.client?.name, deal.name].filter(Boolean) as string[];
-      const stale = findInactiveMatch(contactId, names);
+    if (nI === 0) {
+      status = "missing_in_xero";
+      const stale = findInactiveMatch(g.contactId, g.names);
       if (stale) {
         const kind = stale.type === "ACCPAY" ? "bill (ACCPAY)" : "invoice";
         reason = `Xero has a ${stale.status} repeating ${kind} for this client, but it isn't an active AUTHORISED sales invoice — re-authorise or activate it in Xero.`;
-      } else if (!deal.clientId) {
-        reason =
-          "This deal isn't linked to a client record, so it can't be matched to a Xero contact.";
-      } else if (!contactId) {
-        reason =
-          "Client isn't linked to a Xero contact and no invoice name-matches — either there's no Xero retainer set up, or the business name differs between HubSpot and Xero.";
+      } else if (!g.clientId) {
+        reason = "This deal isn't linked to a client record, so it can't be matched to a Xero contact.";
+      } else if (!g.contactId) {
+        reason = "Client isn't linked to a Xero contact and no invoice name-matches — either there's no Xero retainer set up, or the business name differs between HubSpot and Xero. Add a name mapping if so.";
       } else {
-        reason =
-          "Client is linked to Xero but has no AUTHORISED repeating invoice — the retainer may be billed ad-hoc / as one-off invoices, or hasn't been set up yet.";
+        reason = "Client is linked to Xero but has no AUTHORISED repeating invoice — the retainer may be billed ad-hoc / as one-off invoices, or hasn't been set up yet.";
       }
-    } else if (candidates.length > 1) {
-      status = "multiple_matches";
-      matchedId = candidates[0].id;
-      // Compare the combined monthly value of every matching invoice.
-      const combined = candidates.reduce(
-        (s, c) => s + monthlyAmount(c.subTotal ?? 0, c.scheduleUnit, c.scheduleInterval),
-        0,
-      );
-      xeroAmount = combined;
-      amountDelta = dealAmt - combined;
-      result.multipleMatches++;
-
-      const denom = Math.max(Math.abs(dealAmt), Math.abs(combined), 1);
-      const combinedAligns = Math.abs(amountDelta) / denom <= AMOUNT_TOLERANCE;
-      reason =
-        `${candidates.length} active repeating invoices match this client` +
-        (combinedAligns
-          ? `, and together they total ${formatCurrency(combined)}/mo — close to the deal. Likely one retainer split across separate line items.`
-          : `, totalling ${formatCurrency(combined)}/mo vs the ${formatCurrency(dealAmt)}/mo deal. Likely multiple service lines; confirm which maps to this deal.`) +
-        fuzzyNote;
     } else {
-      const c = candidates[0];
-      matchedId = c.id;
-      xeroAmount = monthlyAmount(c.subTotal ?? 0, c.scheduleUnit, c.scheduleInterval);
-      amountDelta = dealAmt - xeroAmount;
-
-      const denom = Math.max(Math.abs(dealAmt), Math.abs(xeroAmount), 1);
-      const ratio = Math.abs(amountDelta) / denom;
+      const denom = Math.max(Math.abs(hubspotTotal), Math.abs(xeroTotal), 1);
+      const ratio = Math.abs(hubspotTotal - xeroTotal) / denom;
       if (ratio <= AMOUNT_TOLERANCE) {
         status = "aligned";
-        result.aligned++;
+        if (shape) reason = `${shape}Totals reconcile within tolerance.`;
       } else {
         status = "amount_mismatch";
-        result.amountMismatch++;
-
         const pct = Math.round(ratio * 100);
         // Is the gap roughly a 10% GST layer? (Xero retainers are often inc-GST,
         // HubSpot amounts ex-GST.)
-        const gstHi = xeroAmount > 0 && Math.abs(xeroAmount - dealAmt * 1.1) / Math.max(dealAmt, 1) <= 0.02;
-        const gstLo = dealAmt > 0 && Math.abs(dealAmt - xeroAmount * 1.1) / Math.max(xeroAmount, 1) <= 0.02;
+        const gstHi = xeroTotal > 0 && Math.abs(xeroTotal - hubspotTotal * 1.1) / Math.max(hubspotTotal, 1) <= 0.02;
+        const gstLo = hubspotTotal > 0 && Math.abs(hubspotTotal - xeroTotal * 1.1) / Math.max(xeroTotal, 1) <= 0.02;
         if (gstHi) {
-          reason = `Xero is ~10% higher than HubSpot — the repeating invoice looks GST-inclusive while the HubSpot amount is ex-GST.${fuzzyNote}`;
+          reason = `${shape}Xero is ~10% higher — the repeating invoice looks GST-inclusive while HubSpot is ex-GST.${fuzzyNote}`;
         } else if (gstLo) {
-          reason = `HubSpot is ~10% higher than Xero — GST handling looks reversed between the two systems.${fuzzyNote}`;
-        } else if (amountDelta > 0) {
-          reason = `HubSpot retainer is ${pct}% higher than the Xero invoice (${formatCurrency(amountDelta)}/mo gap) — likely a price increase not yet pushed to Xero, or Xero only bills part of the retainer.${fuzzyNote}`;
+          reason = `${shape}HubSpot is ~10% higher than Xero — GST handling looks reversed between the two systems.${fuzzyNote}`;
+        } else if (hubspotTotal > xeroTotal) {
+          reason = `${shape}HubSpot is ${pct}% higher than Xero (${formatCurrency(hubspotTotal - xeroTotal)}/mo gap) — likely a price increase not yet pushed to Xero, or Xero only bills part of the retainer.${fuzzyNote}`;
         } else {
-          reason = `Xero invoice is ${pct}% higher than HubSpot (${formatCurrency(-amountDelta)}/mo gap) — likely add-ons/extra services billed in Xero, or a stale HubSpot deal amount.${fuzzyNote}`;
+          reason = `${shape}Xero is ${pct}% higher than HubSpot (${formatCurrency(xeroTotal - hubspotTotal)}/mo gap) — likely add-ons/extra services billed in Xero, or stale HubSpot deal amounts.${fuzzyNote}`;
         }
       }
     }
 
-    // 5. Upsert reconciliation row, preserving reviewStatus/notes
-    const existing = await db.reconciliation.findUnique({
-      where: { hubspotDealId: deal.id },
-      select: { reviewStatus: true, notes: true },
-    });
+    for (const d of g.deals) {
+      // Proportional share of the client's Xero total so per-row figures sum
+      // back to the client total on the page.
+      const dealXero =
+        nI === 0 ? null : hubspotTotal > 0 ? (xeroTotal * d.amt) / hubspotTotal : xeroTotal / nD;
+      const delta = dealXero == null ? null : d.amt - dealXero;
 
-    await db.reconciliation.upsert({
-      where: { hubspotDealId: deal.id },
-      create: {
-        hubspotDealId: deal.id,
-        xeroRepeatingInvoiceId: matchedId,
-        status,
-        reason,
-        matchMethod: method,
-        hubspotAmount: dealAmt,
-        xeroAmount,
-        amountDelta,
-        lastCheckedAt: new Date(),
-      },
-      update: {
-        xeroRepeatingInvoiceId: matchedId,
-        status,
-        reason,
-        matchMethod: method,
-        hubspotAmount: dealAmt,
-        xeroAmount,
-        amountDelta,
-        lastCheckedAt: new Date(),
-        // reviewStatus + notes intentionally left untouched on re-run
-      },
-    });
+      const existing = await db.reconciliation.findUnique({
+        where: { hubspotDealId: d.id },
+        select: { reviewStatus: true },
+      });
 
-    if (existing && existing.reviewStatus !== "open") result.unchanged++;
+      await db.reconciliation.upsert({
+        where: { hubspotDealId: d.id },
+        create: {
+          hubspotDealId: d.id,
+          xeroRepeatingInvoiceId: matchedId,
+          status,
+          reason,
+          matchMethod: method,
+          hubspotAmount: d.amt,
+          xeroAmount: dealXero,
+          amountDelta: delta,
+          lastCheckedAt: new Date(),
+        },
+        update: {
+          xeroRepeatingInvoiceId: matchedId,
+          status,
+          reason,
+          matchMethod: method,
+          hubspotAmount: d.amt,
+          xeroAmount: dealXero,
+          amountDelta: delta,
+          lastCheckedAt: new Date(),
+          // reviewStatus + notes intentionally left untouched on re-run
+        },
+      });
+
+      if (status === "aligned") result.aligned++;
+      else if (status === "missing_in_xero") result.missing++;
+      else result.amountMismatch++;
+      if (existing && existing.reviewStatus !== "open") result.unchanged++;
+    }
   }
 
   return result;
