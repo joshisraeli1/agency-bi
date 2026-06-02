@@ -186,11 +186,14 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
         if (inv.length) return { invoices: inv, method: "alias" };
       }
     }
-    // (c) fuzzy: substring containment either direction
-    const dealNorm = normalizeName(deal.client?.name || deal.name);
-    if (dealNorm) {
+    // (c) fuzzy: substring containment either direction, on BOTH the client
+    //     name and the deal name (so "Blue Light Card Ads Management" matches
+    //     the "Blue Light Card" invoice). Require >= 5 chars on both sides to
+    //     avoid short-token false merges (e.g. a 3-letter client like "Gem").
+    const fuzzyCands = names.map(normalizeName).filter((n) => n.length >= 5);
+    for (const dealNorm of fuzzyCands) {
       for (const [k, arr] of byNormName) {
-        if (k.includes(dealNorm) || dealNorm.includes(k)) {
+        if (k.length >= 5 && (k.includes(dealNorm) || dealNorm.includes(k))) {
           return { invoices: arr, method: "name_fuzzy" };
         }
       }

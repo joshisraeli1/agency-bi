@@ -58,8 +58,11 @@ export function ReconciliationAliases({ initial }: { initial: Alias[] }) {
           <Link2 className="h-5 w-5 text-muted-foreground" /> Name mappings
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          When a client&apos;s name differs between the two systems, map the Xero contact name to
-          the HubSpot client so it matches (e.g. <strong>HC Operating</strong> → <strong>Everlab</strong>).
+          Map a Xero contact name to the HubSpot client it bills. Use this when the names differ
+          (e.g. <strong>HC Operating</strong> → <strong>Everlab</strong>), or to pull a separate
+          Ads/Content deal onto a client&apos;s single combined Xero invoice (e.g.{" "}
+          <strong>Smartpay Australia Limited</strong> → <strong>Smartpay Ads Mgmt</strong>). Deals
+          that share a Xero invoice are then reconciled on their combined total.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
