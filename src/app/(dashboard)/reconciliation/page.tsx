@@ -14,7 +14,9 @@ import { StatCard } from "@/components/charts/stat-card";
 import { ReconciliationRowActions } from "@/components/dashboard/reconciliation-row-actions";
 import { ReconciliationRefresh } from "@/components/dashboard/reconciliation-refresh";
 import { ReconciliationAliases } from "@/components/dashboard/reconciliation-aliases";
+import { ReconciliationFx } from "@/components/dashboard/reconciliation-fx";
 import { getReconciliationAliases } from "@/lib/reconciliation/aliases";
+import { getFxRates } from "@/lib/reconciliation/fx";
 import { AlertTriangle, AlertCircle, CheckCircle2, Shuffle } from "lucide-react";
 
 type Recon = Awaited<ReturnType<typeof getReconciliations>>[number];
@@ -160,10 +162,11 @@ function Section({
 }
 
 export default async function ReconciliationPage() {
-  const [all, xeroCount, aliases] = await Promise.all([
+  const [all, xeroCount, aliases, fxRates] = await Promise.all([
     getReconciliations(),
     db.xeroRepeatingInvoice.count(),
     getReconciliationAliases(),
+    getFxRates(),
   ]);
 
   // Split by status; collapse resolved/ignored under open status
@@ -231,7 +234,10 @@ export default async function ReconciliationPage() {
         />
       </div>
 
-      <ReconciliationAliases initial={aliases} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ReconciliationAliases initial={aliases} />
+        <ReconciliationFx initial={fxRates} />
+      </div>
 
       <Section
         title="Missing in Xero"

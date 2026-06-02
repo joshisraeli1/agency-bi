@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
 import { getReconciliationAliases } from "@/lib/reconciliation/aliases";
+import { getFxRates } from "@/lib/reconciliation/fx";
 
 export type ReconciliationStatus =
   | "aligned"
@@ -89,6 +90,7 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
       scheduleInterval: true,
       status: true,
       type: true,
+      currencyCode: true,
     },
   });
   const repeating = allRepeating.filter(
@@ -155,6 +157,15 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
   // whose deals + invoices are split across two business names. Stored in the
   // DB so the correction sticks across re-runs.
   const aliases = await getReconciliationAliases();
+
+  // FX: HubSpot deals are in AUD. Convert any non-AUD Xero invoice to AUD
+  // before comparing (e.g. Superpower is billed in USD). Rates are editable.
+  const fxRates = await getFxRates();
+  const monthlyAud = (c: Repeating): number => {
+    const monthly = monthlyAmount(c.subTotal ?? 0, c.scheduleUnit, c.scheduleInterval);
+    if (!c.currencyCode || c.currencyCode === "AUD") return monthly;
+    return monthly * (fxRates[c.currencyCode] ?? 1);
+  };
 
   // 3. For a single deal, find its matching active invoices + how they matched.
   function matchInvoices(deal: (typeof deals)[number]): {
@@ -316,16 +327,21 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
   for (const g of groups.values()) {
     const hubspotTotal = g.deals.reduce((s, d) => s + d.amt, 0);
     const invs = [...g.invoices.values()];
-    const xeroTotal = invs.reduce(
-      (s, c) => s + monthlyAmount(c.subTotal ?? 0, c.scheduleUnit, c.scheduleInterval),
-      0,
-    );
+    const xeroTotal = invs.reduce((s, c) => s + monthlyAud(c), 0);
     const matchedId = invs[0]?.id ?? null;
     const method = g.method;
     const fuzzyNote =
       method === "name_fuzzy"
         ? " (matched on an approximate name — add a name mapping to lock it in)"
         : "";
+    // Note any non-AUD invoices that were converted, so the reason is honest
+    // about the comparison.
+    const fxCurrencies = [
+      ...new Set(invs.map((c) => c.currencyCode).filter((cc) => cc && cc !== "AUD")),
+    ];
+    const fxNote = fxCurrencies.length
+      ? ` (Xero ${fxCurrencies.join("/")} converted to AUD${fxCurrencies.some((cc) => !(cc! in fxRates)) ? " — no FX rate set, add one" : ""})`
+      : "";
     const nD = g.deals.length;
     const nI = invs.length;
     // Describe the multi-deal / multi-invoice shape once, reused in reasons.
@@ -372,6 +388,7 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
         } else {
           reason = `${shape}Xero is ${pct}% higher than HubSpot (${formatCurrency(xeroTotal - hubspotTotal)}/mo gap) — likely add-ons/extra services billed in Xero, or stale HubSpot deal amounts.${fuzzyNote}`;
         }
+        if (reason) reason += fxNote;
       }
     }
 
