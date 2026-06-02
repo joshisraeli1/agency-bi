@@ -45,6 +45,16 @@ export interface ReconciliationRunResult {
 }
 
 export async function runReconciliation(): Promise<ReconciliationRunResult> {
+  // 0. Refresh Xero repeating invoices from the live account first, so the
+  //    reconciliation always matches against current data (the table isn't
+  //    populated by anything else). Non-fatal if Xero isn't reachable.
+  try {
+    const { syncXeroRepeatingInvoices } = await import("@/lib/sync/refresh-syncs");
+    await syncXeroRepeatingInvoices();
+  } catch {
+    // Xero not connected / fetch failed — fall back to whatever's stored.
+  }
+
   // 1. Pull active closed-won HubSpot deals (one row per deal)
   const now = new Date();
   const deals = await db.hubspotDeal.findMany({

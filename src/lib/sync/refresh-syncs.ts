@@ -8,7 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
-import { fetchProfitAndLoss, fetchPnlCostLines, refreshToken } from "@/lib/integrations/xero";
+import { fetchProfitAndLoss, fetchPnlCostLines, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
 
 // ---------------------------------------------------------------------------
 // HubSpot deals
@@ -155,6 +155,55 @@ const SYNTH_CLIENT_NAME = "Xero P&L (Total Income)";
 const PNL_CATEGORY = "xero_pnl_income";
 
 interface XeroConfig { accessToken: string; refreshToken: string; tenantId: string; tenantName?: string; expiresAt?: number }
+
+// Load the stored Xero token, refreshing + persisting it if expired.
+async function getValidXeroToken(): Promise<{ accessToken: string; tenantId: string }> {
+  const cfgRow = await db.integrationConfig.findUnique({ where: { provider: "xero" } });
+  if (!cfgRow || cfgRow.configJson === "{}") throw new Error("Xero not connected");
+  let cfg = decryptJson<XeroConfig>(cfgRow.configJson);
+  if (cfg.expiresAt && Date.now() > cfg.expiresAt - 60_000) {
+    const r = await refreshToken(cfg.refreshToken);
+    cfg = { ...cfg, accessToken: r.accessToken, refreshToken: r.refreshToken, expiresAt: Date.now() + r.expiresIn * 1000 };
+    await db.integrationConfig.update({ where: { provider: "xero" }, data: { configJson: encryptJson(cfg as unknown as Record<string, unknown>) } });
+  }
+  return { accessToken: cfg.accessToken, tenantId: cfg.tenantId };
+}
+
+function parseXeroDate(value: string | undefined | null): Date | null {
+  if (!value) return null;
+  const epoch = value.match(/\/Date\((\d+)/);
+  if (epoch) return new Date(parseInt(epoch[1], 10));
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Pull Xero repeating-invoice templates into XeroRepeatingInvoice (for the
+// reconciliation against HubSpot retainers).
+export async function syncXeroRepeatingInvoices(): Promise<{ count: number }> {
+  const { accessToken, tenantId } = await getValidXeroToken();
+  const repeating = await fetchRepeatingInvoices(accessToken, tenantId);
+  for (const r of repeating) {
+    const data = {
+      id: r.RepeatingInvoiceID,
+      xeroContactId: r.Contact?.ContactID ?? null,
+      xeroContactName: r.Contact?.Name ?? null,
+      status: r.Status ?? null,
+      type: r.Type ?? null,
+      scheduleUnit: r.Schedule?.Unit ?? null,
+      scheduleInterval: r.Schedule?.Period ?? null,
+      nextScheduledDate: parseXeroDate(r.Schedule?.NextScheduledDate ?? r.Schedule?.NextScheduledDateString),
+      subTotal: r.SubTotal ?? null,
+      totalTax: r.TotalTax ?? null,
+      total: r.Total ?? null,
+      currencyCode: r.CurrencyCode ?? null,
+      reference: r.Reference ?? null,
+      lineItemDescription: r.LineItems?.[0]?.Description ?? null,
+      lastSyncedAt: new Date(),
+    };
+    await db.xeroRepeatingInvoice.upsert({ where: { id: r.RepeatingInvoiceID }, create: data, update: data });
+  }
+  return { count: repeating.length };
+}
 
 export async function syncXeroPnl(): Promise<{ months: number; removed: number; tenant?: string; costLines?: number; costRows?: number }> {
   const cfgRow = await db.integrationConfig.findUnique({ where: { provider: "xero" } });
