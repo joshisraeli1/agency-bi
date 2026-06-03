@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -15,6 +15,7 @@ import { ReconciliationRowActions } from "@/components/dashboard/reconciliation-
 import { ReconciliationRefresh } from "@/components/dashboard/reconciliation-refresh";
 import { ReconciliationAliases } from "@/components/dashboard/reconciliation-aliases";
 import { ReconciliationFx } from "@/components/dashboard/reconciliation-fx";
+import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { getReconciliationAliases } from "@/lib/reconciliation/aliases";
 import { getFxRates } from "@/lib/reconciliation/fx";
 import { AlertTriangle, AlertCircle, CheckCircle2, Shuffle } from "lucide-react";
@@ -46,37 +47,24 @@ function Section({
   rows,
   emptyHint,
   showXero,
+  defaultOpen = true,
 }: {
   title: string;
   icon: React.ReactNode;
   rows: Recon[];
   emptyHint: string;
   showXero: boolean;
+  defaultOpen?: boolean;
 }) {
-  if (rows.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            {icon} {title} <Badge variant="outline">0</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">{emptyHint}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          {icon} {title} <Badge variant="outline">{rows.length}</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
+    <CollapsibleSection
+      title={title}
+      icon={icon}
+      count={rows.length}
+      emptyHint={emptyHint}
+      defaultOpen={defaultOpen}
+    >
+      <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Client / Deal</TableHead>
@@ -156,8 +144,7 @@ function Section({
             ))}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </CollapsibleSection>
   );
 }
 
@@ -234,9 +221,16 @@ export default async function ReconciliationPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ReconciliationAliases initial={aliases} />
-        <ReconciliationFx initial={fxRates} />
+      {/* Needs attention — discrepancies, expanded so they're front and centre */}
+      <div>
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-amber-500" />
+          Needs attention
+          <Badge variant="outline">{missing.length + mismatch.length}</Badge>
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Deals that don&apos;t line up with Xero — fix these first.
+        </p>
       </div>
 
       <Section
@@ -255,12 +249,31 @@ export default async function ReconciliationPage() {
         showXero={true}
       />
 
+      {/* Tools to resolve the above */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ReconciliationAliases initial={aliases} />
+        <ReconciliationFx initial={fxRates} />
+      </div>
+
+      {/* Matched — collapsed at the bottom; expand to inspect the comparison */}
+      <div className="pt-2">
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-green-600" />
+          Matched
+          <Badge variant="outline">{aligned.length + closed.length}</Badge>
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Already reconciled — expand to see how each lines up in HubSpot and Xero.
+        </p>
+      </div>
+
       <Section
         title="Aligned"
         icon={<CheckCircle2 className="h-5 w-5 text-green-600" />}
         rows={aligned}
         emptyHint="No deals reconciled yet — run the engine."
         showXero={true}
+        defaultOpen={false}
       />
 
       {closed.length > 0 && (
@@ -270,6 +283,7 @@ export default async function ReconciliationPage() {
           rows={closed}
           emptyHint=""
           showXero={true}
+          defaultOpen={false}
         />
       )}
     </div>
