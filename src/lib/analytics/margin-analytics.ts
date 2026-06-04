@@ -306,7 +306,7 @@ export async function getMonthlyChurn(
 ): Promise<MonthlyChurnData> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, allClients] = await Promise.all([
+  const [excludedIds, allClients, deals] = await Promise.all([
     getExcludedClientIds(),
     db.client.findMany({
       where: {
@@ -320,11 +320,34 @@ export async function getMonthlyChurn(
         startDate: true,
         endDate: true,
         retainerValue: true,
+        hubspotDealId: true,
       },
+    }),
+    // Churned revenue must come from deal ex-GST amounts — the same source of
+    // truth as getRevenueVsChurn. client.retainerValue is unreliable here: some
+    // syncs store it inc-GST (sync-hubspot.ts) and reconciliation stores the
+    // all-deals total, both of which inflate "lost revenue".
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: { id: true, clientId: true, amount: true, amountExGst: true, churnDate: true },
     }),
   ]);
 
   const clients = allClients.filter((c) => !excludedIds.has(c.id));
+
+  // Ex-GST churned revenue keyed by `${clientId}|${month}`, summed across the
+  // client's deals that churned in that month (handles multi-deal clients).
+  const churnRevByClientMonth = new Map<string, number>();
+  // Ex-GST value of each deal by its HubSpot id, for joining a client to its
+  // linked deal (Client.hubspotDealId) when the deal carries no churnDate.
+  const dealExGstById = new Map<string, number>();
+  for (const d of deals) {
+    const exGst = d.amountExGst ?? d.amount ?? 0;
+    dealExGstById.set(d.id, exGst);
+    if (!d.churnDate || !d.clientId || excludedIds.has(d.clientId)) continue;
+    const key = `${d.clientId}|${toMonthKey(new Date(d.churnDate))}`;
+    churnRevByClientMonth.set(key, (churnRevByClientMonth.get(key) ?? 0) + exGst);
+  }
 
   const rows = monthRange.map((month) => {
     const monthStart = new Date(`${month}-01`);
@@ -355,10 +378,20 @@ export async function getMonthlyChurn(
     const churned = churnedClients.length;
     const churnPercent =
       activeAtStart > 0 ? Number(((churned / activeAtStart) * 100).toFixed(1)) : 0;
-    const churnedRevenue = churnedClients.reduce(
-      (s, c) => s + (c.retainerValue || 0),
-      0
-    );
+
+    // Per-client lost revenue, ex-GST. Prefer the precise churn-month deal sum;
+    // then the client's linked deal (when its churnDate is absent); fall back to
+    // retainerValue only when the client has no deal at all.
+    const churnedDetailed = churnedClients.map((c) => ({
+      name: c.name,
+      revenue: Math.round(
+        churnRevByClientMonth.get(`${c.id}|${month}`) ??
+          (c.hubspotDealId ? dealExGstById.get(c.hubspotDealId) : undefined) ??
+          c.retainerValue ??
+          0
+      ),
+    }));
+    const churnedRevenue = churnedDetailed.reduce((s, c) => s + c.revenue, 0);
 
     return {
       month,
@@ -366,9 +399,7 @@ export async function getMonthlyChurn(
       churned,
       churnPercent,
       churnedRevenue: Math.round(churnedRevenue),
-      churnedClientList: churnedClients
-        .map((c) => ({ name: c.name, revenue: Math.round(c.retainerValue || 0) }))
-        .sort((a, b) => b.revenue - a.revenue),
+      churnedClientList: churnedDetailed.sort((a, b) => b.revenue - a.revenue),
     };
   });
 
