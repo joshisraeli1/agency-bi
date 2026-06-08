@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { foldUpsells } from "./upsells";
 
 export const DIVISION_GOALS_PROVIDER = "division_goals";
 
@@ -66,10 +67,13 @@ function classifyPackageType(raw: string | null | undefined): string {
  * Counts every closed-won deal in the pipeline (HubSpot's closed-won total).
  */
 export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot> {
-  const deals = await db.hubspotDeal.findMany({
+  const rawDeals = await db.hubspotDeal.findMany({
     where: { stage: "closed_won" },
-    select: { name: true, amount: true, amountExGst: true, contentPackageType: true },
+    select: { name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true },
   });
+  // Fold upsells onto their base deal — an upsell is extra revenue for an
+  // existing company, not a separate deal in the count / package breakdown.
+  const { deals } = foldUpsells(rawDeals);
 
   const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;

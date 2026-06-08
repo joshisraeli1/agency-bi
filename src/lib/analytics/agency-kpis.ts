@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost, parseDivisionAllocations } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { autoMapAccountToDivision, DIVISIONS } from "./cost-allocation";
+import { foldUpsells, dealDivision } from "./upsells";
 import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
 const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
@@ -337,20 +338,17 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   // Avg deal size = current monthly MRR per division ÷ active deals in that
   // division (deal-based). The old calc divided period-summed revenue by a
   // client count that included churned clients, inflating it ~N×.
-  const cwDeals = await db.hubspotDeal.findMany({
+  const rawCwDeals = await db.hubspotDeal.findMany({
     where: { stage: "closed_won" },
-    select: { amountExGst: true, amount: true, contentPackageType: true },
+    select: { name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true },
   });
-  const classifyDealDivision = (pkg: string | null): string => {
-    const p = (pkg || "").toLowerCase().trim();
-    if (p === "social media" || p === "social media management") return "Social Media Management";
-    if (p === "meta ads" || p === "ads management" || p === "social and ads management") return "Ads Management";
-    return "Content Delivery";
-  };
+  // Fold upsells onto their base company deal so they don't count as separate
+  // deals (which would distort the per-division average deal size).
+  const { deals: cwDeals } = foldUpsells(rawCwDeals);
   const divDealMrr = new Map<string, number>();
   const divDealCount = new Map<string, number>();
   for (const d of cwDeals) {
-    const div = classifyDealDivision(d.contentPackageType);
+    const div = dealDivision(d.contentPackageType);
     divDealMrr.set(div, (divDealMrr.get(div) || 0) + (d.amountExGst ?? d.amount ?? 0));
     divDealCount.set(div, (divDealCount.get(div) || 0) + 1);
   }

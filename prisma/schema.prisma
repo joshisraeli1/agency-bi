@@ -123,6 +123,7 @@ model HubspotDeal {
   closeDate          DateTime? // HubSpot closedate
   churnDate          DateTime?
   contentPackageType String?
+  packageDescription String? // HubSpot "Package Description" — Legacy|One-off|Combo|Other|Upsell
   industry           String?
   lastSyncedAt       DateTime  @default(now())
   createdAt          DateTime  @default(now())
