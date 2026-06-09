@@ -9,8 +9,11 @@ interface Props {
 }
 
 export function ClientMovementTables({ newClientDealSize }: Props) {
-  const dealSizeMonths = newClientDealSize.months.filter((m) => m.clientCount > 0);
-  const churnedMonths = newClientDealSize.churnedMonths.filter((m) => m.clientCount > 0);
+  // Show every month in the selected range (incl. the current month even when
+  // it has no movement yet) so the timeline is complete and nothing looks
+  // "missing" — e.g. the current month with zero new clients.
+  const dealSizeMonths = newClientDealSize.months;
+  const churnedMonths = newClientDealSize.churnedMonths;
 
   return (
     <div className="space-y-6">

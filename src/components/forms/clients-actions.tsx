@@ -96,7 +96,13 @@ const statusColors: Record<string, "default" | "secondary" | "destructive" | "ou
 
 type StatusFilter = "active" | "churned" | "all";
 
-export function ClientsActions({ clients }: { clients: Client[] }) {
+export function ClientsActions({
+  clients,
+  divisionRevenue = {},
+}: {
+  clients: Client[];
+  divisionRevenue?: Record<string, number>;
+}) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
@@ -104,18 +110,32 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("all");
+  // Default to highest LTV so the biggest-value clients surface first.
+  const [sortKey, setSortKey] = useState<"amount" | "ltv">("ltv");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: "amount" | "ltv") {
+    if (sortKey === key) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortKey(key); setSortDir("desc"); }
+  }
 
   const filteredClients = (() => {
     let list = statusFilter === "all" ? clients : clients.filter((c) => c.status === statusFilter);
     if (serviceFilter !== "all") {
       list = list.filter((c) => serviceAmount(c, serviceFilter) > 0);
     }
-    return [...list].sort((a, b) => serviceAmount(b, serviceFilter) - serviceAmount(a, serviceFilter));
+    const val = (c: Client) => (sortKey === "ltv" ? (c.ltv ?? 0) : serviceAmount(c, serviceFilter));
+    const sign = sortDir === "desc" ? 1 : -1;
+    return [...list].sort((a, b) => sign * (val(b) - val(a)));
   })();
 
+  // Headline divisional revenue comes from the same source as the Overview
+  // (deal-based, upsells folded), so it ties out exactly — independent of the
+  // per-client rows below.
   const divisionTotal = serviceFilter === "all"
     ? 0
-    : filteredClients.reduce((sum, c) => sum + serviceAmount(c, serviceFilter), 0);
+    : (divisionRevenue[SERVICE_LABELS[serviceFilter]] ?? 0);
+  const sortArrow = (key: "amount" | "ltv") => (sortKey === key ? (sortDir === "desc" ? " ↓" : " ↑") : "");
 
   function handleEdit(client: Client) {
     setEditClient(client);
@@ -250,10 +270,18 @@ export function ClientsActions({ clients }: { clients: Client[] }) {
                   <TableHead>Name</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Tenure</TableHead>
-                  <TableHead className="text-right">
-                    {serviceFilter === "all" ? "Deal Size" : "Amount"}
+                  <TableHead
+                    className="text-right cursor-pointer select-none hover:text-foreground"
+                    onClick={() => toggleSort("amount")}
+                  >
+                    {serviceFilter === "all" ? "Deal Size" : "Amount"}{sortArrow("amount")}
                   </TableHead>
-                  <TableHead className="text-right">LTV</TableHead>
+                  <TableHead
+                    className="text-right cursor-pointer select-none hover:text-foreground"
+                    onClick={() => toggleSort("ltv")}
+                  >
+                    LTV{sortArrow("ltv")}
+                  </TableHead>
                   <TableHead>Industry</TableHead>
                   <TableHead className="text-right">Entries</TableHead>
                   <TableHead className="w-[50px]"></TableHead>

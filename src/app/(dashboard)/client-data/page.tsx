@@ -9,7 +9,9 @@ interface Props {
 
 export default async function ClientDataPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
-  const months = parseInt(monthsParam || "12", 10);
+  // Default must match DateRangePicker's default ("6"); otherwise the dropdown
+  // shows "Last 6 months" while the table renders 12.
+  const months = parseInt(monthsParam || "6", 10);
 
   const newClientDealSize = await getNewClientDealSize(months);
 

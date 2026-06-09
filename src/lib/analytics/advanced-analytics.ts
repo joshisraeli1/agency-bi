@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
+import { clientDisplayName } from "./client-name";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -661,11 +662,14 @@ export async function getNewClientDealSize(
         endDate: true,
         retainerValue: true,
         contentPackageType: true,
+        hubspotDeals: { where: { stage: "closed_won" }, select: { name: true } },
       },
     }),
   ]);
 
-  const filteredClients = clients.filter((c) => !excludedIds.has(c.id));
+  const filteredClients = clients
+    .filter((c) => !excludedIds.has(c.id))
+    .map((c) => ({ ...c, name: clientDisplayName(c.name, c.hubspotDeals.map((d) => d.name)) }));
 
   // New clients by start month
   const newMonths = monthRange.map((month) => {

@@ -26,13 +26,16 @@ export function AdvancedCharts({
   clientHealth,
   industryBreakdown,
 }: Props) {
-  // Client health matrix: x = monthly revenue, y = months retained
+  // Client health matrix: x = monthly revenue, y = months retained, z = LTV
+  // (bubble size), so the biggest bubbles are the highest-LTV clients.
   const [healthDivision, setHealthDivision] = useState<string>("all");
+  const ltvByClient = new Map(ltv.clients.map((c) => [c.clientId, c.totalRevenue]));
   const allHealth = clientHealth.clients.map((c) => ({
     name: c.clientName,
+    id: c.clientId,
     x: c.monthlyRevenue ?? Math.round(c.revenue / Math.max(1, c.monthsRetained)),
     y: c.monthsRetained,
-    z: 10, // uniform bubble size
+    z: ltvByClient.get(c.clientId) ?? Math.round((c.monthlyRevenue ?? 0) * c.monthsRetained),
     division: c.division,
   }));
   const healthDivisions = Array.from(new Set(allHealth.map((d) => d.division))).sort();
@@ -96,9 +99,11 @@ export function AdvancedCharts({
           data={healthData}
           xLabel="Monthly Revenue"
           yLabel="Months Retained"
-          zLabel="Margin %"
+          zLabel="LTV"
           formatX={fmtCurrency}
           formatY={(v) => `${v}`}
+          formatZ={fmtCurrency}
+          clickHrefBase="/clients"
         />
       )}
 
