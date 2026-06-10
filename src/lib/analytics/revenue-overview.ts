@@ -38,7 +38,7 @@ export async function getRevenueOverview(
     // current month, so we compute MRR from deal active windows instead).
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
+      select: { clientId: true, name: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
     }),
   ]);
 
@@ -223,6 +223,15 @@ export async function getRevenueOverview(
       "Social Media Management": 0,
       "Ads Management": 0,
     };
+    const divDeals: Record<string, { name: string; amount: number }[]> = {
+      "Content Delivery": [],
+      "Social Media Management": [],
+      "Ads Management": [],
+    };
+    const add = (div: string, amt: number, name: string) => {
+      divRev[div] += amt;
+      divDeals[div].push({ name, amount: Math.round(amt) });
+    };
     for (const d of hubspotDeals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
       const startKey = dealMonthKey(d.startDate ?? d.closeDate);
@@ -233,21 +242,24 @@ export async function getRevenueOverview(
       if (!amt) continue;
       const pkg = (d.contentPackageType || "").toLowerCase().trim();
       if (pkg === "social media" || pkg === "social media management") {
-        divRev["Social Media Management"] += amt;
+        add("Social Media Management", amt, d.name);
       } else if (pkg === "social and ads management") {
-        divRev["Social Media Management"] += amt * 0.5;
-        divRev["Ads Management"] += amt * 0.5;
+        add("Social Media Management", amt * 0.5, `${d.name} (Full Suite)`);
+        add("Ads Management", amt * 0.5, `${d.name} (Full Suite)`);
       } else if (pkg === "meta ads" || pkg === "ads management") {
-        divRev["Ads Management"] += amt;
+        add("Ads Management", amt, d.name);
       } else {
-        divRev["Content Delivery"] += amt;
+        add("Content Delivery", amt, d.name);
       }
     }
+    for (const k of Object.keys(divDeals)) divDeals[k].sort((a, b) => b.amount - a.amount);
     return {
       month: formatMonth(month),
+      rawMonth: month,
       "Content Delivery": Math.round(divRev["Content Delivery"]),
       "Social Media Management": Math.round(divRev["Social Media Management"]),
       "Ads Management": Math.round(divRev["Ads Management"]),
+      deals: divDeals,
     };
   });
 

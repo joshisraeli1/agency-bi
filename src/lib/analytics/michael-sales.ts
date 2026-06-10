@@ -76,15 +76,27 @@ export interface DealRef {
   amount: number;
 }
 
+export interface PipelineStage {
+  stage: string;
+  count: number;
+  value: number;
+  deals: DealRef[];
+}
+
 export interface MichaelSalesData {
   ownerName: string;
   goals: MichaelGoals;
   progress: MichaelProgressData;
-  // Headline tiles
+  pipeline: PipelineStage[];
+  // Headline tiles (+ the deals behind each, for click-through)
   currentMrr: number;
   lifetimeRevenue: number;
   activeDealCount: number;
   dealsCreatedLast12mo: number;
+  currentMrrDeals: DealRef[];
+  lifetimeDeals: DealRef[];
+  activeDeals: DealRef[];
+  dealsCreated12moDeals: DealRef[];
   // Trend series (24 months)
   monthlyRevenue: MonthlyValue[];
   newRevenuePerMonth: MonthlyValue[];
@@ -126,6 +138,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
       id: true,
       name: true,
       stage: true,
+      stageLabel: true,
       amountExGst: true,
       amount: true,
       startDate: true,
@@ -135,6 +148,20 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     },
   });
 
+  // Pipeline snapshot: deal count + value per active stage, in progression order.
+  const PIPELINE_STAGES = ["Interested", "Very Warm", "Contract out", "Closed Won"];
+  const pipeline = PIPELINE_STAGES.map((stage) => {
+    const ds = deals.filter((d) => d.stageLabel === stage);
+    return {
+      stage,
+      count: ds.length,
+      value: Math.round(ds.reduce((s, d) => s + (d.amountExGst ?? d.amount ?? 0), 0)),
+      deals: ds
+        .map((d) => ({ name: d.name, amount: Math.round(d.amountExGst ?? d.amount ?? 0) }))
+        .sort((a, b) => b.amount - a.amount),
+    };
+  });
+
   // Per-month deal detail for drill-down
   const mrrDealsByMonth: Record<string, DealRef[]> = {};
   const createdDealsByMonth: Record<string, DealRef[]> = {};
@@ -142,9 +169,11 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
 
   // Active deals = stage closed_won and not yet churned (or no churn date)
   const now = new Date();
-  const activeDealCount = deals.filter(
-    (d) => d.stage === "closed_won" && (!d.churnDate || d.churnDate > now),
-  ).length;
+  const activeDeals = deals
+    .filter((d) => d.stage === "closed_won" && (!d.churnDate || d.churnDate > now))
+    .map((d) => ({ name: d.name, amount: d.amountExGst ?? d.amount ?? 0 }))
+    .sort((a, b) => b.amount - a.amount);
+  const activeDealCount = activeDeals.length;
 
   // Deals created per month + total in last 12mo
   const dealsCreatedPerMonth = emptySeries(months24);
@@ -176,6 +205,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   // current month collapse.
   // -----------------------------------------------------------------------
   const monthlyRevenue = emptySeries(months24);
+  const lifetimeDeals: DealRef[] = [];
   let lifetimeRevenue = 0;
   let currentMrr = 0;
 
@@ -205,8 +235,16 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     // Lifetime = amount × number of active months (start → churn, else → now)
     const endIdx = churnKey ? monthIndex(churnKey) - 1 : currentIdx;
     const activeMonths = Math.max(0, endIdx - monthIndex(startKey) + 1);
-    lifetimeRevenue += amt * activeMonths;
+    const lifetimeAmt = amt * activeMonths;
+    lifetimeRevenue += lifetimeAmt;
+    if (lifetimeAmt > 0) lifetimeDeals.push({ name: d.name, amount: lifetimeAmt });
   }
+  lifetimeDeals.sort((a, b) => b.amount - a.amount);
+  const dealsCreated12moDeals = Object.entries(createdDealsByMonth)
+    .filter(([k]) => k >= twelveMonthsAgoKey)
+    .flatMap(([, v]) => v)
+    .sort((a, b) => b.amount - a.amount);
+  const currentMrrDeals = [...(mrrDealsByMonth[currentMonth] ?? [])].sort((a, b) => b.amount - a.amount);
 
   // -----------------------------------------------------------------------
   // Goal progress (current month / quarter / year actuals vs goals)
@@ -239,10 +277,15 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     ownerName: MICHAEL_NAME,
     goals,
     progress,
+    pipeline,
     currentMrr,
     lifetimeRevenue,
     activeDealCount,
     dealsCreatedLast12mo,
+    currentMrrDeals,
+    lifetimeDeals,
+    activeDeals,
+    dealsCreated12moDeals,
     monthlyRevenue,
     newRevenuePerMonth,
     dealsCreatedPerMonth,

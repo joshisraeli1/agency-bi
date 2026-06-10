@@ -1,9 +1,9 @@
 import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
-import { formatCurrency, formatMonth } from "@/lib/utils";
-import { StatCard } from "@/components/charts/stat-card";
+import { formatMonth } from "@/lib/utils";
 import { MichaelCharts } from "@/components/dashboard/michael-charts";
 import { MichaelGoals } from "@/components/dashboard/michael-goals";
-import { DollarSign, TrendingUp, FileCheck, FilePlus } from "lucide-react";
+import { MichaelTiles } from "@/components/dashboard/michael-tiles";
+import { MichaelPipelineChart } from "@/components/dashboard/michael-pipeline-chart";
 
 export default async function MichaelPage() {
   const data = await getMichaelSalesData();
@@ -33,32 +33,18 @@ export default async function MichaelPage() {
         <p className="text-muted-foreground mt-1">Sales activity · last 24 months</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Current MRR"
-          value={formatCurrency(data.currentMrr)}
-          description="Recurring revenue this month"
-          icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Lifetime Revenue"
-          value={formatCurrency(data.lifetimeRevenue)}
-          description="All-time recurring revenue owned"
-          icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Active Deals"
-          value={String(data.activeDealCount)}
-          description="Closed-won, not churned"
-          icon={<FileCheck className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Deals Created (12mo)"
-          value={String(data.dealsCreatedLast12mo)}
-          description="Added to pipeline"
-          icon={<FilePlus className="h-4 w-4 text-muted-foreground" />}
-        />
-      </div>
+      <MichaelTiles
+        currentMrr={data.currentMrr}
+        currentMrrDeals={data.currentMrrDeals}
+        lifetimeRevenue={data.lifetimeRevenue}
+        lifetimeDeals={data.lifetimeDeals}
+        activeDealCount={data.activeDealCount}
+        activeDeals={data.activeDeals}
+        dealsCreatedLast12mo={data.dealsCreatedLast12mo}
+        dealsCreated12moDeals={data.dealsCreated12moDeals}
+      />
+
+      <MichaelPipelineChart data={data.pipeline} />
 
       <MichaelGoals goals={data.goals} progress={data.progress} />
 

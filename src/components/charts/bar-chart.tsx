@@ -23,6 +23,8 @@ interface BarChartCardProps {
   stacked?: boolean;
   horizontal?: boolean;
   formatY?: (value: number) => string;
+  /** When set, clicking a bar calls this with the category (xKey) value. */
+  onBarClick?: (category: string) => void;
 }
 
 export function BarChartCard({
@@ -35,6 +37,7 @@ export function BarChartCard({
   stacked = false,
   horizontal = false,
   formatY,
+  onBarClick,
 }: BarChartCardProps) {
   return (
     <Card>
@@ -80,6 +83,16 @@ export function BarChartCard({
                 stackId={stacked ? "stack" : undefined}
                 fill={getChartColor(i)}
                 radius={stacked ? undefined : [4, 4, 0, 0]}
+                cursor={onBarClick ? "pointer" : undefined}
+                onClick={
+                  onBarClick
+                    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      (e: any) => {
+                        const cat = e?.payload?.[xKey];
+                        if (cat != null) onBarClick(String(cat));
+                      }
+                    : undefined
+                }
               />
             ))}
           </BarChart>

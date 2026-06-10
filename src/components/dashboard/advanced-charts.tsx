@@ -21,6 +21,29 @@ interface Props {
   kpiData: AgencyKPIs;
 }
 
+function DrillPanel({ title, items, onClose }: { title: string; items: { name: string; amount: number }[]; onClose: () => void }) {
+  return (
+    <div className="rounded-lg border p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold">{title} — {items.length} client{items.length !== 1 ? "s" : ""}</h4>
+        <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No clients.</p>
+      ) : (
+        <div className="space-y-1">
+          {items.map((d, i) => (
+            <div key={`${d.name}-${i}`} className="flex items-center justify-between text-sm border-b py-1 last:border-0">
+              <span className="truncate mr-2">{d.name}</span>
+              <span className="tabular-nums text-muted-foreground">{formatCurrency(d.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AdvancedCharts({
   ltv,
   clientHealth,
@@ -33,8 +56,9 @@ export function AdvancedCharts({
   const allHealth = clientHealth.clients.map((c) => ({
     name: c.clientName,
     id: c.clientId,
-    x: c.monthlyRevenue ?? Math.round(c.revenue / Math.max(1, c.monthsRetained)),
-    y: c.monthsRetained,
+    // X = months retained, Y = monthly revenue (revenue up the side reads better).
+    x: c.monthsRetained,
+    y: c.monthlyRevenue ?? Math.round(c.revenue / Math.max(1, c.monthsRetained)),
     z: ltvByClient.get(c.clientId) ?? Math.round((c.monthlyRevenue ?? 0) * c.monthsRetained),
     division: c.division,
   }));
@@ -70,6 +94,20 @@ export function AdvancedCharts({
 
   const fmtCurrency = (v: number) => formatCurrency(v);
 
+  // Drill-downs for the cohort + industry bar charts, derived from ltv.clients.
+  const [selectedCohort, setSelectedCohort] = useState<string | null>(null);
+  const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
+  const cohortClients = new Map<string, { name: string; amount: number }[]>();
+  const industryClients = new Map<string, { name: string; amount: number }[]>();
+  for (const c of ltv.clients) {
+    const sd = new Date(c.startDate);
+    const cohort = `Q${Math.floor(sd.getMonth() / 3) + 1} ${sd.getFullYear()}`;
+    (cohortClients.get(cohort) ?? cohortClients.set(cohort, []).get(cohort)!).push({ name: c.clientName, amount: Math.round(c.totalRevenue) });
+    const ind = c.industry || "Unknown";
+    (industryClients.get(ind) ?? industryClients.set(ind, []).get(ind)!).push({ name: c.clientName, amount: Math.round(c.totalRevenue) });
+  }
+  for (const map of [cohortClients, industryClients]) for (const arr of map.values()) arr.sort((a, b) => b.amount - a.amount);
+
   return (
     <div className="space-y-6">
       {/* 1. Client Health Matrix */}
@@ -77,7 +115,7 @@ export function AdvancedCharts({
         <div>
           <h2 className="text-xl font-semibold">Client Health Matrix</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Monthly revenue vs months retained, by division
+            Months retained vs monthly revenue, by division
           </p>
         </div>
         <Select value={healthDivision} onValueChange={setHealthDivision}>
@@ -97,11 +135,11 @@ export function AdvancedCharts({
         <ScatterChartCard
           title="Client Health Matrix"
           data={healthData}
-          xLabel="Monthly Revenue"
-          yLabel="Months Retained"
+          xLabel="Months Retained"
+          yLabel="Monthly Revenue"
           zLabel="LTV"
-          formatX={fmtCurrency}
-          formatY={(v) => `${v}`}
+          formatX={(v) => `${v}`}
+          formatY={fmtCurrency}
           formatZ={fmtCurrency}
           clickHrefBase="/clients"
         />
@@ -124,6 +162,7 @@ export function AdvancedCharts({
             yKeys={["avgLTV"]}
             yLabels={["Avg LTV"]}
             formatY={fmtCurrency}
+            onBarClick={(c) => setSelectedCohort((p) => (p === c ? null : c))}
           />
         )}
         {industryLtvData.length > 0 && (
@@ -135,9 +174,16 @@ export function AdvancedCharts({
             yLabels={["Avg LTV"]}
             horizontal
             formatY={fmtCurrency}
+            onBarClick={(i) => setSelectedIndustry((p) => (p === i ? null : i))}
           />
         )}
       </div>
+      {selectedCohort && (
+        <DrillPanel title={`Cohort ${selectedCohort}`} items={cohortClients.get(selectedCohort) ?? []} onClose={() => setSelectedCohort(null)} />
+      )}
+      {selectedIndustry && (
+        <DrillPanel title={selectedIndustry} items={industryClients.get(selectedIndustry) ?? []} onClose={() => setSelectedIndustry(null)} />
+      )}
 
       {/* Clients by Industry Type */}
       <div>
@@ -156,6 +202,7 @@ export function AdvancedCharts({
           yLabels={["Active", "Churned"]}
           horizontal
           stacked
+          onBarClick={(i) => setSelectedIndustry((p) => (p === i ? null : i))}
           height={Math.max(300, industryBreakdownData.length * 35)}
         />
       )}

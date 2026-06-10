@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { BarChartCard } from "@/components/charts/bar-chart";
-import { LineChartCard } from "@/components/charts/line-chart";
+import { RevenueByServiceLineChart } from "@/components/dashboard/revenue-by-service-line-chart";
 import { Button } from "@/components/ui/button";
 import { formatMonth, formatCurrency } from "@/lib/utils";
 import type { RevenueOverview } from "@/lib/analytics/types";
@@ -83,13 +83,8 @@ export function RevenueCharts({ data }: Props) {
         />
       </div>
 
-      <LineChartCard
-        title="Revenue by Service Line"
-        data={data.divisionRevenueTrend}
-        xKey="month"
-        yKeys={["Content Delivery", "Social Media Management", "Ads Management"]}
-        yLabels={["Content Delivery", "Social Media Management", "Ads Management"]}
-        formatY={fmtCurrency}
+      <RevenueByServiceLineChart
+        data={data.divisionRevenueTrend as unknown as Parameters<typeof RevenueByServiceLineChart>[0]["data"]}
       />
     </div>
   );
