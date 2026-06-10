@@ -24,6 +24,7 @@ const STAGE_LABELS: Record<string, string> = {
   "73380172": "Very Warm",
   "143813234": "Contract out",
   "98068645": "Closed Won",
+  "1367663138": "Current (Not Paying)",
   "1086044538": "Churned but still active",
   "73380176": "Legacy Urban Swan Sales",
   "114291350": "Churned",

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { getRevenueOverview, getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
 import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
+import { getRevenueForecast } from "@/lib/analytics/forecast";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/charts/stat-card";
@@ -10,6 +11,7 @@ import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
+import { RevenueForecastSection } from "@/components/dashboard/revenue-forecast-section";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { RefreshDataButton } from "@/components/dashboard/refresh-data-button";
 import { Users, TrendingUp, AlertTriangle, Calendar, Receipt } from "lucide-react";
@@ -22,12 +24,13 @@ export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "12", 10);
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
     getRevenueVsChurn(12),
     getActiveRevenueSnapshot(),
+    getRevenueForecast(6),
   ]);
 
   // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
@@ -94,6 +97,8 @@ export default async function OverviewPage({ searchParams }: Props) {
       <RevenueCharts data={revenue} />
 
       <RevenueVsChurnChart data={revenueVsChurn} />
+
+      <RevenueForecastSection data={forecast} />
 
       <RevenueByPackageChart
         data={activeSnapshot.byPackageType}
