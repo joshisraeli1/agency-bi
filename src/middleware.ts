@@ -29,6 +29,7 @@ function readValidPayload(token: string): { totpEnabled?: boolean } | null {
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
+  "/api/auth/google", // start + /callback — must run pre-session
   "/api/integrations/xero/callback",
   "/api/integrations/gmail/callback",
   "/api/integrations/calendar/callback",
