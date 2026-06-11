@@ -48,6 +48,7 @@ interface Props {
 }
 
 interface Selection {
+  source: "mrr" | "deals" | "newrev";
   title: string;
   deals: DealRef[];
   formatAmount: boolean;
@@ -65,10 +66,10 @@ export function MichaelCharts({
   newRevGoal,
 }: Props) {
   const [selected, setSelected] = useState<Selection | null>(null);
-
-  const drill = (
-    <DrillPanel selected={selected} onClose={() => setSelected(null)} />
-  );
+  const panelFor = (source: Selection["source"]) =>
+    selected?.source === source ? (
+      <DrillPanel selected={selected} onClose={() => setSelected(null)} />
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -93,7 +94,7 @@ export function MichaelCharts({
                 cursor="pointer"
                 onClick={(_, index) => {
                   const d = revenueData[index];
-                  if (d) setSelected({ title: `MRR — ${d.month}`, deals: d.deals ?? [], formatAmount: true });
+                  if (d) setSelected({ source: "mrr", title: `MRR — ${d.month}`, deals: d.deals ?? [], formatAmount: true });
                 }}
               >
                 {revenueData.map((d, i) => (
@@ -105,6 +106,7 @@ export function MichaelCharts({
           <p className="text-xs text-muted-foreground mt-2">Click a bar to see the deals making up that month.</p>
         </CardContent>
       </Card>
+      {panelFor("mrr")}
 
       {/* New deals created vs goal — clickable */}
       <Card>
@@ -127,7 +129,7 @@ export function MichaelCharts({
                 cursor="pointer"
                 onClick={(_, index) => {
                   const d = dealsCreatedData[index];
-                  if (d) setSelected({ title: `Deals created — ${d.month}`, deals: d.dealList ?? [], formatAmount: true });
+                  if (d) setSelected({ source: "deals", title: `Deals created — ${d.month}`, deals: d.dealList ?? [], formatAmount: true });
                 }}
               >
                 {dealsCreatedData.map((d, i) => (
@@ -139,6 +141,7 @@ export function MichaelCharts({
           <p className="text-xs text-muted-foreground mt-2">Click a bar to see which deals were created that month.</p>
         </CardContent>
       </Card>
+      {panelFor("deals")}
 
       {/* New revenue won per month vs goal — clickable */}
       <Card>
@@ -161,7 +164,7 @@ export function MichaelCharts({
                 cursor="pointer"
                 onClick={(_, index) => {
                   const d = newRevenueData[index];
-                  if (d) setSelected({ title: `New revenue — ${d.month}`, deals: d.deals ?? [], formatAmount: true });
+                  if (d) setSelected({ source: "newrev", title: `New revenue — ${d.month}`, deals: d.deals ?? [], formatAmount: true });
                 }}
               >
                 {newRevenueData.map((d, i) => (
@@ -173,8 +176,7 @@ export function MichaelCharts({
           <p className="text-xs text-muted-foreground mt-2">Click a bar to see the deals won that month.</p>
         </CardContent>
       </Card>
-
-      {drill}
+      {panelFor("newrev")}
     </div>
   );
 }

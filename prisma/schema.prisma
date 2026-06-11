@@ -124,6 +124,7 @@ model HubspotDeal {
   churnDate          DateTime?
   contentPackageType String?
   packageDescription String? // HubSpot "Package Description" — Legacy|One-off|Combo|Other|Upsell
+  commissionType     String? // HubSpot "Commission Type" — Support|Owned (Owned → 9% commission)
   industry           String?
   lastSyncedAt       DateTime  @default(now())
   createdAt          DateTime  @default(now())

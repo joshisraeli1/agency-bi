@@ -4,6 +4,7 @@ import { MichaelCharts } from "@/components/dashboard/michael-charts";
 import { MichaelGoals } from "@/components/dashboard/michael-goals";
 import { MichaelTiles } from "@/components/dashboard/michael-tiles";
 import { MichaelPipelineChart } from "@/components/dashboard/michael-pipeline-chart";
+import { MichaelCommissionSection } from "@/components/dashboard/michael-commission";
 
 export default async function MichaelPage() {
   const data = await getMichaelSalesData();
@@ -32,6 +33,8 @@ export default async function MichaelPage() {
         <h1 className="text-3xl font-bold">{data.ownerName}</h1>
         <p className="text-muted-foreground mt-1">Sales activity · last 24 months</p>
       </div>
+
+      <MichaelCommissionSection data={data.commission} />
 
       <MichaelTiles
         currentMrr={data.currentMrr}
