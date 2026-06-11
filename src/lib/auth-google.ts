@@ -8,7 +8,10 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo";
 
 function redirectUri(): string {
-  return `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/callback`;
+  // Trim stray whitespace/newlines + trailing slash — a newline in the Vercel
+  // env var was corrupting the redirect_uri (…vercel.app%0A/api/…).
+  const base = (process.env.NEXT_PUBLIC_APP_URL || "").trim().replace(/\/+$/, "");
+  return `${base}/api/auth/google/callback`;
 }
 
 export function getGoogleAuthUrl(state: string): string {
