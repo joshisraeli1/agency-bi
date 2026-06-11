@@ -20,12 +20,19 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
+  const errorParam = searchParams.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpToken, setTotpToken] = useState("");
   const [step, setStep] = useState<"credentials" | "totp">("credentials");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    errorParam === "domain"
+      ? "Only @swan.studio Google accounts can sign in here."
+      : errorParam === "oauth"
+        ? "Google sign-in failed. Please try again."
+        : ""
+  );
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -125,6 +132,26 @@ function LoginForm() {
               {loading ? "Signing in..." : step === "totp" ? "Verify" : "Sign In"}
             </Button>
           </form>
+
+          {step === "credentials" && (
+            <>
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => { window.location.href = `/api/auth/google?redirect=${encodeURIComponent(redirect)}`; }}
+              >
+                Sign in with Google
+              </Button>
+              <p className="text-xs text-muted-foreground text-center mt-2">Swan Studio accounts only</p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
