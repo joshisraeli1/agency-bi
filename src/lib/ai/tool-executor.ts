@@ -196,6 +196,14 @@ export async function executeTool(
       );
     }
 
+    case "query_division_revenue": {
+      // Deal-based monthly revenue per division (Content Delivery / SMM / Ads),
+      // each month carrying the deals that make it up — the correct source for
+      // "how big was division X in month Y" questions.
+      const ov = await getRevenueOverview((input.months as number) || 12);
+      return ov.divisionRevenueTrend;
+    }
+
     case "get_revenue_overview": {
       return await getRevenueOverview((input.months as number) || 6);
     }

@@ -24,6 +24,7 @@ export async function getSystemPrompt(): Promise<string> {
 ## Revenue Data Rules
 - All revenue figures are ex-GST (exclusive of Goods & Services Tax).
 - HubSpot is the single source of truth for client revenue and profitability.
+- **Division / service-line revenue (Content Delivery, Social Media Management, Ads Management) and revenue-by-month come from the deal-based analytics — use the \`query_division_revenue\` tool (or \`get_revenue_overview\`), NOT \`query_financials\`.** \`query_financials\` aggregates records by type (retainer/cost/hours) and has no division breakdown, so never use it to answer "how big is division X" or per-month division questions.
 - Client counts reflect only HubSpot-linked clients (excludes Monday-only duplicates).
 - Operational data (time tracking) comes from Monday.com.
 

@@ -45,6 +45,22 @@ export const chatTools: Anthropic.Tool[] = [
     },
   },
   {
+    name: "query_division_revenue",
+    description:
+      "Monthly revenue per service line / division — Content Delivery, Social Media Management, Ads Management — ex-GST and deal-based (the source of truth for division revenue by month). USE THIS for any question about a division's size or service-line revenue in a specific month or over time, e.g. 'how big was the Ads Management division in Jan 2026'. Each month entry has the three division totals plus the list of deals making up each division. Prefer this over query_financials for division or per-month revenue (query_financials is not broken down by division).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        months: {
+          type: "number",
+          description:
+            "Number of recent months to include (default 12). Returns an array of { month, 'Content Delivery', 'Social Media Management', 'Ads Management', deals } — read the month you need.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: "query_time_entries",
     description:
       "Query time tracking entries. Can filter by client, team member, date range. Returns hours, descriptions, team member names.",
