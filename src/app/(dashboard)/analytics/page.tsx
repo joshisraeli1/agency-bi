@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
-import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import { getActiveRevenueSnapshot, getDivisionGoals } from "@/lib/analytics/active-revenue";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
 import {
@@ -34,7 +33,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
   const months = parseInt(monthsParam || "6", 10);
   const [
-    revenueOverview,
     data,
     ltv,
     revenueByType,
@@ -50,7 +48,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     activeSnapshot,
     divisionGoals,
   ] = await Promise.all([
-    getRevenueOverview(months),
     getAgencyKPIs(months),
     getLTVData(),
     getRevenueByServiceType(months),
@@ -111,7 +108,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         />
         <StatCard
           title="Annualised Revenue"
-          value={formatCurrency(revenueOverview.annualizedRevenue)}
+          value={formatCurrency(monthlyRevenueExGst * 12)}
           icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
