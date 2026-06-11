@@ -19,13 +19,15 @@ export function MichaelCommissionSection({ data }: { data: MichaelCommission }) 
               Commission
             </CardTitle>
             <p className="text-muted-foreground text-sm mt-1">
-              $185/meeting booked (June $175) + 9% of each &ldquo;Owned&rdquo; deal&apos;s monthly value for 6 months. Click a month for detail.
+              $185/meeting booked (June $175) + 9% (Owned) / 1.75% (Support) of each deal&apos;s monthly value for 6 months. Click a month for detail.
             </p>
           </div>
           <div className="text-right">
             <div className="text-xs uppercase tracking-wide text-muted-foreground">This month</div>
             <div className="text-3xl font-bold tabular-nums">{formatCurrency(data.currentMonthTotal)}</div>
-            <div className="text-xs text-muted-foreground mt-1">{formatCurrency(data.total)} total (from May 2026)</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {formatCurrency(data.total)} total{data.months.length ? ` (from ${formatMonth(data.months[0].month)})` : ""}
+            </div>
           </div>
         </div>
       </CardHeader>
@@ -64,7 +66,7 @@ export function MichaelCommissionSection({ data }: { data: MichaelCommission }) 
                       m.ownedDeals.map((d, i) => (
                         <tr key={`${m.month}-${d.name}-${i}`} className="bg-muted/30 text-xs">
                           <td className="py-1 px-3 pl-8 text-muted-foreground" colSpan={4}>
-                            {d.name} <span className="text-muted-foreground">(9% / mo)</span>
+                            {d.name} <span className="text-muted-foreground">({d.rate}% / mo)</span>
                           </td>
                           <td className="text-right py-1 px-3 tabular-nums text-muted-foreground">{formatCurrency(d.monthly)}</td>
                         </tr>

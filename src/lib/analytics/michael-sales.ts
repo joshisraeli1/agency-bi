@@ -89,7 +89,7 @@ export interface CommissionMonth {
   meetingCommission: number;
   dealCommission: number;
   total: number;
-  ownedDeals: { name: string; monthly: number }[];
+  ownedDeals: { name: string; monthly: number; rate: number }[];
 }
 
 export interface MichaelCommission {
@@ -186,7 +186,6 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   //   - Deal commission: deals tagged commission_type="Owned" pay 9% of the
   //     deal's monthly ex-GST value, every month for 6 months from its start.
   // -----------------------------------------------------------------------
-  const COMMISSION_START = "2026-05";
   const meetingRate = (m: string) => (m === "2026-06" ? 175 : 185);
   const mIdx = (k: string) => { const [y, mo] = k.split("-").map(Number); return y * 12 + (mo - 1); };
   const mFromIdx = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
@@ -197,24 +196,32 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
     if (k) meetingsByMonth.set(k, (meetingsByMonth.get(k) || 0) + 1);
   }
 
-  const ownedComm = deals
-    .filter((d) => d.commissionType === "Owned")
+  // Deals on commission: Owned = 9%, Support = 1.75%, of the deal's monthly
+  // ex-GST value, each month for 6 months from the deal's start.
+  const commDeals = deals
+    .filter((d) => d.commissionType === "Owned" || d.commissionType === "Support")
     .map((d) => {
       const startK = toMonthKey(d.startDate ?? d.closeDate);
       const monthlyEx = d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0);
-      return { startK, name: d.name, monthly: 0.09 * monthlyEx };
+      const rate = d.commissionType === "Owned" ? 9 : 1.75;
+      return { startK, name: d.name, rate, monthly: (rate / 100) * monthlyEx };
     })
-    .filter((d): d is { startK: string; name: string; monthly: number } => d.startK !== null);
+    .filter((d): d is { startK: string; name: string; rate: number; monthly: number } => d.startK !== null);
 
-  let commEndIdx = mIdx(currentMonth);
-  for (const d of ownedComm) commEndIdx = Math.max(commEndIdx, mIdx(d.startK) + 5);
+  // Window: earliest commission-deal start (so 2025 "Owned" deals show) through
+  // the later of the current month and the latest 6-month window end.
+  const startIdx = commDeals.length
+    ? Math.min(...commDeals.map((d) => mIdx(d.startK)))
+    : mIdx(currentMonth) - 1;
+  let endIdx = mIdx(currentMonth);
+  for (const d of commDeals) endIdx = Math.max(endIdx, mIdx(d.startK) + 5);
 
   const commissionMonths: CommissionMonth[] = [];
-  for (let i = mIdx(COMMISSION_START); i <= commEndIdx; i++) {
+  for (let i = startIdx; i <= endIdx; i++) {
     const month = mFromIdx(i);
     const meetingsBooked = meetingsByMonth.get(month) || 0;
     const meetingCommission = Math.round(meetingsBooked * meetingRate(month));
-    const ownedThis = ownedComm.filter((d) => { const s = mIdx(d.startK); return i >= s && i <= s + 5; });
+    const ownedThis = commDeals.filter((d) => { const s = mIdx(d.startK); return i >= s && i <= s + 5; });
     const dealCommission = Math.round(ownedThis.reduce((s, d) => s + d.monthly, 0));
     commissionMonths.push({
       month,
@@ -222,7 +229,9 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
       meetingCommission,
       dealCommission,
       total: meetingCommission + dealCommission,
-      ownedDeals: ownedThis.map((d) => ({ name: d.name, monthly: Math.round(d.monthly) })).sort((a, b) => b.monthly - a.monthly),
+      ownedDeals: ownedThis
+        .map((d) => ({ name: d.name, monthly: Math.round(d.monthly), rate: d.rate }))
+        .sort((a, b) => b.monthly - a.monthly),
     });
   }
   const commission: MichaelCommission = {

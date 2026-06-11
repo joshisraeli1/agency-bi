@@ -50,7 +50,7 @@ interface Client {
   endDate: Date | string | null;
   ltv?: number | null;
   division: string;
-  _count: { timeEntries: number; aliases: number };
+  _count: { aliases: number };
 }
 
 type ServiceFilter = "all" | "content" | "social" | "ads";
@@ -283,7 +283,6 @@ export function ClientsActions({
                     LTV{sortArrow("ltv")}
                   </TableHead>
                   <TableHead>Industry</TableHead>
-                  <TableHead className="text-right">Entries</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -324,9 +323,6 @@ export function ClientsActions({
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={client.industry || ""}>
                       {client.industry || "\u2014"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {client._count.timeEntries}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>

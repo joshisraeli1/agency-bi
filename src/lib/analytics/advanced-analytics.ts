@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { clientDisplayName } from "./client-name";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -103,40 +102,16 @@ export async function getLTVData(): Promise<LTVData> {
   const now = new Date();
   const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
 
-  // Calculate actual tenure for churned clients to derive average churned tenure
-  const churnedTenures: number[] = [];
-  for (const c of clients) {
-    if (c.status === "churned" && c.startDate && c.endDate) {
-      const tenure = Math.max(1, Math.round(
-        (new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / MS_PER_MONTH
-      ));
-      churnedTenures.push(tenure);
-    }
-  }
-  const avgChurnedTenure = churnedTenures.length > 0
-    ? churnedTenures.reduce((a, b) => a + b, 0) / churnedTenures.length
-    : 12; // default fallback if no churned data
-
   const clientData = clients.map((c) => {
     const mrr = clientMrr.get(c.id) || 0;
     const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
 
-    let monthsActive: number;
-    if (c.status === "churned" && c.endDate) {
-      // Churned: use actual tenure from startDate to endDate
-      monthsActive = Math.max(1, Math.round(
-        (new Date(c.endDate).getTime() - effectiveStart.getTime()) / MS_PER_MONTH
-      ));
-    } else {
-      // Active: use avg churned tenure as projected lifetime, or current tenure if longer
-      const currentTenure = Math.max(1, Math.round(
-        (now.getTime() - effectiveStart.getTime()) / MS_PER_MONTH
-      ));
-      monthsActive = Math.max(currentTenure, Math.round(avgChurnedTenure));
-    }
+    // Months active = ACTUAL tenure (start → end for churned, start → now for
+    // active). No projection — LTV is revenue earned to date, not forecast.
+    const endMs = c.status === "churned" && c.endDate ? new Date(c.endDate).getTime() : now.getTime();
+    const monthsActive = Math.max(1, Math.round((endMs - effectiveStart.getTime()) / MS_PER_MONTH));
 
-    // Lifetime value = monthly MRR × months active (deal-based, not the old
-    // double-counted FinancialRecord sum).
+    // Lifetime value = monthly MRR × actual months (deal-based).
     const totalRevenue = mrr * monthsActive;
 
     return {
@@ -648,45 +623,45 @@ export async function getNewClientDealSize(
 ): Promise<NewClientDealSizeData> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, clients] = await Promise.all([
+  // Deal-based movement (consistent with New Revenue vs Churn): a deal is "new"
+  // in its start month and "churned" in its churn month. Keying off Client.endDate
+  // missed churn the client record hadn't been updated for (e.g. June's mycar /
+  // Stockspot / Chill Chair, which have a deal churnDate but no client endDate).
+  const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
-    db.client.findMany({
-      where: {
-        hubspotDealId: { not: null },
-        status: { not: "prospect" },
-      },
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
       select: {
         id: true,
+        clientId: true,
         name: true,
+        amountExGst: true,
+        amount: true,
         startDate: true,
-        endDate: true,
-        retainerValue: true,
+        closeDate: true,
+        churnDate: true,
         contentPackageType: true,
-        hubspotDeals: { where: { stage: "closed_won" }, select: { name: true } },
       },
     }),
   ]);
 
-  const filteredClients = clients
-    .filter((c) => !excludedIds.has(c.id))
-    .map((c) => ({ ...c, name: clientDisplayName(c.name, c.hubspotDeals.map((d) => d.name)) }));
+  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)));
+  const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(d) : null);
+  const dealSizeOf = (d: { amountExGst: number | null; amount: number | null }) =>
+    Math.round(d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0));
+  const toRow = (d: (typeof visible)[number]) => ({
+    clientId: d.clientId ?? d.id,
+    clientName: d.name,
+    dealSize: dealSizeOf(d),
+    division: getClientDivision(d.contentPackageType),
+  });
 
-  // New clients by start month
+  // New deals by start month (fallback closeDate)
   const newMonths = monthRange.map((month) => {
-    const newClients = filteredClients.filter((c) => {
-      if (!c.startDate) return false;
-      return toMonthKey(c.startDate) === month;
-    });
-
-    const clientsWithDeal = newClients.map((c) => ({
-      clientId: c.id,
-      clientName: c.name,
-      dealSize: Math.round(c.retainerValue || 0),
-      division: getClientDivision(c.contentPackageType),
-    }));
-
+    const clientsWithDeal = visible
+      .filter((d) => mk(d.startDate ?? d.closeDate) === month)
+      .map(toRow);
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
-
     return {
       month,
       clients: clientsWithDeal,
@@ -696,22 +671,12 @@ export async function getNewClientDealSize(
     };
   });
 
-  // Churned clients by end month
+  // Churned deals by churn month
   const churnedMonths = monthRange.map((month) => {
-    const churnedClients = filteredClients.filter((c) => {
-      if (!c.endDate) return false;
-      return toMonthKey(c.endDate) === month;
-    });
-
-    const clientsWithDeal = churnedClients.map((c) => ({
-      clientId: c.id,
-      clientName: c.name,
-      dealSize: Math.round(c.retainerValue || 0),
-      division: getClientDivision(c.contentPackageType),
-    }));
-
+    const clientsWithDeal = visible
+      .filter((d) => mk(d.churnDate) === month)
+      .map(toRow);
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
-
     return {
       month,
       clients: clientsWithDeal,
