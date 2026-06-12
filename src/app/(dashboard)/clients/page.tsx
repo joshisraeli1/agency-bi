@@ -34,7 +34,7 @@ export default async function ClientsPage() {
     divisionRevenue[label] += p.revenue;
   }
 
-  const dealSelect = { name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true } as const;
+  const dealSelect = { name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true } as const;
   const raw = await db.client.findMany({
     where: { status: "active", hubspotDealId: { not: null } },
     orderBy: { name: "asc" },
@@ -93,24 +93,44 @@ export default async function ClientsPage() {
     const dealSize = dealRetainer > 0 ? dealRetainer : (c.retainerValue ?? 0);
     const primary = [...folded].sort((a, b) => (b.amountExGst ?? b.amount ?? 0) - (a.amountExGst ?? a.amount ?? 0))[0];
 
-    // LTV = deal size × actual months as a client (no projection).
-    const startMs = c.startDate ? new Date(c.startDate).getTime() : now;
+    // LTV = each deal's monthly value × months since THAT deal started, so a
+    // recent upsell only counts from its start, not retroactively across the
+    // whole tenure (revenue actually earned to date).
     const endMs = c.endDate ? new Date(c.endDate).getTime() : now;
-    const tenureMonths = Math.max(1, Math.round((endMs - startMs) / MS_PER_MONTH));
+    const ltvVal = allDeals.reduce((sum, d) => {
+      const monthly = d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0);
+      if (monthly <= 0) return sum;
+      const ds = d.startDate ?? d.closeDate ?? c.startDate;
+      const startMs = ds ? new Date(ds).getTime() : now;
+      const months = Math.max(1, Math.round((endMs - startMs) / MS_PER_MONTH));
+      return sum + monthly * months;
+    }, 0);
 
     return {
       ...c,
       // Show a readable name when the HubSpot company name is uninformative.
       name: clientDisplayName(c.name, allDeals.map((d) => d.name)),
       retainerValue: dealSize,
-      ltv: dealSize > 0 ? dealSize * tenureMonths : null,
+      ltv: ltvVal > 0 ? Math.round(ltvVal) : null,
       division: clientDivision(primary?.contentPackageType),
     };
   });
 
+  // Collapse duplicate client records that resolve to the same display name
+  // (e.g. a "Gem" record and a "Blue Light Card" record for the same company),
+  // keeping the higher-LTV one. Division totals are unaffected (they come from
+  // the deal-based snapshot, not these rows).
+  const byDisplayName = new Map<string, (typeof clients)[number]>();
+  for (const c of clients) {
+    const key = norm(c.name);
+    const existing = byDisplayName.get(key);
+    if (!existing || (c.ltv ?? 0) > (existing.ltv ?? 0)) byDisplayName.set(key, c);
+  }
+  const deduped = [...byDisplayName.values()];
+
   return (
     <div className="space-y-6">
-      <ClientsActions clients={clients} divisionRevenue={divisionRevenue} />
+      <ClientsActions clients={deduped} divisionRevenue={divisionRevenue} />
     </div>
   );
 }
