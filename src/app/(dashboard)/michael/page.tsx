@@ -34,8 +34,6 @@ export default async function MichaelPage() {
         <p className="text-muted-foreground mt-1">Sales activity · last 24 months</p>
       </div>
 
-      <MichaelCommissionSection data={data.commission} />
-
       <MichaelTiles
         currentMrr={data.currentMrr}
         currentMrrDeals={data.currentMrrDeals}
@@ -59,6 +57,8 @@ export default async function MichaelPage() {
         dealsGoal={data.goals.dealsCreated.monthly}
         newRevGoal={data.goals.newRevenue.monthly}
       />
+
+      <MichaelCommissionSection data={data.commission} />
     </div>
   );
 }
