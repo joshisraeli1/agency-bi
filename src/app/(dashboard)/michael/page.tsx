@@ -45,8 +45,6 @@ export default async function MichaelPage() {
         dealsCreated12moDeals={data.dealsCreated12moDeals}
       />
 
-      <MichaelPipelineChart data={data.pipeline} />
-
       <MichaelGoals goals={data.goals} progress={data.progress} />
 
       <MichaelCharts
@@ -56,6 +54,7 @@ export default async function MichaelPage() {
         mrrGoal={data.goals.recurringRevenue}
         dealsGoal={data.goals.dealsCreated.monthly}
         newRevGoal={data.goals.newRevenue.monthly}
+        slotBeforeNewRevenue={<MichaelPipelineChart data={data.pipeline} />}
       />
 
       <MichaelCommissionSection data={data.commission} />

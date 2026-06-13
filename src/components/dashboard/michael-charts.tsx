@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   BarChart,
   Bar,
@@ -45,6 +45,8 @@ interface Props {
   mrrGoal: number;
   dealsGoal: number;
   newRevGoal: number;
+  /** Rendered between "New Deals Created" and "New Revenue Won". */
+  slotBeforeNewRevenue?: ReactNode;
 }
 
 interface Selection {
@@ -64,6 +66,7 @@ export function MichaelCharts({
   mrrGoal,
   dealsGoal,
   newRevGoal,
+  slotBeforeNewRevenue,
 }: Props) {
   const [selected, setSelected] = useState<Selection | null>(null);
   const panelFor = (source: Selection["source"]) =>
@@ -142,6 +145,8 @@ export function MichaelCharts({
         </CardContent>
       </Card>
       {panelFor("deals")}
+
+      {slotBeforeNewRevenue}
 
       {/* New revenue won per month vs goal — clickable */}
       <Card>
