@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost, parseDivisionAllocations } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { autoMapAccountToDivision, DIVISIONS } from "./cost-allocation";
+import { mapAccountToDivisions, DIVISIONS } from "./cost-allocation";
 import { foldUpsells, dealDivision } from "./upsells";
 import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
@@ -378,8 +378,16 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   const divXeroCost = new Map<string, number>();
   for (const r of xeroCostRecords) {
     const account = r.category || "";
-    const div = costOverrides[account] ?? autoMapAccountToDivision(account);
-    divXeroCost.set(div, (divXeroCost.get(div) || 0) + r.amount);
+    // Manual override (Settings → Cost Allocation) wins; else map per the
+    // P&L-restructure doc, splitting shared costs (e.g. video editors 50/50).
+    const override = costOverrides[account];
+    if (override) {
+      divXeroCost.set(override, (divXeroCost.get(override) || 0) + r.amount);
+      continue;
+    }
+    for (const { division, weight } of mapAccountToDivisions(account)) {
+      divXeroCost.set(division, (divXeroCost.get(division) || 0) + r.amount * weight);
+    }
   }
 
   // Revenue = current deal MRR per division; cost = mapped Xero cost. Include

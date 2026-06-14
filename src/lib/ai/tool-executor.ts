@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { getMonthRange } from "@/lib/utils";
 import { getClientProfitability } from "@/lib/analytics/client-profitability";
-import { getTeamMemberUtilization } from "@/lib/analytics/team-utilization";
 import { getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 
@@ -185,13 +184,6 @@ export async function executeTool(
     case "get_client_profitability": {
       return await getClientProfitability(
         input.clientId as string,
-        (input.months as number) || 6
-      );
-    }
-
-    case "get_team_utilization": {
-      return await getTeamMemberUtilization(
-        input.memberId as string,
         (input.months as number) || 6
       );
     }

@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Users,
-  UserCog,
   Plug,
   GitMerge,
   Settings,
@@ -20,7 +19,6 @@ import {
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: Users },
-  { href: "/team", label: "Team", icon: UserCog },
   { href: "/client-data", label: "Client Data", icon: FileSpreadsheet },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/michael", label: "Michael", icon: TrendingUp },

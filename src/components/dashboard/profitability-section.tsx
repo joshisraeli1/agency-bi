@@ -154,10 +154,10 @@ export function ProfitabilitySection({
 }: Props) {
   return (
     <div className="space-y-6">
-      {/* HubSpot Profitability (revenue from HubSpot + team salary costs) */}
+      {/* Division profitability: HubSpot deal revenue vs Xero P&L costs */}
       <DivisionSummaryBlock
-        title="Profitability by Division (HubSpot)"
-        subtitle="Client retainer revenue vs team salary costs by division"
+        title="Profitability by Division"
+        subtitle="Client deal revenue vs Xero costs by division"
         data={hubspotProfitability}
       />
 

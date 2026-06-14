@@ -103,19 +103,6 @@ export const chatTools: Anthropic.Tool[] = [
     },
   },
   {
-    name: "get_team_utilization",
-    description:
-      "Get utilization analysis for a specific team member including hours, client allocation, and monthly trends.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        memberId: { type: "string", description: "The team member ID to analyze" },
-        months: { type: "number", description: "Number of months (default 6)" },
-      },
-      required: ["memberId"],
-    },
-  },
-  {
     name: "get_revenue_overview",
     description:
       "Get agency-wide revenue overview including trends, by-client breakdown, and at-risk clients.",
