@@ -1,7 +1,11 @@
 // Google sign-in (direct OAuth) — domain-restricted to swan.studio.
 // Mints the same signed session cookie as password login (see createSession).
 
-export const ALLOWED_DOMAIN = "swan.studio";
+export const ALLOWED_DOMAIN = "swan.studio"; // used only for the Google `hd` hint
+
+// Access is restricted to these specific accounts (both admins). Add an email
+// here to grant access; nobody else on the domain can sign in.
+export const ALLOWED_EMAILS = ["josh@swan.studio", "dean@swan.studio"];
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -69,8 +73,7 @@ export async function exchangeCodeForProfile(code: string): Promise<GoogleProfil
   };
 }
 
-/** True only for a verified email whose exact domain is the allowed Workspace. */
+/** True only for a verified email on the explicit allowlist. */
 export function isAllowedGoogleProfile(p: GoogleProfile): boolean {
-  const parts = p.email.split("@");
-  return p.emailVerified && parts.length === 2 && parts[1] === ALLOWED_DOMAIN;
+  return p.emailVerified && ALLOWED_EMAILS.includes(p.email.toLowerCase());
 }

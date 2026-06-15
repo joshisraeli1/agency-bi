@@ -28,7 +28,7 @@ function LoginForm() {
   const [step, setStep] = useState<"credentials" | "totp">("credentials");
   const [error, setError] = useState(
     errorParam === "domain"
-      ? "Only @swan.studio Google accounts can sign in here."
+      ? "This Google account isn't authorised for access."
       : errorParam === "oauth"
         ? "Google sign-in failed. Please try again."
         : ""

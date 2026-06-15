@@ -30,15 +30,15 @@ export async function GET(request: NextRequest) {
   }
   if (!isAllowedGoogleProfile(profile)) return fail("domain");
 
-  // Auto-provision new @swan.studio users as viewer; never change an existing
-  // user's role (so admins stay admins).
+  // Access is allowlisted (josh + dean), and both are admins — provision new
+  // ones as admin. Existing users keep their role (never downgraded).
   const user = await db.user.upsert({
     where: { email: profile.email },
     update: { name: profile.name, lastLoginAt: new Date() },
     create: {
       email: profile.email,
       name: profile.name,
-      role: "viewer",
+      role: "admin",
       passwordHash: await hashPassword(crypto.randomBytes(32).toString("hex")),
       totpEnabled: false,
     },
