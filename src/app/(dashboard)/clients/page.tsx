@@ -34,7 +34,7 @@ export default async function ClientsPage() {
     divisionRevenue[label] += p.revenue;
   }
 
-  const dealSelect = { name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true } as const;
+  const dealSelect = { name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true, churnDate: true } as const;
   const raw = await db.client.findMany({
     where: { status: "active", hubspotDealId: { not: null } },
     orderBy: { name: "asc" },
@@ -56,7 +56,7 @@ export default async function ClientsPage() {
       endDate: true,
       // Closed-won deals are the source of truth for pricing — Client.retainerValue
       // drifts stale, so derive the displayed retainer from the deals.
-      hubspotDeals: { where: { stage: "closed_won" }, select: dealSelect },
+      hubspotDeals: { where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] }, select: dealSelect },
       _count: { select: { aliases: true } },
     },
   });
@@ -84,27 +84,46 @@ export default async function ClientsPage() {
   }
 
   const now = Date.now();
+  const currentMonth = new Date(now).toISOString().slice(0, 7);
+  const dealChurnMonth = (d: { churnDate: Date | null }) =>
+    d.churnDate ? new Date(d.churnDate).toISOString().slice(0, 7) : null;
+  // A deal is still live if it's closed-won and hasn't churned (or churns in a
+  // future month). Once a deal's churn month is reached it's churned revenue.
+  const isLiveDeal = (d: { stage: string | null; churnDate: Date | null }) => {
+    const cm = dealChurnMonth(d);
+    return d.stage === "closed_won" && (!cm || cm > currentMonth);
+  };
+
   const clients = raw.map(({ hubspotDeals, ...c }) => {
-    // Company deal size = all the company's closed-won deals (linked + orphaned),
-    // with upsells folded onto their base deal.
+    // All of the company's deals (linked + orphaned), live and churned.
     const allDeals = [...hubspotDeals, ...(orphansByClient.get(c.id) ?? [])];
-    const { deals: folded } = foldUpsells(allDeals);
+    const liveDeals = allDeals.filter(isLiveDeal);
+
+    // Company deal size = the company's LIVE closed-won deals, upsells folded
+    // onto their base deal. Churned deals don't count toward current retainer.
+    const { deals: folded } = foldUpsells(liveDeals);
     const dealRetainer = folded.reduce((s, d) => s + (d.amountExGst ?? d.amount ?? 0), 0);
     const dealSize = dealRetainer > 0 ? dealRetainer : (c.retainerValue ?? 0);
     const primary = [...folded].sort((a, b) => (b.amountExGst ?? b.amount ?? 0) - (a.amountExGst ?? a.amount ?? 0))[0];
 
-    // LTV = each deal's monthly value × months since THAT deal started, so a
-    // recent upsell only counts from its start, not retroactively across the
-    // whole tenure (revenue actually earned to date).
-    const endMs = c.endDate ? new Date(c.endDate).getTime() : now;
+    // LTV = each deal's monthly value × months it was actually live (from THAT
+    // deal's start to its churn date, or to now if still live), so a recent
+    // upsell only counts from its start and a churned deal stops at churn.
     const ltvVal = allDeals.reduce((sum, d) => {
       const monthly = d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0);
       if (monthly <= 0) return sum;
       const ds = d.startDate ?? d.closeDate ?? c.startDate;
       const startMs = ds ? new Date(ds).getTime() : now;
+      const endMs = d.churnDate
+        ? new Date(d.churnDate).getTime()
+        : c.endDate ? new Date(c.endDate).getTime() : now;
       const months = Math.max(1, Math.round((endMs - startMs) / MS_PER_MONTH));
       return sum + monthly * months;
     }, 0);
+
+    // A client with deals but no live deal has churned — drop it from the
+    // active clients list (it shows in the Churn Rate chart instead).
+    const churned = allDeals.length > 0 && liveDeals.length === 0;
 
     return {
       ...c,
@@ -113,8 +132,9 @@ export default async function ClientsPage() {
       retainerValue: dealSize,
       ltv: ltvVal > 0 ? Math.round(ltvVal) : null,
       division: clientDivision(primary?.contentPackageType),
+      _churned: churned,
     };
-  });
+  }).filter((c) => !c._churned);
 
   // Collapse duplicate client records that resolve to the same display name
   // (e.g. a "Gem" record and a "Blue Light Card" record for the same company),

@@ -85,7 +85,9 @@ export function AdvancedCharts({
 
   // Industry breakdown (active vs churned)
   const industryBreakdownData = industryBreakdown.industries
-    .filter((d) => d.totalClients > 0)
+    // Drop clients with no real industry (the giant "Unknown" bucket — mostly
+    // legacy Urban Swan gift-card vendors) so the chart reads cleanly.
+    .filter((d) => d.totalClients > 0 && d.industry && !/^unknown$/i.test(d.industry.trim()))
     .map((d) => ({
       name: d.industry,
       activeClients: d.activeClients,

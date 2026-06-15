@@ -306,100 +306,49 @@ export async function getMonthlyChurn(
 ): Promise<MonthlyChurnData> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, allClients, deals] = await Promise.all([
+  const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
-    db.client.findMany({
-      where: {
-        status: { not: "prospect" },
-        hubspotDealId: { not: null },
-        startDate: { not: null },
-      },
-      select: {
-        id: true,
-        name: true,
-        startDate: true,
-        endDate: true,
-        retainerValue: true,
-        hubspotDealId: true,
-      },
-    }),
-    // Churned revenue must come from deal ex-GST amounts — the same source of
-    // truth as getRevenueVsChurn. client.retainerValue is unreliable here: some
-    // syncs store it inc-GST (sync-hubspot.ts) and reconciliation stores the
-    // all-deals total, both of which inflate "lost revenue".
+    // Deal-based churn: a deal churns in its churnDate month. Keying off
+    // Client.endDate missed churn the client record wasn't updated for (e.g.
+    // June's Chill Chair / mycar / Stockspot, which have a deal churnDate but
+    // no client endDate).
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { id: true, clientId: true, amount: true, amountExGst: true, churnDate: true },
+      select: { clientId: true, name: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true },
     }),
   ]);
 
-  const clients = allClients.filter((c) => !excludedIds.has(c.id));
-
-  // Ex-GST churned revenue keyed by `${clientId}|${month}`, summed across the
-  // client's deals that churned in that month (handles multi-deal clients).
-  const churnRevByClientMonth = new Map<string, number>();
-  // Ex-GST value of each deal by its HubSpot id, for joining a client to its
-  // linked deal (Client.hubspotDealId) when the deal carries no churnDate.
-  const dealExGstById = new Map<string, number>();
-  for (const d of deals) {
-    const exGst = d.amountExGst ?? d.amount ?? 0;
-    dealExGstById.set(d.id, exGst);
-    if (!d.churnDate || !d.clientId || excludedIds.has(d.clientId)) continue;
-    const key = `${d.clientId}|${toMonthKey(new Date(d.churnDate))}`;
-    churnRevByClientMonth.set(key, (churnRevByClientMonth.get(key) ?? 0) + exGst);
-  }
+  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)));
+  const ex = (d: { amountExGst: number | null; amount: number | null }) => Math.round(d.amountExGst ?? d.amount ?? 0);
+  const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(new Date(d)) : null);
 
   const rows = monthRange.map((month) => {
-    const monthStart = new Date(`${month}-01`);
-    const monthEnd = new Date(
-      monthStart.getFullYear(),
-      monthStart.getMonth() + 1,
-      0
-    );
-
-    // Active at start of month: started before month start AND not ended before month start
-    const activeAtStart = clients.filter((c) => {
-      if (!c.startDate) return false;
-      const start = new Date(c.startDate);
-      if (start > monthStart) return false;
-      if (c.endDate) {
-        const end = new Date(c.endDate);
-        return end >= monthStart;
-      }
-      return true;
+    // Active at start of month: a deal that started by this month and hasn't
+    // churned before it.
+    const activeAtStart = visible.filter((d) => {
+      const sk = mk(d.startDate ?? d.closeDate);
+      if (!sk || sk > month) return false;
+      const ck = mk(d.churnDate);
+      return !ck || ck >= month;
     }).length;
 
-    // Churned this month: endDate falls in this month
-    const churnedClients = clients.filter((c) => {
-      if (!c.endDate) return false;
-      return toMonthKey(new Date(c.endDate)) === month;
-    });
-
-    const churned = churnedClients.length;
+    // Churned this month: a deal whose churnDate falls in this month.
+    const churnedDeals = visible.filter((d) => mk(d.churnDate) === month);
+    const churned = churnedDeals.length;
     const churnPercent =
       activeAtStart > 0 ? Number(((churned / activeAtStart) * 100).toFixed(1)) : 0;
-
-    // Per-client lost revenue, ex-GST. Prefer the precise churn-month deal sum;
-    // then the client's linked deal (when its churnDate is absent); fall back to
-    // retainerValue only when the client has no deal at all.
-    const churnedDetailed = churnedClients.map((c) => ({
-      name: c.name,
-      revenue: Math.round(
-        churnRevByClientMonth.get(`${c.id}|${month}`) ??
-          (c.hubspotDealId ? dealExGstById.get(c.hubspotDealId) : undefined) ??
-          c.retainerValue ??
-          0
-      ),
-    }));
-    const churnedRevenue = churnedDetailed.reduce((s, c) => s + c.revenue, 0);
+    const churnedClientList = churnedDeals
+      .map((d) => ({ name: d.name, revenue: ex(d) }))
+      .sort((a, b) => b.revenue - a.revenue);
+    const churnedRevenue = churnedClientList.reduce((s, c) => s + c.revenue, 0);
 
     return {
       month,
       activeAtStart,
       churned,
       churnPercent,
-      churnedRevenue: Math.round(churnedRevenue),
-      churnedClientList: churnedDetailed.sort((a, b) => b.revenue - a.revenue),
+      churnedRevenue,
+      churnedClientList,
     };
   });
 

@@ -110,8 +110,8 @@ export function ClientsActions({
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("all");
-  // Default to highest LTV so the biggest-value clients surface first.
-  const [sortKey, setSortKey] = useState<"amount" | "ltv">("ltv");
+  // Default to largest deal size first.
+  const [sortKey, setSortKey] = useState<"amount" | "ltv">("amount");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   function toggleSort(key: "amount" | "ltv") {
