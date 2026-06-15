@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { ClientsActions } from "@/components/forms/clients-actions";
 import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
 import { clientDisplayName } from "@/lib/analytics/client-name";
-import { foldUpsells } from "@/lib/analytics/upsells";
+import { foldUpsells, isOneOff } from "@/lib/analytics/upsells";
 
 // Classify a client into a division from their deal's content package type
 // (matches the deal-based Revenue by Package Type grouping).
@@ -96,7 +96,8 @@ export default async function ClientsPage() {
 
   const clients = raw.map(({ hubspotDeals, ...c }) => {
     // All of the company's deals (linked + orphaned), live and churned.
-    const allDeals = [...hubspotDeals, ...(orphansByClient.get(c.id) ?? [])];
+    // One-off deals (non-recurring) are excluded from deal size + LTV.
+    const allDeals = [...hubspotDeals, ...(orphansByClient.get(c.id) ?? [])].filter((d) => !isOneOff(d));
     const liveDeals = allDeals.filter(isLiveDeal);
 
     // Company deal size = the company's LIVE closed-won deals, upsells folded

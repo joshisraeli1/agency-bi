@@ -30,6 +30,15 @@ export function isUpsell(d: FoldableDeal): boolean {
   return (d.packageDescription ?? "").trim().toLowerCase() === "upsell";
 }
 
+/**
+ * One-off deals are tagged with "Package Description" = "one-off" — non-recurring
+ * revenue (e.g. a single photoshoot or project fee). They count toward revenue
+ * but are EXCLUDED from LTV and average-deal-size, which model the recurring book.
+ */
+export function isOneOff(d: FoldableDeal): boolean {
+  return (d.packageDescription ?? "").toLowerCase().replace(/[^a-z]/g, "") === "oneoff";
+}
+
 /** Canonical 3-way division for matching an upsell to a same-division base. */
 export function dealDivision(pkg: string | null | undefined): string {
   const p = (pkg ?? "").toLowerCase().trim();

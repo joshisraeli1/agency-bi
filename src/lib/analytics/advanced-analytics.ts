@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
+import { isOneOff } from "./upsells";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -84,7 +85,7 @@ export async function getLTVData(): Promise<LTVData> {
     }),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }], clientId: { not: null } },
-      select: { clientId: true, amount: true, amountExGst: true },
+      select: { clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true },
     }),
     db.appSettings.findFirst(),
     getExcludedClientIds(),
@@ -95,7 +96,7 @@ export async function getLTVData(): Promise<LTVData> {
   // Per-client monthly MRR (ex-GST) from their closed-won/churned deals
   const clientMrr = new Map<string, number>();
   for (const d of deals) {
-    if (!d.clientId) continue;
+    if (!d.clientId || isOneOff(d)) continue; // one-offs are not recurring LTV
     clientMrr.set(d.clientId, (clientMrr.get(d.clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
   }
 
@@ -645,7 +646,9 @@ export async function getNewClientDealSize(
     }),
   ]);
 
-  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)));
+  // Exclude one-off (non-recurring) deals — these are revenue but not retainer,
+  // so they don't belong in deal-size / new-retainer movement.
+  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)) && !isOneOff(d));
   const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(d) : null);
   const dealSizeOf = (d: { amountExGst: number | null; amount: number | null }) =>
     Math.round(d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0));
