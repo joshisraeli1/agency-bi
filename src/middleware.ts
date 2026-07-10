@@ -33,6 +33,7 @@ const PUBLIC_PATHS = [
   "/api/integrations/xero/callback",
   "/api/integrations/gmail/callback",
   "/api/integrations/calendar/callback",
+  "/api/cron", // Vercel Cron — no session cookie; guarded by CRON_SECRET Bearer check in the route
 ];
 
 // Paths that users without 2FA may access (setup flow + auth API routes)

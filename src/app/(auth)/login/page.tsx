@@ -25,6 +25,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpToken, setTotpToken] = useState("");
+  const [trustDevice, setTrustDevice] = useState(false);
   const [step, setStep] = useState<"credentials" | "totp">("credentials");
   const [error, setError] = useState(
     errorParam === "domain"
@@ -48,6 +49,7 @@ function LoginForm() {
           email,
           password,
           totpToken: step === "totp" ? totpToken : undefined,
+          trustDevice: step === "totp" ? trustDevice : undefined,
         }),
       });
 
@@ -125,6 +127,15 @@ function LoginForm() {
                   autoFocus
                   placeholder="000000"
                 />
+                <label className="flex items-center gap-2 pt-1 text-sm text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input accent-primary"
+                    checked={trustDevice}
+                    onChange={(e) => setTrustDevice(e.target.checked)}
+                  />
+                  Trust this device for 30 days
+                </label>
               </div>
             )}
 

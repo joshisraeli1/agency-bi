@@ -7,11 +7,14 @@ import {
   checkAccountLock,
   recordFailedAttempt,
   resetFailedAttempts,
+  isTrustedDevice,
+  setTrustedDeviceCookie,
+  TRUSTED_DEVICE_COOKIE,
 } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, totpToken } = await request.json();
+    const { email, password, totpToken, trustDevice } = await request.json();
 
     if (!email || !password) {
       return NextResponse.json(
@@ -49,20 +52,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check TOTP
+    // Check TOTP — unless this device is already trusted (skips the 2FA step).
     if (user.totpEnabled && user.totpSecret) {
-      if (!totpToken) {
-        return NextResponse.json(
-          { requireTotp: true, error: "Two-factor authentication required" },
-          { status: 401 }
-        );
-      }
-      if (!verifyTotp(user.totpSecret, totpToken)) {
-        await recordFailedAttempt(user.id);
-        return NextResponse.json(
-          { error: "Invalid two-factor code" },
-          { status: 401 }
-        );
+      const trustCookie = request.cookies.get(TRUSTED_DEVICE_COOKIE)?.value;
+      const deviceTrusted = isTrustedDevice(trustCookie, user);
+      if (!deviceTrusted) {
+        if (!totpToken) {
+          return NextResponse.json(
+            { requireTotp: true, error: "Two-factor authentication required" },
+            { status: 401 }
+          );
+        }
+        if (!verifyTotp(user.totpSecret, totpToken)) {
+          await recordFailedAttempt(user.id);
+          return NextResponse.json(
+            { error: "Invalid two-factor code" },
+            { status: 401 }
+          );
+        }
+        // Passed a fresh 2FA challenge — trust this device if the user asked.
+        if (trustDevice === true) {
+          await setTrustedDeviceCookie(user.id, user.trustedDeviceVersion);
+        }
       }
     }
 
