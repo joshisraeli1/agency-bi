@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Save, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { UserForm } from "@/components/forms/user-form";
+import { SecuritySettings } from "@/components/dashboard/security-settings";
 import { format } from "date-fns";
 import Link from "next/link";
 
@@ -420,6 +421,11 @@ export default function SettingsPage() {
         }
         onSuccess={loadUsers}
       />
+
+      <Separator />
+
+      {/* Security */}
+      <SecuritySettings />
 
       <Separator />
 

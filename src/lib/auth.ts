@@ -121,6 +121,99 @@ export async function destroySession() {
 }
 
 // ---------------------------------------------------------------------------
+// Trusted device — "remember this device for 30 days" (skip the 2FA step)
+// ---------------------------------------------------------------------------
+
+const TRUSTED_DEVICE_COOKIE = "trusted_device";
+const TRUSTED_DEVICE_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+interface TrustedDevicePayload {
+  userId: string;
+  v: number; // user.trustedDeviceVersion at issue time — bumping it revokes this cookie
+  exp: number;
+}
+
+/**
+ * Sign a trusted-device token — same HMAC scheme as the session cookie, but a
+ * distinct payload. Anchored to the user's current trustedDeviceVersion so all
+ * outstanding tokens can be invalidated by incrementing that version.
+ */
+export function signTrustedDevice(userId: string, version: number): string {
+  const payload: TrustedDevicePayload = {
+    userId,
+    v: version,
+    exp: Date.now() + TRUSTED_DEVICE_DURATION_MS,
+  };
+  const json = JSON.stringify(payload);
+  const signature = CryptoJS.HmacSHA256(json, SESSION_SECRET).toString();
+  const encoded = Buffer.from(json).toString("base64url");
+  return `${encoded}.${signature}`;
+}
+
+/**
+ * Verify a trusted-device token. Returns the payload only when the signature is
+ * valid AND it has not expired; caller must still confirm userId + version
+ * against the DB. Uses constant-time comparison to avoid timing leaks.
+ */
+export function verifyTrustedDevice(token: string): TrustedDevicePayload | null {
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) return null;
+  let json: string;
+  try {
+    json = Buffer.from(encoded, "base64url").toString("utf8");
+  } catch {
+    return null;
+  }
+  const expectedSig = CryptoJS.HmacSHA256(json, SESSION_SECRET).toString();
+  const sigBuf = Buffer.from(signature, "utf8");
+  const expectedBuf = Buffer.from(expectedSig, "utf8");
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
+  let payload: TrustedDevicePayload;
+  try {
+    payload = JSON.parse(json) as TrustedDevicePayload;
+  } catch {
+    return null;
+  }
+  if (!payload.exp || Date.now() > payload.exp) return null;
+  return payload;
+}
+
+/**
+ * True when the caller presents a trusted-device cookie that is valid for this
+ * exact user and matches their current trustedDeviceVersion. `cookieValue` is
+ * read from the request (NextRequest.cookies) by the caller.
+ */
+export function isTrustedDevice(
+  cookieValue: string | undefined,
+  user: { id: string; trustedDeviceVersion: number }
+): boolean {
+  if (!cookieValue) return false;
+  const payload = verifyTrustedDevice(cookieValue);
+  if (!payload) return false;
+  return payload.userId === user.id && payload.v === user.trustedDeviceVersion;
+}
+
+export async function setTrustedDeviceCookie(userId: string, version: number) {
+  const cookieStore = await cookies();
+  cookieStore.set(TRUSTED_DEVICE_COOKIE, signTrustedDevice(userId, version), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: TRUSTED_DEVICE_DURATION_MS / 1000,
+    path: "/",
+  });
+}
+
+export async function clearTrustedDeviceCookie() {
+  const cookieStore = await cookies();
+  cookieStore.delete(TRUSTED_DEVICE_COOKIE);
+}
+
+export { TRUSTED_DEVICE_COOKIE };
+
+// ---------------------------------------------------------------------------
 // Role-Based Access Control helpers
 // ---------------------------------------------------------------------------
 
