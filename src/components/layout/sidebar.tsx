@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -35,8 +36,15 @@ export function Sidebar() {
   return (
     <aside className="w-64 border-r bg-card flex flex-col h-full">
       <div className="p-6 border-b">
-        <h1 className="text-xl font-bold tracking-tight">Agency BI</h1>
-        <p className="text-xs text-muted-foreground mt-1">Swan Studio</p>
+        <Image
+          src="/swan-studio-logo.svg"
+          alt="Swan Studio"
+          width={140}
+          height={26}
+          className="h-6 w-auto"
+          priority
+        />
+        <p className="text-xs text-muted-foreground mt-2 tracking-tight">Agency BI</p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
