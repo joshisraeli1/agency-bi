@@ -324,23 +324,31 @@ export async function getMonthlyChurn(
 
   const rows = monthRange.map((month) => {
     // Active at start of month: a deal that started by this month and hasn't
-    // churned before it.
-    const activeAtStart = visible.filter((d) => {
+    // churned before it (still active going into the month, including those
+    // that churn during it).
+    const activeAtStartDeals = visible.filter((d) => {
       const sk = mk(d.startDate ?? d.closeDate);
       if (!sk || sk > month) return false;
       const ck = mk(d.churnDate);
       return !ck || ck >= month;
-    }).length;
+    });
+    const activeAtStart = activeAtStartDeals.length;
+    const activeRevenueAtStart = activeAtStartDeals.reduce((s, d) => s + ex(d), 0);
 
     // Churned this month: a deal whose churnDate falls in this month.
     const churnedDeals = visible.filter((d) => mk(d.churnDate) === month);
     const churned = churnedDeals.length;
-    const churnPercent =
-      activeAtStart > 0 ? Number(((churned / activeAtStart) * 100).toFixed(1)) : 0;
     const churnedClientList = churnedDeals
       .map((d) => ({ name: d.name, revenue: ex(d) }))
       .sort((a, b) => b.revenue - a.revenue);
     const churnedRevenue = churnedClientList.reduce((s, c) => s + c.revenue, 0);
+
+    // Revenue churn: churned revenue this month ÷ the active revenue base at
+    // the start of the month (ex-GST), not a count of deals.
+    const churnPercent =
+      activeRevenueAtStart > 0
+        ? Number(((churnedRevenue / activeRevenueAtStart) * 100).toFixed(1))
+        : 0;
 
     return {
       month,
