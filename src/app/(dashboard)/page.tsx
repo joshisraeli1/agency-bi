@@ -3,6 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { getRevenueOverview, getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
 import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
+import { getBudgetVsActual } from "@/lib/analytics/revenue-budget";
 import { getRevenueForecast } from "@/lib/analytics/forecast";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
+import { BudgetVsActualChart } from "@/components/dashboard/budget-vs-actual-chart";
 import { RevenueForecastSection } from "@/components/dashboard/revenue-forecast-section";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { RefreshDataButton } from "@/components/dashboard/refresh-data-button";
@@ -22,15 +24,18 @@ interface Props {
 
 export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
-  const months = parseInt(monthsParam || "12", 10);
+  // Default matches the DateRangePicker's default label ("Last 6 months"); a
+  // 12 default made the chart show ~12 months while the picker said 6.
+  const months = parseInt(monthsParam || "6", 10);
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
     getRevenueVsChurn(12),
     getActiveRevenueSnapshot(),
     getRevenueForecast(6),
+    getBudgetVsActual(),
   ]);
 
   // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
@@ -95,6 +100,8 @@ export default async function OverviewPage({ searchParams }: Props) {
       </div>
 
       <RevenueCharts data={revenue} />
+
+      <BudgetVsActualChart data={budgetVsActual} />
 
       <RevenueVsChurnChart data={revenueVsChurn} />
 
