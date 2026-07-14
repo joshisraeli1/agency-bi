@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
-import { getActiveRevenueSnapshot, getDivisionGoals } from "@/lib/analytics/active-revenue";
+import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths } from "@/lib/analytics/active-revenue";
 import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
 import { AvgDealSizeComparisonCard } from "@/components/dashboard/avg-deal-size-comparison";
@@ -25,7 +25,7 @@ import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { DealSizeChart } from "@/components/dashboard/deal-size-chart";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { DollarSign, Building, UserCheck, Receipt } from "lucide-react";
+import { DollarSign, Building, UserCheck, Receipt, Clock } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ months?: string }>;
@@ -49,6 +49,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     activeSnapshot,
     divisionGoals,
     avgDealSizeComparison,
+    avgTenure,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -67,6 +68,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getActiveRevenueSnapshot(),
     getDivisionGoals(),
     getAvgDealSizeComparison(),
+    getAvgClientTenureMonths(),
   ]);
 
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
@@ -91,7 +93,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       </div>
 
       {/* 1. Stat Cards — sourced from revenueOverview to match Overview page */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
         <StatCard
           title="Monthly Revenue (inc GST)"
           value={formatCurrency(monthlyRevenueIncGst)}
@@ -123,6 +125,12 @@ export default async function AnalyticsPage({ searchParams }: Props) {
           value={formatPercent(data.clientRetention)}
           description={`${data.totalTeamMembers} team members`}
           icon={<UserCheck className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Avg Tenure"
+          value={`${avgTenure.months} mo`}
+          description={`${avgTenure.clientCount} active clients`}
+          icon={<Clock className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
 

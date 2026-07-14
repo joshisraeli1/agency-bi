@@ -47,6 +47,49 @@ export interface ActiveRevenueSnapshot {
 }
 
 /**
+ * Average tenure (in months) of the agency's currently-active clients — how
+ * long each active client has been with us, from their earliest active deal's
+ * start date to now, averaged across clients (deduped by client, so a client
+ * with several deals counts once). Excludes excluded clients.
+ */
+export async function getAvgClientTenureMonths(): Promise<{ months: number; clientCount: number }> {
+  const [excludedIds, deals] = await Promise.all([
+    getExcludedClientIds(),
+    db.hubspotDeal.findMany({
+      where: { stage: "closed_won" },
+      select: { id: true, clientId: true, startDate: true, closeDate: true, churnDate: true },
+    }),
+  ]);
+  const now = new Date();
+  const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthOf = (d: Date | null | undefined): string | null =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
+
+  // Earliest active-deal start per client (fall back to deal id when a deal has
+  // no linked client).
+  const startByClient = new Map<string, Date>();
+  for (const d of deals) {
+    if (d.clientId && excludedIds.has(d.clientId)) continue;
+    const start = d.startDate ?? d.closeDate;
+    if (!start) continue;
+    const startKey = monthOf(start)!;
+    const churnKey = monthOf(d.churnDate);
+    const active = curKey >= startKey && (!churnKey || curKey < churnKey);
+    if (!active) continue;
+    const key = d.clientId ?? `deal:${d.id}`;
+    const existing = startByClient.get(key);
+    if (!existing || start < existing) startByClient.set(key, start);
+  }
+
+  const tenures = Array.from(startByClient.values()).map(
+    (start) => (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+  );
+  const clientCount = tenures.length;
+  const months = clientCount > 0 ? Math.round((tenures.reduce((s, t) => s + t, 0) / clientCount) * 10) / 10 : 0;
+  return { months, clientCount };
+}
+
+/**
  * Revenue (ex-GST) by package type for deals ACTIVE in a given month, using the
  * historically-correct deal set — closed-won OR since-churned — so past months
  * aren't understated by survivorship (a client active last July that has since
