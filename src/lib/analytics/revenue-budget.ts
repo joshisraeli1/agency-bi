@@ -10,8 +10,8 @@ export const REVENUE_BUDGET_PROVIDER = "revenue_budget";
  * persisted on the `revenue_budget` IntegrationConfig row.
  */
 export const DEFAULT_REVENUE_BUDGET: Record<string, number> = {
-  "2026-01": 355511,
-  "2026-02": 379834,
+  "2026-01": 328042,
+  "2026-02": 346021,
   "2026-03": 363308,
   "2026-04": 380010,
   "2026-05": 396214,
