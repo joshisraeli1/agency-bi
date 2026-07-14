@@ -43,7 +43,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     newClientDealSize,
     monthlyChurn,
     avgDealSizeResult,
-    appSettings,
     clientCount,
     activeSnapshot,
     divisionGoals,
@@ -61,20 +60,19 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }], retainerValue: { gt: 0 } },
       _avg: { retainerValue: true },
     }),
-    db.appSettings.findFirst(),
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     getActiveRevenueSnapshot(),
     getDivisionGoals(),
   ]);
 
-  const gstRate = appSettings?.gstRate ?? 10;
-  const gstDivisor = 1 + gstRate / 100;
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
   const avgDealSize = Math.round(avgDealSizeResult._avg.retainerValue ?? 0);
 
-  // Current monthly revenue uses sum-of-active-retainers (matches HubSpot Revenue Summary).
+  // Monthly revenue — deal-based inc/ex-GST straight from the snapshot, matching
+  // the Overview page exactly. inc-GST is the sum of each deal's Amount, NOT a
+  // flat ex×1.1 (which overstated it, since deals aren't all exactly 10% GST).
   const monthlyRevenueExGst = activeSnapshot.monthlyRevenueExGst;
-  const monthlyRevenueIncGst = Math.round(monthlyRevenueExGst * gstDivisor);
+  const monthlyRevenueIncGst = activeSnapshot.monthlyRevenueIncGst;
 
   return (
     <div className="space-y-6">
