@@ -10,6 +10,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,13 @@ interface ClientRef {
 }
 
 const PRIMARY = "#ea580c";
+const DIVISION_COLORS: Record<string, string> = {
+  "Content Delivery": "#ea580c",
+  "Social Media Management": "#14b8a6",
+  "Ads Management": "#1e293b",
+};
+const FALLBACK_COLORS = ["#ea580c", "#14b8a6", "#1e293b", "#6366f1", "#eab308"];
+const colorFor = (d: string, i: number) => DIVISION_COLORS[d] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length];
 
 export function DealSizeChart({ data }: Props) {
   const [division, setDivision] = useState<string>("all");
@@ -65,6 +73,24 @@ export function DealSizeChart({ data }: Props) {
     });
   }, [monthly]);
 
+  // Rolling avg per division — one cumulative series per division, so "All
+  // Divisions" shows all three as separate lines in a single chart.
+  const rollingByDivision = useMemo(() => {
+    const cumByDiv: Record<string, ClientRef[]> = {};
+    return data.months.map((m) => {
+      for (const c of m.clients) {
+        if (!c.division || c.dealSize <= 0) continue;
+        (cumByDiv[c.division] ??= []).push({ clientName: c.clientName, dealSize: c.dealSize });
+      }
+      const row: Record<string, number | string> = { month: formatMonth(m.month) };
+      for (const d of divisions) {
+        const cum = cumByDiv[d] ?? [];
+        row[d] = cum.length ? Math.round(cum.reduce((s, c) => s + c.dealSize, 0) / cum.length) : 0;
+      }
+      return row;
+    });
+  }, [data.months, divisions]);
+
   if (monthly.every((m) => m.clients.length === 0)) return null;
 
   return (
@@ -88,7 +114,7 @@ export function DealSizeChart({ data }: Props) {
         <CardContent>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart
-              data={rolling}
+              data={division === "all" ? rollingByDivision : rolling}
               onClick={(state) => {
                 const i = state?.activeTooltipIndex;
                 if (typeof i === "number" && rolling[i]) setSelected({ title: `Through ${rolling[i].month}`, clients: rolling[i].clients });
@@ -98,7 +124,24 @@ export function DealSizeChart({ data }: Props) {
               <XAxis dataKey="month" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => formatCurrency(v)} width={80} />
               <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              <Line dataKey="avgDealSize" stroke={PRIMARY} strokeWidth={2} dot={{ r: 4, cursor: "pointer" }} activeDot={{ r: 6 }} />
+              {division === "all" ? (
+                <>
+                  <Legend />
+                  {divisions.map((d, i) => (
+                    <Line
+                      key={d}
+                      dataKey={d}
+                      name={d}
+                      stroke={colorFor(d, i)}
+                      strokeWidth={2}
+                      dot={{ r: 3, cursor: "pointer" }}
+                      activeDot={{ r: 5 }}
+                    />
+                  ))}
+                </>
+              ) : (
+                <Line dataKey="avgDealSize" name={division} stroke={PRIMARY} strokeWidth={2} dot={{ r: 4, cursor: "pointer" }} activeDot={{ r: 6 }} />
+              )}
             </LineChart>
           </ResponsiveContainer>
           <p className="text-xs text-muted-foreground mt-2">Click a point to see the clients counted up to that month.</p>
