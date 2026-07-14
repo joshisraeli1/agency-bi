@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { isOneOff } from "./upsells";
+import { isOneOff, isUpsell } from "./upsells";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -648,7 +648,9 @@ export async function getNewClientDealSize(
 
   // Exclude one-off (non-recurring) deals — these are revenue but not retainer,
   // so they don't belong in deal-size / new-retainer movement.
-  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)) && !isOneOff(d));
+  // Exclude one-offs and upsells — neither is a new client acquisition, so
+  // they shouldn't skew the new-client average deal size.
+  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)) && !isOneOff(d) && !isUpsell(d));
   const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(d) : null);
   const dealSizeOf = (d: { amountExGst: number | null; amount: number | null }) =>
     Math.round(d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0));

@@ -27,7 +27,14 @@ export interface FoldableDeal {
 }
 
 export function isUpsell(d: FoldableDeal): boolean {
-  return (d.packageDescription ?? "").trim().toLowerCase() === "upsell";
+  // "Package Description" can carry multiple ;-separated values (e.g.
+  // "Upsell;Combo"), so treat it as a tag set rather than an exact match.
+  const tags = (d.packageDescription ?? "").toLowerCase().split(/[;,/]/).map((s) => s.trim());
+  if (tags.includes("upsell")) return true;
+  // Fallback: a closed-won deal named "… Upsell …" that wasn't tagged in
+  // HubSpot (e.g. "BowWowMeow Creative Upsell"). Only ever folds when a base
+  // deal for the same company exists; otherwise it stays standalone.
+  return /\bupsells?\b/i.test(d.name ?? "");
 }
 
 /**
@@ -48,7 +55,10 @@ export function dealDivision(pkg: string | null | undefined): string {
 }
 
 const normalize = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
-const stripUpsellSuffix = (name: string): string => name.replace(/[\s\-–—:]*upsells?\s*$/i, "").trim();
+// Remove "Upsell"/"Upsells" wherever it appears (not just trailing), so
+// "BowWowMeow Upsell Ads" / "Blue Light Card Upsell Content" reduce to the
+// company + qualifier, e.g. "BowWowMeow Ads" / "Blue Light Card Content".
+const stripUpsell = (name: string): string => name.replace(/upsells?/gi, " ").replace(/\s+/g, " ").trim();
 
 export interface FoldResult<T> {
   /** Base deals with upsell amounts folded in; folded upsells removed; unmatched upsells kept standalone. */
@@ -79,9 +89,21 @@ export function foldUpsells<T extends FoldableDeal>(deals: T[]): FoldResult<T> {
   const unmatched: T[] = [];
 
   for (const u of upsells) {
-    const companyKey = normalize(stripUpsellSuffix(u.name));
-    const candidates = companyKey
-      ? base.filter((b) => b.stage === "closed_won" && normalize(b.name).startsWith(companyKey))
+    // Company key = the upsell name with "Upsell" removed. A base deal matches
+    // when its (normalized) name is a prefix of that key — i.e. the base is the
+    // company root and the upsell name extends it ("Blue Light Card" ⊂
+    // "bluelightcardcontent"). Guard against tiny names to avoid loose matches.
+    const companyKey = normalize(stripUpsell(u.name));
+    const candidates = companyKey.length >= 3
+      ? base.filter((b) => {
+          const bn = normalize(b.name);
+          if (b.stage !== "closed_won" || bn.length < 3) return false;
+          // Bidirectional prefix: base name is the company root of the upsell
+          // ("Blue Light Card" ⊂ "bluelightcardcontent"), or the upsell key is
+          // the root of a more specific base ("copperculture" ⊂ "Copper
+          // Culture Ads Management"). Longest / same-division base wins below.
+          return companyKey.startsWith(bn) || bn.startsWith(companyKey);
+        })
       : [];
     if (candidates.length === 0) {
       unmatched.push(u);
@@ -90,7 +112,12 @@ export function foldUpsells<T extends FoldableDeal>(deals: T[]): FoldResult<T> {
     }
     const sameDiv = candidates.filter((b) => dealDivision(b.contentPackageType) === dealDivision(u.contentPackageType));
     const pool = sameDiv.length ? sameDiv : candidates;
-    pool.sort((a, b) => (b.amountExGst ?? b.amount ?? 0) - (a.amountExGst ?? a.amount ?? 0));
+    // Most specific (longest) base name first, then largest deal.
+    pool.sort(
+      (a, b) =>
+        normalize(b.name).length - normalize(a.name).length ||
+        (b.amountExGst ?? b.amount ?? 0) - (a.amountExGst ?? a.amount ?? 0)
+    );
     const target = pool[0];
     target.amount = (target.amount ?? 0) + (u.amount ?? 0);
     target.amountExGst = (target.amountExGst ?? 0) + (u.amountExGst ?? 0);
