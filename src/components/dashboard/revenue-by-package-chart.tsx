@@ -105,7 +105,7 @@ export function RevenueByPackageChart({
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={chartData} margin={{ top: 28, right: 20, bottom: 24, left: 10 }} barCategoryGap="30%">
+          <BarChart data={chartData} margin={{ top: 28, right: 20, bottom: 24, left: 10 }} barGap={4} barCategoryGap="35%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
             <XAxis
               dataKey="name"
@@ -119,7 +119,7 @@ export function RevenueByPackageChart({
             <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
             {compare && <Legend />}
             {compare && (
-              <Bar dataKey="lastYear" name={lastYearLabel} fill={LAST_YEAR} radius={[4, 4, 0, 0]} maxBarSize={56}>
+              <Bar dataKey="lastYear" name={lastYearLabel} fill={LAST_YEAR} radius={[4, 4, 0, 0]} maxBarSize={72}>
                 <LabelList
                   dataKey="lastYear"
                   position="top"
@@ -134,7 +134,7 @@ export function RevenueByPackageChart({
               name={currentLabel}
               fill={PRIMARY}
               radius={[4, 4, 0, 0]}
-              maxBarSize={compare ? 56 : 96}
+              maxBarSize={compare ? 72 : 96}
               cursor="pointer"
               onClick={(_, index) => setSelected(data[index] ?? null)}
             >
