@@ -55,7 +55,7 @@ export function AvgDealSizeComparisonCard({ data }: { data: AvgDealSizeCompariso
       </CardHeader>
       <CardContent className="space-y-6">
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 24, right: 20, bottom: 5, left: 20 }}>
+          <BarChart data={chartData} margin={{ top: 24, right: 20, bottom: 5, left: 20 }} barGap={4} barCategoryGap="35%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
             <XAxis dataKey="division" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={fmtAxis} />
@@ -65,8 +65,8 @@ export function AvgDealSizeComparisonCard({ data }: { data: AvgDealSizeCompariso
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
             />
             <Legend />
-            <Bar dataKey={prevLabel} fill={PREV_COLOR} radius={[4, 4, 0, 0]} maxBarSize={48} />
-            <Bar dataKey={currLabel} fill={CURR_COLOR} radius={[4, 4, 0, 0]} maxBarSize={48} />
+            <Bar dataKey={prevLabel} fill={PREV_COLOR} radius={[4, 4, 0, 0]} maxBarSize={72} />
+            <Bar dataKey={currLabel} fill={CURR_COLOR} radius={[4, 4, 0, 0]} maxBarSize={72} />
           </BarChart>
         </ResponsiveContainer>
 
