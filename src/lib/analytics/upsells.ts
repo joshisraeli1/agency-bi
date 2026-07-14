@@ -60,6 +60,23 @@ const normalize = (name: string): string => name.toLowerCase().replace(/[^a-z0-9
 // company + qualifier, e.g. "BowWowMeow Ads" / "Blue Light Card Content".
 const stripUpsell = (name: string): string => name.replace(/upsells?/gi, " ").replace(/\s+/g, " ").trim();
 
+// Service-line qualifier words that follow the company name (e.g. "Ads",
+// "Media", "Content Management"). Stripping trailing qualifiers yields the bare
+// company root, so an upsell can match ALL of a company's base deals — then the
+// same-division one wins. Without this, "Blue Light Card Media Upsell" matched
+// only "Blue Light Card" and skipped "Blue Light Card Ads Management".
+const QUALIFIER_WORDS = new Set([
+  "ads", "ad", "media", "content", "management", "mgmt", "mgt", "social",
+  "paid", "buying", "creative", "combo", "suite", "full", "package", "retainer",
+]);
+const companyRoot = (name: string): string => {
+  let words = stripUpsell(name).split(/\s+/).filter(Boolean);
+  while (words.length > 1 && QUALIFIER_WORDS.has(words[words.length - 1].toLowerCase().replace(/[^a-z]/g, ""))) {
+    words = words.slice(0, -1);
+  }
+  return words.join(" ");
+};
+
 export interface FoldResult<T> {
   /** Base deals with upsell amounts folded in; folded upsells removed; unmatched upsells kept standalone. */
   deals: T[];
@@ -89,19 +106,17 @@ export function foldUpsells<T extends FoldableDeal>(deals: T[]): FoldResult<T> {
   const unmatched: T[] = [];
 
   for (const u of upsells) {
-    // Company key = the upsell name with "Upsell" removed. A base deal matches
-    // when its (normalized) name is a prefix of that key — i.e. the base is the
-    // company root and the upsell name extends it ("Blue Light Card" ⊂
-    // "bluelightcardcontent"). Guard against tiny names to avoid loose matches.
-    const companyKey = normalize(stripUpsell(u.name));
+    // Company key = the upsell name with "Upsell" and trailing service-line
+    // qualifiers removed, leaving the bare company root ("Blue Light Card Media
+    // Upsell" → "bluelightcard"). Candidates are all of that company's base
+    // deals; the same-division one is chosen below.
+    const companyKey = normalize(companyRoot(u.name));
     const candidates = companyKey.length >= 3
       ? base.filter((b) => {
-          const bn = normalize(b.name);
+          const bn = normalize(companyRoot(b.name));
           if (b.stage !== "closed_won" || bn.length < 3) return false;
-          // Bidirectional prefix: base name is the company root of the upsell
-          // ("Blue Light Card" ⊂ "bluelightcardcontent"), or the upsell key is
-          // the root of a more specific base ("copperculture" ⊂ "Copper
-          // Culture Ads Management"). Longest / same-division base wins below.
+          // Bidirectional prefix on the company root, so "Blue Light Card"
+          // matches both "Blue Light Card" and "Blue Light Card Ads Management".
           return companyKey.startsWith(bn) || bn.startsWith(companyKey);
         })
       : [];
