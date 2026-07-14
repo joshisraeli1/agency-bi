@@ -27,8 +27,8 @@ interface Props {
   lastYearLabel?: string;
 }
 
-const PRIMARY = "#6366f1";
-const LAST_YEAR = "#cbd5e1"; // slate-300 — muted "last year" bars
+const PRIMARY = "#ea580c"; // brand orange — current period (matches Monthly Revenue chart)
+const LAST_YEAR = "#fdba74"; // orange-300 — muted "last year" bars
 
 // X-axis tick showing the package name plus its deal count (like HubSpot's
 // "Revenue by Package Type"): name on top, "<n> deals" bold underneath.
