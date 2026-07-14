@@ -2,7 +2,9 @@ import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getActiveRevenueSnapshot, getDivisionGoals } from "@/lib/analytics/active-revenue";
+import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
+import { AvgDealSizeComparisonCard } from "@/components/dashboard/avg-deal-size-comparison";
 import {
   getLTVData,
   getRevenueByServiceType,
@@ -15,7 +17,7 @@ import {
 import {
   getMonthlyChurn,
 } from "@/lib/analytics/margin-analytics";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, resolveMonthsParam } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
@@ -31,7 +33,7 @@ interface Props {
 
 export default async function AnalyticsPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
-  const months = parseInt(monthsParam || "6", 10);
+  const months = resolveMonthsParam(monthsParam);
   const [
     data,
     ltv,
@@ -46,6 +48,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     clientCount,
     activeSnapshot,
     divisionGoals,
+    avgDealSizeComparison,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -63,6 +66,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     getActiveRevenueSnapshot(),
     getDivisionGoals(),
+    getAvgDealSizeComparison(),
   ]);
 
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
@@ -134,6 +138,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* 3. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
+
+      {/* Avg. Deal Size Improvements — Jun 2025 vs Jun 2026 by package type */}
+      <AvgDealSizeComparisonCard data={avgDealSizeComparison} />
 
       {/* Average Deal Size Over Time */}
       <DealSizeChart data={newClientDealSize} />

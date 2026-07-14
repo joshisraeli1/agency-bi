@@ -5,7 +5,7 @@ import { getRevenueOverview, getRevenueVsChurn } from "@/lib/analytics/revenue-o
 import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
 import { getBudgetVsActual } from "@/lib/analytics/revenue-budget";
 import { getRevenueForecast } from "@/lib/analytics/forecast";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, resolveMonthsParam } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
@@ -24,9 +24,9 @@ interface Props {
 
 export default async function OverviewPage({ searchParams }: Props) {
   const { months: monthsParam } = await searchParams;
-  // Default matches the DateRangePicker's default label ("Last 6 months"); a
-  // 12 default made the chart show ~12 months while the picker said 6.
-  const months = parseInt(monthsParam || "6", 10);
+  // Default is year-to-date (January → current month), matching the picker's
+  // default; "3"/"6"/"12" give a rolling window instead.
+  const months = resolveMonthsParam(monthsParam);
 
   const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),

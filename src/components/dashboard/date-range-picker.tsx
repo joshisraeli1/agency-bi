@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 
 const options = [
+  { value: "ytd", label: "This year (from Jan)" },
   { value: "3", label: "Last 3 months" },
   { value: "6", label: "Last 6 months" },
   { value: "12", label: "Last 12 months" },
@@ -18,7 +19,7 @@ const options = [
 export function DateRangePicker() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const current = searchParams.get("months") || "6";
+  const current = searchParams.get("months") || "ytd";
 
   function handleChange(value: string) {
     const params = new URLSearchParams(searchParams.toString());

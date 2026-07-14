@@ -53,6 +53,20 @@ export function getMonthRange(n: number): string[] {
   return months;
 }
 
+/**
+ * Resolve the dashboard date-range `?months=` param into a month count.
+ * Default (missing or "ytd") = year-to-date: January of the current year
+ * through the current month inclusive (e.g. Jan–Jul = 7). Numeric values
+ * ("3" / "6" / "12") give a rolling window of that many months.
+ */
+export function resolveMonthsParam(param: string | undefined | null): number {
+  if (!param || param === "ytd") {
+    return new Date().getMonth() + 1; // Jan=1 … current month
+  }
+  const n = parseInt(param, 10);
+  return Number.isFinite(n) && n > 0 ? n : new Date().getMonth() + 1;
+}
+
 /** Markup applied to base salary to cover leave entitlements and superannuation */
 export const SALARY_MARKUP = 1.25;
 

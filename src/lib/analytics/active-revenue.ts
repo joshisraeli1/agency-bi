@@ -50,7 +50,7 @@ export interface ActiveRevenueSnapshot {
  * across the app (matching HubSpot's Revenue by Package Type grouping). One-off / null /
  * unrecognized types all fall into "Content Delivery Paid".
  */
-function classifyPackageType(raw: string | null | undefined): string {
+export function classifyPackageType(raw: string | null | undefined): string {
   const p = (raw || "").toLowerCase().trim();
   if (p === "social media" || p === "social media management") return "Social Media Management";
   if (p === "meta ads" || p === "ads management") return "Ads Management";
