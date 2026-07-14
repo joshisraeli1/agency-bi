@@ -292,6 +292,38 @@ export async function getRevenueOverview(
   };
 }
 
+/**
+ * Cumulative Xero revenue for the current calendar year so far — the sum of
+ * monthly Xero P&L Total Income (ex-GST) from January through the current
+ * month. Independent of the dashboard date-range picker: always "this year to
+ * date". Reads the same FinancialRecord rows (source=xero, retainer/project)
+ * that feed the Xero revenue charts.
+ */
+export async function getYtdXeroRevenue(): Promise<{
+  exGst: number;
+  fromMonth: string;
+  throughMonth: string;
+  monthsWithData: number;
+}> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const fromMonth = `${year}-01`;
+  const throughMonth = `${year}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const records = await db.financialRecord.findMany({
+    where: {
+      source: "xero",
+      type: { in: ["retainer", "project"] },
+      month: { gte: fromMonth, lte: throughMonth },
+    },
+    select: { amount: true, month: true },
+  });
+
+  const exGst = records.reduce((s, r) => s + r.amount, 0);
+  const monthsWithData = new Set(records.map((r) => r.month)).size;
+  return { exGst: Math.round(exGst), fromMonth, throughMonth, monthsWithData };
+}
+
 // ---------------------------------------------------------------------------
 // New Revenue vs Churn by Month
 // ---------------------------------------------------------------------------

@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { getRevenueOverview, getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
-import { getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
+import { getRevenueOverview, getRevenueVsChurn, getYtdXeroRevenue } from "@/lib/analytics/revenue-overview";
+import { getActiveRevenueSnapshot, getPackageRevenueByMonth } from "@/lib/analytics/active-revenue";
 import { getBudgetVsActual } from "@/lib/analytics/revenue-budget";
 import { getRevenueForecast } from "@/lib/analytics/forecast";
-import { formatCurrency, formatPercent, resolveMonthsParam } from "@/lib/utils";
+import { formatCurrency, formatPercent, resolveMonthsParam, formatMonth } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
@@ -28,7 +28,13 @@ export default async function OverviewPage({ searchParams }: Props) {
   // default; "3"/"6"/"12" give a rolling window instead.
   const months = resolveMonthsParam(monthsParam);
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual] = await Promise.all([
+  // Same month one year ago — powers the "compare to last year" toggle on the
+  // Revenue by Package Type chart.
+  const nowDate = new Date();
+  const curMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+  const lastYearMonthKey = `${nowDate.getFullYear() - 1}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
@@ -36,6 +42,8 @@ export default async function OverviewPage({ searchParams }: Props) {
     getActiveRevenueSnapshot(),
     getRevenueForecast(6),
     getBudgetVsActual(),
+    getYtdXeroRevenue(),
+    getPackageRevenueByMonth(lastYearMonthKey),
   ]);
 
   // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
@@ -66,7 +74,7 @@ export default async function OverviewPage({ searchParams }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           title="Monthly Revenue (inc GST)"
           value={formatCurrency(monthlyRevenueIncGst)}
@@ -81,6 +89,12 @@ export default async function OverviewPage({ searchParams }: Props) {
           title="Annualized Rev ex GST"
           value={formatCurrency(annualizedRevenueExGst)}
           icon={<Calendar className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Revenue YTD (Xero)"
+          value={formatCurrency(ytdXero.exGst)}
+          description="Xero P&L, year to date (ex-GST)"
+          icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
         />
         <Link href="/clients" className="h-full">
           <StatCard
@@ -111,6 +125,9 @@ export default async function OverviewPage({ searchParams }: Props) {
         data={activeSnapshot.byPackageType}
         totalDeals={activeSnapshot.dealCount}
         totalRevenue={activeSnapshot.monthlyRevenueExGst}
+        lastYear={lastYearPackages}
+        currentLabel={formatMonth(curMonthKey)}
+        lastYearLabel={formatMonth(lastYearMonthKey)}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

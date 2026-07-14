@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { foldUpsells } from "./upsells";
+import { getExcludedClientIds } from "./excluded-clients";
 
 export const DIVISION_GOALS_PROVIDER = "division_goals";
 
@@ -46,6 +47,46 @@ export interface ActiveRevenueSnapshot {
 }
 
 /**
+ * Revenue (ex-GST) by package type for deals ACTIVE in a given month, using the
+ * historically-correct deal set — closed-won OR since-churned — so past months
+ * aren't understated by survivorship (a client active last July that has since
+ * churned still counts for last July). Excludes excluded clients and folds
+ * upsells. Powers the "compare to last year" toggle.
+ */
+export async function getPackageRevenueByMonth(
+  monthKey: string
+): Promise<{ packageType: string; revenue: number; count: number }[]> {
+  const [excludedIds, rawDeals] = await Promise.all([
+    getExcludedClientIds(),
+    db.hubspotDeal.findMany({
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: { clientId: true, name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true, churnDate: true },
+    }),
+  ]);
+  const monthOf = (d: Date | null | undefined): string | null =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
+  const active = rawDeals.filter((d) => {
+    if (d.clientId && excludedIds.has(d.clientId)) return false;
+    const start = monthOf(d.startDate ?? d.closeDate);
+    if (!start) return false;
+    const churn = monthOf(d.churnDate);
+    return monthKey >= start && (!churn || monthKey < churn);
+  });
+  const { deals } = foldUpsells(active);
+  const byPkg = new Map<string, { revenue: number; count: number }>();
+  for (const d of deals) {
+    const pkg = classifyPackageType(d.contentPackageType);
+    const r = byPkg.get(pkg) ?? { revenue: 0, count: 0 };
+    r.revenue += d.amountExGst ?? 0;
+    r.count += 1;
+    byPkg.set(pkg, r);
+  }
+  return Array.from(byPkg.entries())
+    .map(([packageType, r]) => ({ packageType, revenue: Math.round(r.revenue), count: r.count }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+/**
  * Maps raw HubSpot contentPackageType values to the three canonical service-line buckets used
  * across the app (matching HubSpot's Revenue by Package Type grouping). One-off / null /
  * unrecognized types all fall into "Content Delivery Paid".
@@ -69,11 +110,25 @@ export function classifyPackageType(raw: string | null | undefined): string {
 export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot> {
   const rawDeals = await db.hubspotDeal.findMany({
     where: { stage: "closed_won" },
-    select: { name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true },
+    select: { name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true, churnDate: true },
+  });
+  // Keep only deals active in the current month — started on/before now and not
+  // yet churned — so the revenue tiles match the Monthly Revenue chart's
+  // current-month bar. Some deals keep stage=closed_won even after a churnDate
+  // is set; counting those overstated current MRR.
+  const now = new Date();
+  const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthOf = (d: Date | null | undefined): string | null =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
+  const activeDeals = rawDeals.filter((d) => {
+    const start = monthOf(d.startDate ?? d.closeDate);
+    if (!start) return false;
+    const churn = monthOf(d.churnDate);
+    return curKey >= start && (!churn || curKey < churn);
   });
   // Fold upsells onto their base deal — an upsell is extra revenue for an
   // existing company, not a separate deal in the count / package breakdown.
-  const { deals } = foldUpsells(rawDeals);
+  const { deals } = foldUpsells(activeDeals);
 
   const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;
