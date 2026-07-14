@@ -153,25 +153,16 @@ export function classifyPackageType(raw: string | null | undefined): string {
 export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot> {
   const rawDeals = await db.hubspotDeal.findMany({
     where: { stage: "closed_won" },
-    select: { name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true, churnDate: true },
+    select: { name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true },
   });
-  // Keep only deals active in the current month — started on/before now and not
-  // yet churned — so the revenue tiles match the Monthly Revenue chart's
-  // current-month bar. Some deals keep stage=closed_won even after a churnDate
-  // is set; counting those overstated current MRR.
-  const now = new Date();
-  const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const monthOf = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
-  const activeDeals = rawDeals.filter((d) => {
-    const start = monthOf(d.startDate ?? d.closeDate);
-    if (!start) return false;
-    const churn = monthOf(d.churnDate);
-    return curKey >= start && (!churn || curKey < churn);
-  });
+  // Count the full closed-won book (matching HubSpot's "Revenue by Package
+  // Type" / Revenue Summary) — inc-GST $642,059 / ex-GST $583,646. We do NOT
+  // filter by churn here: a deal in the closed-won stage is treated as current
+  // revenue even if it carries a churn date (churn-date-based exclusion belongs
+  // on the time-series charts, not the headline book).
   // Fold upsells onto their base deal — an upsell is extra revenue for an
   // existing company, not a separate deal in the count / package breakdown.
-  const { deals } = foldUpsells(activeDeals);
+  const { deals } = foldUpsells(rawDeals);
 
   const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;
