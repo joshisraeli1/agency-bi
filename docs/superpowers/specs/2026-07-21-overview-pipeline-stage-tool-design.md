@@ -75,8 +75,8 @@ modeled on `michael-tiles.tsx`:
 
 In `src/app/(dashboard)/page.tsx`:
 - Add `getPipelineStageSnapshot()` to the existing `Promise.all` block.
-- Render `<PipelineStageTool stages={...} />` as a new section, placed near the
-  other package/revenue sections (exact position finalized in the plan).
+- Render `<PipelineStageTool stages={...} />` as the **last section on the
+  page**, after the At-Risk Clients / Recent Imports grid.
 
 ## Out of scope (YAGNI)
 
