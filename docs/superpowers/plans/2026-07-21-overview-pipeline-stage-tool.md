@@ -10,11 +10,16 @@
 
 ## Global Constraints
 
-- Value basis per deal: `amountExGst ?? amount ?? 0`, matching `src/lib/analytics/michael-sales.ts` pipeline snapshot.
-- Snapshot is evaluated **as of today** (`new Date()` passed in) — no future-dating, no dependence on the Overview month picker.
+- Columns key **only** off the raw HubSpot `stageLabel` — never the mapped `stage` or `churnDate`. The four columns, in order, are:
+  1. **Very Warm** → `stageLabel === "Very Warm"`
+  2. **Contract out** → `stageLabel === "Contract out"`
+  3. **Closed Won** → `stageLabel === "Closed Won"`
+  4. **Churned** → `stageLabel === "Churned but still active"` OR `stageLabel === "Current (Not Paying)"`
+- Columns are **mutually exclusive** (each deal has one `stageLabel`). The plain `"Churned"` stage (fully-lost deals) is intentionally **excluded** from every column.
+- Value basis per deal: `amountExGst ?? amount ?? 0`, rounded — matching `src/lib/analytics/michael-sales.ts`. (Very Warm / Contract out have no ex-GST stored, so they fall back to inc-GST `amount`; this mixed basis is expected.)
 - Exclude excluded clients using the shared `getExcludedClientIds()` set (`src/lib/analytics/excluded-clients.ts`) — skip any deal whose `clientId` is in the set.
 - No test framework exists in this repo; verification uses a standalone `tsx` assertion script under `scripts/`, matching the repo's `scripts/check-*.ts` convention.
-- Follow existing code idioms: 2-space indent, no semicolon-free style (repo uses semicolons), `formatCurrency` from `@/lib/utils`.
+- Follow existing code idioms: 2-space indent, semicolons, `formatCurrency` from `@/lib/utils`.
 
 ---
 
@@ -29,8 +34,8 @@
 - Produces:
   - `interface PipelineDeal { name: string; amount: number }`
   - `interface PipelineStageColumn { stage: string; total: number; deals: PipelineDeal[] }`
-  - `type PipelineDealInput = { name: string; clientId: string | null; stage: string | null; stageLabel: string | null; amount: number | null; amountExGst: number | null; churnDate: Date | null }`
-  - `function bucketPipelineStages(deals: PipelineDealInput[], excludedIds: Set<string>, now: Date): PipelineStageColumn[]` — pure; returns exactly 4 columns in order `["Very Warm", "Contract out", "Closed Won", "Churned"]`.
+  - `type PipelineDealInput = { name: string; clientId: string | null; stageLabel: string | null; amount: number | null; amountExGst: number | null }`
+  - `function bucketPipelineStages(deals: PipelineDealInput[], excludedIds: Set<string>, now: Date): PipelineStageColumn[]` — pure; buckets on `stageLabel`; returns exactly 4 columns in order `["Very Warm", "Contract out", "Closed Won", "Churned"]`. `now` is accepted for a stable snapshot signature but not used in bucketing.
   - `async function getPipelineStageSnapshot(): Promise<PipelineStageColumn[]>` — DB query + `bucketPipelineStages`.
 
 - [ ] **Step 1: Write the failing test**
@@ -38,7 +43,7 @@
 Create `scripts/check-pipeline-stages.ts`:
 
 ```typescript
-import { bucketPipelineStages, type PipelineDealInput } from "../src/lib/analytics/pipeline-stages";
+import { bucketPipelineStages, type PipelineDealInput } from "@/lib/analytics/pipeline-stages";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -50,25 +55,25 @@ function assert(cond: boolean, msg: string) {
   }
 }
 
+// `now` is passed through but does not affect bucketing (columns key off stageLabel).
 const now = new Date("2026-07-21T00:00:00Z");
-const past = new Date("2026-01-01T00:00:00Z");
-const future = new Date("2026-12-01T00:00:00Z");
 
 const deals: PipelineDealInput[] = [
-  // Very Warm
-  { name: "Warm A", clientId: "c1", stage: "qualified", stageLabel: "Very Warm", amount: 1100, amountExGst: 1000, churnDate: null },
+  // Very Warm — amountExGst null, so value falls back to `amount`
+  { name: "Warm A", clientId: "c1", stageLabel: "Very Warm", amount: 1000, amountExGst: null },
+  { name: "Warm G", clientId: "c6", stageLabel: "Very Warm", amount: 500, amountExGst: null },
   // Contract out
-  { name: "Contract B", clientId: "c2", stage: "negotiation", stageLabel: "Contract out", amount: 2200, amountExGst: 2000, churnDate: null },
-  // Closed Won, no churn
-  { name: "Won C", clientId: "c3", stage: "closed_won", stageLabel: "Closed Won", amount: 3300, amountExGst: 3000, churnDate: null },
-  // Closed Won with FUTURE churn date → Closed Won only, NOT Churned
-  { name: "Won D (future churn)", clientId: "c4", stage: "closed_won", stageLabel: "Closed Won", amount: 4400, amountExGst: 4000, churnDate: future },
-  // Closed Won with PAST churn date → Closed Won AND Churned
-  { name: "Won E (past churn)", clientId: "c5", stage: "closed_won", stageLabel: "Closed Won", amount: 5500, amountExGst: 5000, churnDate: past },
-  // Excluded client → dropped from ALL buckets
-  { name: "Excluded F", clientId: "cx", stage: "closed_won", stageLabel: "Closed Won", amount: 9999, amountExGst: 9999, churnDate: null },
-  // amountExGst null → falls back to amount
-  { name: "Warm G (no exGst)", clientId: "c6", stage: "qualified", stageLabel: "Very Warm", amount: 500, amountExGst: null, churnDate: null },
+  { name: "Contract B", clientId: "c2", stageLabel: "Contract out", amount: 2200, amountExGst: 2000 },
+  // Closed Won
+  { name: "Won C", clientId: "c3", stageLabel: "Closed Won", amount: 3300, amountExGst: 3000 },
+  { name: "Won D", clientId: "c4", stageLabel: "Closed Won", amount: 4400, amountExGst: 4000 },
+  // Churned column = "Churned but still active" + "Current (Not Paying)"
+  { name: "Still Active E", clientId: "c5", stageLabel: "Churned but still active", amount: 0, amountExGst: 6000 },
+  { name: "Not Paying H", clientId: "c7", stageLabel: "Current (Not Paying)", amount: 0, amountExGst: 1000 },
+  // Plain "Churned" → dropped (not one of the four columns)
+  { name: "Dead I", clientId: "c8", stageLabel: "Churned", amount: 0, amountExGst: 99999 },
+  // Excluded client → dropped from ALL buckets even though its label matches
+  { name: "Excluded F", clientId: "cx", stageLabel: "Closed Won", amount: 9999, amountExGst: 9999 },
 ];
 
 const excluded = new Set(["cx"]);
@@ -79,22 +84,23 @@ assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won
 
 const byStage = Object.fromEntries(cols.map((c) => [c.stage, c]));
 
-// Very Warm: Warm A (1000) + Warm G (500, from amount fallback) = 1500
-assert(byStage["Very Warm"].total === 1500, "Very Warm total sums ex-GST with amount fallback");
+// Very Warm: Warm A (1000, amount fallback) + Warm G (500) = 1500, sorted high→low
+assert(byStage["Very Warm"].total === 1500, "Very Warm total uses amount fallback when ex-GST null");
 assert(byStage["Very Warm"].deals.length === 2, "Very Warm has 2 deals");
 assert(byStage["Very Warm"].deals[0].name === "Warm A", "Very Warm sorted high→low (Warm A first)");
 
-// Contract out: Contract B (2000)
+// Contract out: Contract B (2000, ex-GST)
 assert(byStage["Contract out"].total === 2000, "Contract out total = 2000");
 
-// Closed Won: Won C + Won D + Won E (excludes Excluded F) = 3000+4000+5000 = 12000
-assert(byStage["Closed Won"].total === 12000, "Closed Won = full book incl. future & past churn, excludes excluded client");
-assert(byStage["Closed Won"].deals.length === 3, "Closed Won has 3 deals");
+// Closed Won: Won C + Won D = 3000 + 4000 = 7000; Excluded F dropped
+assert(byStage["Closed Won"].total === 7000, "Closed Won sums stageLabel='Closed Won', excludes excluded client");
+assert(byStage["Closed Won"].deals.length === 2, "Closed Won has 2 deals");
 assert(!byStage["Closed Won"].deals.some((d) => d.name === "Excluded F"), "Closed Won drops excluded client");
 
-// Churned: only Won E (past churn) = 5000. Won D (future churn) NOT included.
-assert(byStage["Churned"].total === 5000, "Churned = only past-dated churn (5000)");
-assert(byStage["Churned"].deals.length === 1 && byStage["Churned"].deals[0].name === "Won E (past churn)", "Churned contains only the past-churn deal");
+// Churned: Still Active E (6000) + Not Paying H (1000) = 7000; plain "Churned" NOT included
+assert(byStage["Churned"].total === 7000, "Churned = 'still active' + 'not paying' merged");
+assert(byStage["Churned"].deals.length === 2, "Churned has 2 deals");
+assert(!byStage["Churned"].deals.some((d) => d.name === "Dead I"), "plain 'Churned' stage is excluded");
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) FAILED`);
@@ -103,19 +109,24 @@ if (failures > 0) {
 console.log("\nAll pipeline-stage bucketing assertions passed.");
 ```
 
+Note: import via the `@/` path alias (works under `tsx` in this repo — see `scripts/check-*.ts`). The pure function has no DB import at module load, so no env is needed to run this script.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx tsx scripts/check-pipeline-stages.ts`
-Expected: FAIL — module `../src/lib/analytics/pipeline-stages` not found (cannot import `bucketPipelineStages`).
+Expected: FAIL — module `@/lib/analytics/pipeline-stages` not found (cannot import `bucketPipelineStages`).
 
 - [ ] **Step 3: Write minimal implementation**
 
 Create `src/lib/analytics/pipeline-stages.ts`:
 
-```typescript
-import { db } from "@/lib/db";
-import { getExcludedClientIds } from "./excluded-clients";
+Note: this module has **no top-level imports** — both `db` and
+`getExcludedClientIds` are imported lazily inside `getPipelineStageSnapshot`.
+That keeps the module import-safe for the pure-function test: `excluded-clients.ts`
+imports `db` at its top, so a top-level import of it would drag Prisma
+initialization into the test at module-load time.
 
+```typescript
 export interface PipelineDeal {
   name: string;
   amount: number;
@@ -130,32 +141,38 @@ export interface PipelineStageColumn {
 export type PipelineDealInput = {
   name: string;
   clientId: string | null;
-  stage: string | null;
   stageLabel: string | null;
   amount: number | null;
   amountExGst: number | null;
-  churnDate: Date | null;
 };
+
+// The raw HubSpot stage labels each column collects. The two "Churned but still
+// active" / "Current (Not Paying)" labels merge into one "Churned" column; the
+// plain "Churned" label (fully-lost deals) is intentionally not listed.
+const CHURNED_LABELS = ["Churned but still active", "Current (Not Paying)"];
+const QUERY_LABELS = ["Very Warm", "Contract out", "Closed Won", ...CHURNED_LABELS];
 
 const dealValue = (d: PipelineDealInput): number =>
   Math.round(d.amountExGst ?? d.amount ?? 0);
 
 /**
- * Buckets synced HubSpot deals into four pipeline-stage columns as a snapshot
- * "as of now". Columns are NOT mutually exclusive: a closed-won deal with a
- * past churn date appears in BOTH "Closed Won" (the full book) and "Churned"
- * (the breakout of deals that have actually churned).
+ * Buckets synced HubSpot deals into four pipeline-stage columns, keyed purely
+ * on the raw `stageLabel`. Columns are mutually exclusive (one label per deal).
  *
  *  - Very Warm    : stageLabel === "Very Warm"
  *  - Contract out : stageLabel === "Contract out"
- *  - Closed Won   : stage === "closed_won" (any churn state)
- *  - Churned      : churnDate set and on/before `now`
+ *  - Closed Won   : stageLabel === "Closed Won"
+ *  - Churned      : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
+ *
+ * `now` is accepted for a stable snapshot signature but is not used here — the
+ * columns no longer depend on any date.
  */
 export function bucketPipelineStages(
   deals: PipelineDealInput[],
   excludedIds: Set<string>,
   now: Date
 ): PipelineStageColumn[] {
+  void now;
   const columns: PipelineStageColumn[] = [
     { stage: "Very Warm", total: 0, deals: [] },
     { stage: "Contract out", total: 0, deals: [] },
@@ -170,14 +187,11 @@ export function bucketPipelineStages(
 
     if (d.stageLabel === "Very Warm") {
       veryWarm.deals.push({ name: d.name, amount });
-    }
-    if (d.stageLabel === "Contract out") {
+    } else if (d.stageLabel === "Contract out") {
       contractOut.deals.push({ name: d.name, amount });
-    }
-    if (d.stage === "closed_won") {
+    } else if (d.stageLabel === "Closed Won") {
       closedWon.deals.push({ name: d.name, amount });
-    }
-    if (d.churnDate && d.churnDate <= now) {
+    } else if (d.stageLabel && CHURNED_LABELS.includes(d.stageLabel)) {
       churned.deals.push({ name: d.name, amount });
     }
   }
@@ -190,28 +204,27 @@ export function bucketPipelineStages(
 }
 
 /**
- * Current-time snapshot of revenue by pipeline stage for the Overview page.
+ * Current snapshot of revenue by pipeline stage for the Overview page.
  */
 export async function getPipelineStageSnapshot(): Promise<PipelineStageColumn[]> {
+  // `db` and `getExcludedClientIds` are imported lazily so that importing this
+  // module for the pure `bucketPipelineStages` function (e.g. from the tsx test
+  // script) does not trigger Prisma client initialization, which needs
+  // DATABASE_URL at load. (`excluded-clients` imports `db` at its top.)
+  const [{ db }, { getExcludedClientIds }] = await Promise.all([
+    import("@/lib/db"),
+    import("./excluded-clients"),
+  ]);
   const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
-      where: {
-        OR: [
-          { stageLabel: "Very Warm" },
-          { stageLabel: "Contract out" },
-          { stage: "closed_won" },
-          { churnDate: { not: null } },
-        ],
-      },
+      where: { stageLabel: { in: QUERY_LABELS } },
       select: {
         name: true,
         clientId: true,
-        stage: true,
         stageLabel: true,
         amount: true,
         amountExGst: true,
-        churnDate: true,
       },
     }),
   ]);
@@ -418,7 +431,7 @@ git commit -m "Render pipeline-stage tool at the bottom of the Overview page"
 
 ## Self-Review Notes
 
-- **Spec coverage:** Very Warm / Contract out (stageLabel) → Task 1 buckets + test; Closed Won full book incl. churn → Task 1 + assertion "Closed Won = full book"; Churned as past-dated churn breakout → Task 1 + assertion; value basis `amountExGst ?? amount` → `dealValue` + fallback assertion; exclusion → `getExcludedClientIds` + excluded-client assertion; clickable drill-down with Total → Task 2; bottom-of-page placement → Task 3 Step 3; snapshot-not-picker-dependent → `getPipelineStageSnapshot` ignores `months`.
+- **Spec coverage:** all four columns key off `stageLabel` → Task 1 `bucketPipelineStages` + assertions on column order and membership; Churned merges "Churned but still active" + "Current (Not Paying)" and drops plain "Churned" → Task 1 + "Dead I" assertion; value basis `amountExGst ?? amount` with amount fallback → `dealValue` + "Warm A" assertion; exclusion → lazy `getExcludedClientIds` + "Excluded F" assertion; clickable drill-down with Total → Task 2; bottom-of-page placement → Task 3 Step 3; snapshot-not-picker-dependent → `getPipelineStageSnapshot` ignores `months`.
 - **Placeholder scan:** none — all steps contain full code/commands.
-- **Type consistency:** `PipelineStageColumn` / `PipelineDeal` / `PipelineDealInput` / `bucketPipelineStages` / `getPipelineStageSnapshot` names identical across Tasks 1–3.
-- **Note on Churned overlap:** intended and asserted — a past-churn closed-won deal is counted in both Closed Won and Churned. Column totals therefore are not additive across columns; this matches the approved spec ("Churned is a breakout, not a mutually-exclusive funnel stage").
+- **Type consistency:** `PipelineStageColumn` / `PipelineDeal` / `PipelineDealInput` / `bucketPipelineStages` / `getPipelineStageSnapshot` names identical across Tasks 1–3. `PipelineDealInput` fields (`name`, `clientId`, `stageLabel`, `amount`, `amountExGst`) match the `select` in `getPipelineStageSnapshot`.
+- **Mutually-exclusive columns:** each deal has one `stageLabel`, so the `else if` chain assigns it to at most one column; totals are additive across columns.

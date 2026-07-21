@@ -12,47 +12,59 @@ deals make it up" — a current-time snapshot.
 
 ## Columns
 
-Evaluated as a snapshot **as of today** (no future-dating). Four columns, in
-progression order:
+Every column keys directly off the raw HubSpot `stageLabel` — these are the
+literal pipeline stages, not values derived from `churnDate` or the mapped
+`stage`. Four columns, in progression order:
 
-| # | Column | Predicate | Notes |
+| # | Column | Predicate (`stageLabel` ∈) | Notes |
 |---|--------|-----------|-------|
-| 1 | **Very Warm** | `stageLabel = "Very Warm"` | Pre-close pipeline, raw HubSpot stage label |
-| 2 | **Contract out** | `stageLabel = "Contract out"` | Pre-close pipeline, raw HubSpot stage label |
-| 3 | **Closed Won** | `stage = "closed_won"` | Full closed-won book — includes deals that carry a churn date |
-| 4 | **Churned** | `churnDate` is set and on or before today | Deals that have actually churned as of the snapshot |
+| 1 | **Very Warm** | `"Very Warm"` | Pre-close pipeline stage |
+| 2 | **Contract out** | `"Contract out"` | Pre-close pipeline stage |
+| 3 | **Closed Won** | `"Closed Won"` | Won and currently paying — naturally includes deals that carry a future churn date |
+| 4 | **Churned** | `"Churned but still active"`, `"Current (Not Paying)"` | Two post-close stages merged into one column |
 
-Notes on overlap:
-- **Closed Won** is the full book and intentionally still counts deals that also
-  appear under **Churned** (a churned deal remains in the closed-won total). The
-  Churned column is a breakout, not a mutually-exclusive funnel stage. This
-  matches the "full closed-won book" convention already used in
-  `active-revenue.ts`.
-- A closed-won deal with a churn date **in the future** counts under Closed Won
-  only (it has not churned yet as of the snapshot).
+Notes:
+- These are **mutually exclusive** columns — each deal has exactly one
+  `stageLabel`, so a deal appears in at most one column. (This replaces the
+  earlier `churnDate`-overlap design, which did not match the real data.)
+- The mapped `stage` field is NOT used for bucketing. Real HubSpot data maps
+  several distinct labels onto the same `stage` (e.g. both `"Churned"` and
+  `"Churned but still active"` map to `stage = "churned"`; `"Very Warm"` maps to
+  `"negotiation"`), so `stageLabel` is the only field that distinguishes the
+  columns we want.
+- The large plain **`"Churned"`** stage (fully-lost deals) is intentionally
+  **excluded** from all columns — it is not one of the four stages of interest.
+- "Closed Won" here is the `stageLabel = "Closed Won"` set (currently-paying won
+  deals), which is a subset of the app's mapped `stage = "closed_won"` book used
+  elsewhere. That is intended: this tool is a pipeline-stage view, not the
+  full-book revenue figure.
 
 ## Value basis
 
 Each deal's value uses `amountExGst ?? amount`, matching the existing
-`michael-sales.ts` pipeline snapshot. A column total is the sum of its deals'
-values, rounded. Deal lists are sorted by amount, high → low.
+`michael-sales.ts` pipeline snapshot. Very Warm and Contract out deals have no
+ex-GST value stored, so they fall back to the inc-GST `amount` — this mixed
+basis across columns is inherent to the source data and consistent with the
+existing pipeline chart. A column total is the sum of its deals' values,
+rounded. Deal lists are sorted by amount, high → low.
 
 ## Data layer
 
-New analytics function, colocated with the existing active-revenue logic:
+New analytics module `src/lib/analytics/pipeline-stages.ts`:
 
-- **File:** `src/lib/analytics/active-revenue.ts` (add) or a small new
-  `src/lib/analytics/pipeline-stages.ts` — decide during planning; the query
-  overlaps with active-revenue's deal set.
-- **Function:** `getPipelineStageSnapshot()` → returns an ordered array of
-  `{ stage: string; total: number; deals: { name: string; amount: number }[] }`.
+- **Pure function** `bucketPipelineStages(deals, excludedIds, now)` → ordered
+  array of `{ stage: string; total: number; deals: { name: string; amount: number }[] }`.
+  Buckets purely on `stageLabel`. `now` is currently unused for bucketing (the
+  columns no longer depend on dates) but is kept in the signature for a stable
+  snapshot contract.
+- **Function** `getPipelineStageSnapshot()` → runs the DB query + calls the pure
+  function with `new Date()`.
 - **Query:** one `db.hubspotDeal.findMany` selecting
-  `{ name, stage, stageLabel, amount, amountExGst, churnDate }`, filtered to the
-  union of the four predicates, then bucketed in memory. Excludes excluded
-  clients consistently with the other Overview analytics (reuse whatever
-  exclusion helper active-revenue uses).
-- Reuse the shared `DealRef`-style `{ name, amount }` shape used by the existing
-  drill-downs.
+  `{ name, clientId, stageLabel, amount, amountExGst }`, filtered to the four
+  labels of interest (`"Very Warm"`, `"Contract out"`, `"Closed Won"`,
+  `"Churned but still active"`, `"Current (Not Paying)"`), then bucketed in
+  memory. Excludes excluded clients via `getExcludedClientIds()`.
+- Deal shape is a local `{ name, amount }` (`PipelineDeal`).
 
 ## UI component
 
@@ -87,10 +99,11 @@ In `src/app/(dashboard)/page.tsx`:
 
 ## Testing
 
-- Unit-test `getPipelineStageSnapshot` bucketing with fixture deals covering:
-  a Very Warm deal, a Contract out deal, a closed-won deal with no churn date,
-  a closed-won deal with a **future** churn date (Closed Won only, not Churned),
-  a deal with a **past** churn date (Churned + still in Closed Won), and an
-  excluded-client deal (dropped from all buckets). Assert totals and per-column
+- No test framework exists in this repo; verify `bucketPipelineStages` with a
+  standalone `tsx` assertion script under `scripts/` (matching `scripts/check-*.ts`).
+- Fixture deals cover: a Very Warm deal (ex-GST null → `amount` fallback), a
+  Contract out deal, a Closed Won deal, a "Churned but still active" deal and a
+  "Current (Not Paying)" deal (both land in the merged Churned column), a plain
+  "Churned" deal (dropped — not one of the four columns), and an excluded-client
+  deal (dropped from all buckets). Assert column order, totals, and per-column
   deal membership.
-- Follow the repo's existing test conventions for analytics functions.
