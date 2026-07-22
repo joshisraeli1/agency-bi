@@ -41,12 +41,14 @@ Notes:
 
 ## Value basis
 
-Each deal's value uses `amountExGst ?? amount`, matching the existing
-`michael-sales.ts` pipeline snapshot. Very Warm and Contract out deals have no
-ex-GST value stored, so they fall back to the inc-GST `amount` — this mixed
-basis across columns is inherent to the source data and consistent with the
-existing pipeline chart. A column total is the sum of its deals' values,
-rounded. Deal lists are sorted by amount, high → low.
+Every column is reported **ex-GST** so the totals reconcile with the Overview's
+ex-GST revenue tile (the tool's Closed Won column then equals the "Monthly
+Revenue (ex GST)" tile to the dollar). Each deal's value is
+`amountExGst ?? (amount / 1.1)`: when a deal stores no ex-GST value (Very Warm
+and Contract out deals don't), the inc-GST `amount` is converted to ex-GST by
+removing the 10% GST — the same `amount / 1.1` fallback used in
+`michael-sales.ts`. A column total is the sum of its deals' values, rounded.
+Deal lists are sorted by amount, high → low.
 
 ## Data layer
 

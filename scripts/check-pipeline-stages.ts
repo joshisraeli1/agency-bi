@@ -14,9 +14,9 @@ function assert(cond: boolean, msg: string) {
 const now = new Date("2026-07-21T00:00:00Z");
 
 const deals: PipelineDealInput[] = [
-  // Very Warm — amountExGst null, so value falls back to `amount`
-  { name: "Warm A", clientId: "c1", stageLabel: "Very Warm", amount: 1000, amountExGst: null },
-  { name: "Warm G", clientId: "c6", stageLabel: "Very Warm", amount: 500, amountExGst: null },
+  // Very Warm — amountExGst null, so value falls back to inc-GST `amount / 1.1`
+  { name: "Warm A", clientId: "c1", stageLabel: "Very Warm", amount: 1100, amountExGst: null },
+  { name: "Warm G", clientId: "c6", stageLabel: "Very Warm", amount: 550, amountExGst: null },
   // Contract out
   { name: "Contract B", clientId: "c2", stageLabel: "Contract out", amount: 2200, amountExGst: 2000 },
   // Closed Won
@@ -39,8 +39,8 @@ assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won
 
 const byStage = Object.fromEntries(cols.map((c) => [c.stage, c]));
 
-// Very Warm: Warm A (1000, amount fallback) + Warm G (500) = 1500, sorted high→low
-assert(byStage["Very Warm"].total === 1500, "Very Warm total uses amount fallback when ex-GST null");
+// Very Warm: ex-GST fallback = amount / 1.1 → Warm A 1100→1000 + Warm G 550→500 = 1500, sorted high→low
+assert(byStage["Very Warm"].total === 1500, "Very Warm total derives ex-GST from inc-GST amount (/1.1) when ex-GST null");
 assert(byStage["Very Warm"].deals.length === 2, "Very Warm has 2 deals");
 assert(byStage["Very Warm"].deals[0].name === "Warm A", "Very Warm sorted high→low (Warm A first)");
 

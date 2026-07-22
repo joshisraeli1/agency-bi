@@ -23,8 +23,13 @@ export type PipelineDealInput = {
 const CHURNED_LABELS = ["Churned but still active", "Current (Not Paying)"];
 const QUERY_LABELS = ["Very Warm", "Contract out", "Closed Won", ...CHURNED_LABELS];
 
+// Every column is reported ex-GST so the totals reconcile with the Overview's
+// ex-GST revenue tile. Very Warm / Contract out deals store no ex-GST value, so
+// we derive it from the inc-GST `amount` by removing the 10% GST — the same
+// `amount / 1.1` fallback used in michael-sales.ts.
+const GST_MULTIPLIER = 1.1;
 const dealValue = (d: PipelineDealInput): number =>
-  Math.round(d.amountExGst ?? d.amount ?? 0);
+  Math.round(d.amountExGst ?? (d.amount != null ? d.amount / GST_MULTIPLIER : 0));
 
 /**
  * Buckets synced HubSpot deals into four pipeline-stage columns, keyed purely
