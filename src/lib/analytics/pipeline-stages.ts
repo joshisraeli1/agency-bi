@@ -12,32 +12,38 @@ export interface PipelineStageColumn {
 export type PipelineDealInput = {
   name: string;
   clientId: string | null;
-  stage: string | null;
   stageLabel: string | null;
   amount: number | null;
   amountExGst: number | null;
-  churnDate: Date | null;
 };
+
+// The raw HubSpot stage labels each column collects. The two "Churned but still
+// active" / "Current (Not Paying)" labels merge into one "Churned" column; the
+// plain "Churned" label (fully-lost deals) is intentionally not listed.
+const CHURNED_LABELS = ["Churned but still active", "Current (Not Paying)"];
+const QUERY_LABELS = ["Very Warm", "Contract out", "Closed Won", ...CHURNED_LABELS];
 
 const dealValue = (d: PipelineDealInput): number =>
   Math.round(d.amountExGst ?? d.amount ?? 0);
 
 /**
- * Buckets synced HubSpot deals into four pipeline-stage columns as a snapshot
- * "as of now". Columns are NOT mutually exclusive: a closed-won deal with a
- * past churn date appears in BOTH "Closed Won" (the full book) and "Churned"
- * (the breakout of deals that have actually churned).
+ * Buckets synced HubSpot deals into four pipeline-stage columns, keyed purely
+ * on the raw `stageLabel`. Columns are mutually exclusive (one label per deal).
  *
  *  - Very Warm    : stageLabel === "Very Warm"
  *  - Contract out : stageLabel === "Contract out"
- *  - Closed Won   : stage === "closed_won" (any churn state)
- *  - Churned      : churnDate set and on/before `now`
+ *  - Closed Won   : stageLabel === "Closed Won"
+ *  - Churned      : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
+ *
+ * `now` is accepted for a stable snapshot signature but is not used here — the
+ * columns no longer depend on any date.
  */
 export function bucketPipelineStages(
   deals: PipelineDealInput[],
   excludedIds: Set<string>,
   now: Date
 ): PipelineStageColumn[] {
+  void now;
   const columns: PipelineStageColumn[] = [
     { stage: "Very Warm", total: 0, deals: [] },
     { stage: "Contract out", total: 0, deals: [] },
@@ -52,14 +58,11 @@ export function bucketPipelineStages(
 
     if (d.stageLabel === "Very Warm") {
       veryWarm.deals.push({ name: d.name, amount });
-    }
-    if (d.stageLabel === "Contract out") {
+    } else if (d.stageLabel === "Contract out") {
       contractOut.deals.push({ name: d.name, amount });
-    }
-    if (d.stage === "closed_won") {
+    } else if (d.stageLabel === "Closed Won") {
       closedWon.deals.push({ name: d.name, amount });
-    }
-    if (d.churnDate && d.churnDate <= now) {
+    } else if (d.stageLabel && CHURNED_LABELS.includes(d.stageLabel)) {
       churned.deals.push({ name: d.name, amount });
     }
   }
@@ -72,30 +75,27 @@ export function bucketPipelineStages(
 }
 
 /**
- * Current-time snapshot of revenue by pipeline stage for the Overview page.
+ * Current snapshot of revenue by pipeline stage for the Overview page.
  */
 export async function getPipelineStageSnapshot(): Promise<PipelineStageColumn[]> {
-  const { db } = await import("@/lib/db");
-  const { getExcludedClientIds } = await import("./excluded-clients");
+  // `db` and `getExcludedClientIds` are imported lazily so that importing this
+  // module for the pure `bucketPipelineStages` function (e.g. from the tsx test
+  // script) does not trigger Prisma client initialization, which needs
+  // DATABASE_URL at load. (`excluded-clients` imports `db` at its top.)
+  const [{ db }, { getExcludedClientIds }] = await Promise.all([
+    import("@/lib/db"),
+    import("./excluded-clients"),
+  ]);
   const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
-      where: {
-        OR: [
-          { stageLabel: "Very Warm" },
-          { stageLabel: "Contract out" },
-          { stage: "closed_won" },
-          { churnDate: { not: null } },
-        ],
-      },
+      where: { stageLabel: { in: QUERY_LABELS } },
       select: {
         name: true,
         clientId: true,
-        stage: true,
         stageLabel: true,
         amount: true,
         amountExGst: true,
-        churnDate: true,
       },
     }),
   ]);
