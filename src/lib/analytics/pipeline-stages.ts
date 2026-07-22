@@ -38,7 +38,7 @@ const dealValue = (d: PipelineDealInput): number =>
  *  - Very Warm    : stageLabel === "Very Warm"
  *  - Contract out : stageLabel === "Contract out"
  *  - Closed Won   : stageLabel === "Closed Won"
- *  - Churned      : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
+ *  - Churned (still active) : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
  *
  * `now` is accepted for a stable snapshot signature but is not used here — the
  * columns no longer depend on any date.
@@ -53,7 +53,7 @@ export function bucketPipelineStages(
     { stage: "Very Warm", total: 0, deals: [] },
     { stage: "Contract out", total: 0, deals: [] },
     { stage: "Closed Won", total: 0, deals: [] },
-    { stage: "Churned", total: 0, deals: [] },
+    { stage: "Churned (still active)", total: 0, deals: [] },
   ];
   const [veryWarm, contractOut, closedWon, churned] = columns;
 

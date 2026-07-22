@@ -21,7 +21,7 @@ literal pipeline stages, not values derived from `churnDate` or the mapped
 | 1 | **Very Warm** | `"Very Warm"` | Pre-close pipeline stage |
 | 2 | **Contract out** | `"Contract out"` | Pre-close pipeline stage |
 | 3 | **Closed Won** | `"Closed Won"` | Won and currently paying — naturally includes deals that carry a future churn date |
-| 4 | **Churned** | `"Churned but still active"`, `"Current (Not Paying)"` | Two post-close stages merged into one column |
+| 4 | **Churned (still active)** | `"Churned but still active"`, `"Current (Not Paying)"` | Two post-close stages merged into one column |
 
 Notes:
 - These are **mutually exclusive** columns — each deal has exactly one

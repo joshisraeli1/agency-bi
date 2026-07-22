@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a "Revenue by Pipeline Stage" tool to the bottom of the Overview page: four clickable columns (Very Warm, Contract out, Closed Won, Churned) each showing a revenue total that expands to its deals.
+**Goal:** Add a "Revenue by Pipeline Stage" tool to the bottom of the Overview page: four clickable columns (Very Warm, Contract out, Closed Won, Churned (still active)) each showing a revenue total that expands to its deals.
 
 **Architecture:** A pure bucketing function (`bucketPipelineStages`) sorts synced HubSpot deals into four ordered stage columns as a current-time snapshot; a thin `getPipelineStageSnapshot()` wrapper runs the DB query and calls it. A client component (`pipeline-stage-tool.tsx`), modeled on the existing `michael-tiles.tsx` drill-down, renders the columns and their expandable deal lists. The Overview server page fetches the snapshot and renders the component last.
 
@@ -14,7 +14,7 @@
   1. **Very Warm** → `stageLabel === "Very Warm"`
   2. **Contract out** → `stageLabel === "Contract out"`
   3. **Closed Won** → `stageLabel === "Closed Won"`
-  4. **Churned** → `stageLabel === "Churned but still active"` OR `stageLabel === "Current (Not Paying)"`
+  4. **Churned (still active)** → `stageLabel === "Churned but still active"` OR `stageLabel === "Current (Not Paying)"`
 - Columns are **mutually exclusive** (each deal has one `stageLabel`). The plain `"Churned"` stage (fully-lost deals) is intentionally **excluded** from every column.
 - Value basis per deal (all columns ex-GST, so totals reconcile with the ex-GST revenue tile): `amountExGst ?? (amount / 1.1)`, rounded. Very Warm / Contract out store no ex-GST value, so their inc-GST `amount` has the 10% GST removed via `/ 1.1` — the same fallback used in `src/lib/analytics/michael-sales.ts`.
 - Exclude excluded clients using the shared `getExcludedClientIds()` set (`src/lib/analytics/excluded-clients.ts`) — skip any deal whose `clientId` is in the set.
@@ -35,7 +35,7 @@
   - `interface PipelineDeal { name: string; amount: number }`
   - `interface PipelineStageColumn { stage: string; total: number; deals: PipelineDeal[] }`
   - `type PipelineDealInput = { name: string; clientId: string | null; stageLabel: string | null; amount: number | null; amountExGst: number | null }`
-  - `function bucketPipelineStages(deals: PipelineDealInput[], excludedIds: Set<string>, now: Date): PipelineStageColumn[]` — pure; buckets on `stageLabel`; returns exactly 4 columns in order `["Very Warm", "Contract out", "Closed Won", "Churned"]`. `now` is accepted for a stable snapshot signature but not used in bucketing.
+  - `function bucketPipelineStages(deals: PipelineDealInput[], excludedIds: Set<string>, now: Date): PipelineStageColumn[]` — pure; buckets on `stageLabel`; returns exactly 4 columns in order `["Very Warm", "Contract out", "Closed Won", "Churned (still active)"]`. `now` is accepted for a stable snapshot signature but not used in bucketing.
   - `async function getPipelineStageSnapshot(): Promise<PipelineStageColumn[]>` — DB query + `bucketPipelineStages`.
 
 - [ ] **Step 1: Write the failing test**
@@ -80,7 +80,7 @@ const excluded = new Set(["cx"]);
 const cols = bucketPipelineStages(deals, excluded, now);
 
 assert(cols.length === 4, "returns exactly 4 columns");
-assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won,Churned", "columns in progression order");
+assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won,Churned (still active)", "columns in progression order");
 
 const byStage = Object.fromEntries(cols.map((c) => [c.stage, c]));
 
@@ -97,10 +97,10 @@ assert(byStage["Closed Won"].total === 7000, "Closed Won sums stageLabel='Closed
 assert(byStage["Closed Won"].deals.length === 2, "Closed Won has 2 deals");
 assert(!byStage["Closed Won"].deals.some((d) => d.name === "Excluded F"), "Closed Won drops excluded client");
 
-// Churned: Still Active E (6000) + Not Paying H (1000) = 7000; plain "Churned" NOT included
-assert(byStage["Churned"].total === 7000, "Churned = 'still active' + 'not paying' merged");
-assert(byStage["Churned"].deals.length === 2, "Churned has 2 deals");
-assert(!byStage["Churned"].deals.some((d) => d.name === "Dead I"), "plain 'Churned' stage is excluded");
+// Churned (still active): Still Active E (6000) + Not Paying H (1000) = 7000; plain "Churned" NOT included
+assert(byStage["Churned (still active)"].total === 7000, "Churned (still active) = 'still active' + 'not paying' merged");
+assert(byStage["Churned (still active)"].deals.length === 2, "Churned (still active) has 2 deals");
+assert(!byStage["Churned (still active)"].deals.some((d) => d.name === "Dead I"), "plain 'Churned' stage is excluded");
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) FAILED`);
@@ -147,7 +147,7 @@ export type PipelineDealInput = {
 };
 
 // The raw HubSpot stage labels each column collects. The two "Churned but still
-// active" / "Current (Not Paying)" labels merge into one "Churned" column; the
+// active" / "Current (Not Paying)" labels merge into one "Churned (still active)" column; the
 // plain "Churned" label (fully-lost deals) is intentionally not listed.
 const CHURNED_LABELS = ["Churned but still active", "Current (Not Paying)"];
 const QUERY_LABELS = ["Very Warm", "Contract out", "Closed Won", ...CHURNED_LABELS];
@@ -167,7 +167,7 @@ const dealValue = (d: PipelineDealInput): number =>
  *  - Very Warm    : stageLabel === "Very Warm"
  *  - Contract out : stageLabel === "Contract out"
  *  - Closed Won   : stageLabel === "Closed Won"
- *  - Churned      : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
+ *  - Churned (still active) : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
  *
  * `now` is accepted for a stable snapshot signature but is not used here — the
  * columns no longer depend on any date.
@@ -182,7 +182,7 @@ export function bucketPipelineStages(
     { stage: "Very Warm", total: 0, deals: [] },
     { stage: "Contract out", total: 0, deals: [] },
     { stage: "Closed Won", total: 0, deals: [] },
-    { stage: "Churned", total: 0, deals: [] },
+    { stage: "Churned (still active)", total: 0, deals: [] },
   ];
   const [veryWarm, contractOut, closedWon, churned] = columns;
 
@@ -436,7 +436,7 @@ git commit -m "Render pipeline-stage tool at the bottom of the Overview page"
 
 ## Self-Review Notes
 
-- **Spec coverage:** all four columns key off `stageLabel` → Task 1 `bucketPipelineStages` + assertions on column order and membership; Churned merges "Churned but still active" + "Current (Not Paying)" and drops plain "Churned" → Task 1 + "Dead I" assertion; value basis `amountExGst ?? amount` with amount fallback → `dealValue` + "Warm A" assertion; exclusion → lazy `getExcludedClientIds` + "Excluded F" assertion; clickable drill-down with Total → Task 2; bottom-of-page placement → Task 3 Step 3; snapshot-not-picker-dependent → `getPipelineStageSnapshot` ignores `months`.
+- **Spec coverage:** all four columns key off `stageLabel` → Task 1 `bucketPipelineStages` + assertions on column order and membership; The "Churned (still active)" column merges "Churned but still active" + "Current (Not Paying)" and drops plain "Churned" → Task 1 + "Dead I" assertion; value basis `amountExGst ?? amount` with amount fallback → `dealValue` + "Warm A" assertion; exclusion → lazy `getExcludedClientIds` + "Excluded F" assertion; clickable drill-down with Total → Task 2; bottom-of-page placement → Task 3 Step 3; snapshot-not-picker-dependent → `getPipelineStageSnapshot` ignores `months`.
 - **Placeholder scan:** none — all steps contain full code/commands.
 - **Type consistency:** `PipelineStageColumn` / `PipelineDeal` / `PipelineDealInput` / `bucketPipelineStages` / `getPipelineStageSnapshot` names identical across Tasks 1–3. `PipelineDealInput` fields (`name`, `clientId`, `stageLabel`, `amount`, `amountExGst`) match the `select` in `getPipelineStageSnapshot`.
 - **Mutually-exclusive columns:** each deal has one `stageLabel`, so the `else if` chain assigns it to at most one column; totals are additive across columns.

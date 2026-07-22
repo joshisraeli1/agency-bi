@@ -35,7 +35,7 @@ const excluded = new Set(["cx"]);
 const cols = bucketPipelineStages(deals, excluded, now);
 
 assert(cols.length === 4, "returns exactly 4 columns");
-assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won,Churned", "columns in progression order");
+assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won,Churned (still active)", "columns in progression order");
 
 const byStage = Object.fromEntries(cols.map((c) => [c.stage, c]));
 
@@ -52,10 +52,10 @@ assert(byStage["Closed Won"].total === 7000, "Closed Won sums stageLabel='Closed
 assert(byStage["Closed Won"].deals.length === 2, "Closed Won has 2 deals");
 assert(!byStage["Closed Won"].deals.some((d) => d.name === "Excluded F"), "Closed Won drops excluded client");
 
-// Churned: Still Active E (6000) + Not Paying H (1000) = 7000; plain "Churned" NOT included
-assert(byStage["Churned"].total === 7000, "Churned = 'still active' + 'not paying' merged");
-assert(byStage["Churned"].deals.length === 2, "Churned has 2 deals");
-assert(!byStage["Churned"].deals.some((d) => d.name === "Dead I"), "plain 'Churned' stage is excluded");
+// Churned (still active): Still Active E (6000) + Not Paying H (1000) = 7000; plain "Churned" NOT included
+assert(byStage["Churned (still active)"].total === 7000, "Churned (still active) = 'still active' + 'not paying' merged");
+assert(byStage["Churned (still active)"].deals.length === 2, "Churned (still active) has 2 deals");
+assert(!byStage["Churned (still active)"].deals.some((d) => d.name === "Dead I"), "plain 'Churned' stage is excluded");
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) FAILED`);
