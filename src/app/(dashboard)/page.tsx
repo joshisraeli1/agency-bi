@@ -3,6 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { getRevenueOverview, getRevenueVsChurn, getYtdXeroRevenue } from "@/lib/analytics/revenue-overview";
 import { getActiveRevenueSnapshot, getPackageRevenueByMonth } from "@/lib/analytics/active-revenue";
+import { getPipelineStageSnapshot } from "@/lib/analytics/pipeline-stages";
 import { getBudgetVsActual } from "@/lib/analytics/revenue-budget";
 import { getRevenueForecast } from "@/lib/analytics/forecast";
 import { formatCurrency, formatPercent, resolveMonthsParam, formatMonth } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-cha
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
 import { BudgetVsActualChart } from "@/components/dashboard/budget-vs-actual-chart";
 import { RevenueForecastSection } from "@/components/dashboard/revenue-forecast-section";
+import { PipelineStageTool } from "@/components/dashboard/pipeline-stage-tool";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { RefreshDataButton } from "@/components/dashboard/refresh-data-button";
 import { Users, TrendingUp, AlertTriangle, Calendar, Receipt } from "lucide-react";
@@ -34,7 +36,7 @@ export default async function OverviewPage({ searchParams }: Props) {
   const curMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const lastYearMonthKey = `${nowDate.getFullYear() - 1}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
@@ -44,6 +46,7 @@ export default async function OverviewPage({ searchParams }: Props) {
     getBudgetVsActual(),
     getYtdXeroRevenue(),
     getPackageRevenueByMonth(lastYearMonthKey),
+    getPipelineStageSnapshot(),
   ]);
 
   // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
@@ -196,6 +199,8 @@ export default async function OverviewPage({ searchParams }: Props) {
           </Card>
         )}
       </div>
+
+      <PipelineStageTool stages={pipelineStages} />
     </div>
   );
 }
