@@ -3,7 +3,9 @@ import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths } from "@/lib/analytics/active-revenue";
 import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
+import { getCumulativeDivisionRevenueFY } from "@/lib/analytics/division-fy";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
+import { CumulativeDivisionRevenueChart } from "@/components/dashboard/cumulative-division-revenue-chart";
 import { AvgDealSizeComparisonCard } from "@/components/dashboard/avg-deal-size-comparison";
 import {
   getLTVData,
@@ -50,6 +52,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     divisionGoals,
     avgDealSizeComparison,
     avgTenure,
+    cumulativeDivisionFY,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -69,6 +72,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getDivisionGoals(),
     getAvgDealSizeComparison(),
     getAvgClientTenureMonths(),
+    getCumulativeDivisionRevenueFY(),
   ]);
 
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
@@ -136,6 +140,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* Revenue by Division vs Goal (editable monthly targets) */}
       <DivisionGoals byPackageType={activeSnapshot.byPackageType} goals={divisionGoals} />
+
+      <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} />
 
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection
