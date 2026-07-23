@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
+import { dealDivisionSplit } from "./division-fy";
 import type { RevenueOverview } from "./types";
 
 export async function getRevenueOverview(
@@ -240,17 +241,9 @@ export async function getRevenueOverview(
       if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
       const amt = d.amountExGst ?? 0;
       if (!amt) continue;
-      const pkg = (d.contentPackageType || "").toLowerCase().trim();
-      if (pkg === "social media" || pkg === "social media management") {
-        add("Social Media Management", amt, d.name);
-      } else if (pkg === "social and ads management") {
-        add("Social Media Management", amt * 0.5, `${d.name} (Full Suite)`);
-        add("Ads Management", amt * 0.5, `${d.name} (Full Suite)`);
-      } else if (pkg === "meta ads" || pkg === "ads management") {
-        add("Ads Management", amt, d.name);
-      } else {
-        add("Content Delivery", amt, d.name);
-      }
+      const split = dealDivisionSplit(d.contentPackageType);
+      const label = split.length > 1 ? `${d.name} (Full Suite)` : d.name;
+      for (const { division, fraction } of split) add(division, amt * fraction, label);
     }
     for (const k of Object.keys(divDeals)) divDeals[k].sort((a, b) => b.amount - a.amount);
     return {
