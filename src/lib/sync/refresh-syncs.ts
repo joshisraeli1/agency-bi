@@ -68,7 +68,7 @@ function parseDate(v: string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted: number }> {
+export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted: number; removed: number }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
 
@@ -147,7 +147,21 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
     upserted += batch.length;
   }
 
-  return { inPipeline: relevant.length, upserted };
+  // Prune ghosts: Content Machine deals we hold that this fetch did NOT return
+  // (deleted in HubSpot, or moved to another pipeline). Upsert alone never
+  // removes them, so they linger forever and skew every deal-based analytic
+  // (revenue, pipeline stages, divisions). The `relevant.length > 0` guard is
+  // load-bearing: a transient empty/failed fetch must never delete the table.
+  let removed = 0;
+  if (relevant.length > 0) {
+    const fetchedIds = rows.map((r) => r.id);
+    const pruned = await db.hubspotDeal.deleteMany({
+      where: { pipeline: "Content Machine", id: { notIn: fetchedIds } },
+    });
+    removed = pruned.count;
+  }
+
+  return { inPipeline: relevant.length, upserted, removed };
 }
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ export async function POST() {
   if (auth.error) return auth.error;
 
   const result: {
-    hubspot?: { upserted: number; inPipeline: number };
+    hubspot?: { upserted: number; inPipeline: number; removed: number };
     xero?: { months: number; tenant?: string };
     errors: string[];
   } = { errors: [] };
@@ -21,7 +21,7 @@ export async function POST() {
   // HubSpot deals
   try {
     const h = await syncHubspotDeals();
-    result.hubspot = { upserted: h.upserted, inPipeline: h.inPipeline };
+    result.hubspot = { upserted: h.upserted, inPipeline: h.inPipeline, removed: h.removed };
     await db.integrationConfig.updateMany({
       where: { provider: "hubspot" },
       data: { lastSyncAt: new Date(), lastSyncStatus: "success" },

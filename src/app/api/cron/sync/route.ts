@@ -22,14 +22,14 @@ export async function GET(request: NextRequest) {
   }
 
   const result: {
-    hubspot?: { upserted: number; inPipeline: number };
+    hubspot?: { upserted: number; inPipeline: number; removed: number };
     xero?: { months: number; tenant?: string };
     errors: string[];
   } = { errors: [] };
 
   try {
     const h = await syncHubspotDeals();
-    result.hubspot = { upserted: h.upserted, inPipeline: h.inPipeline };
+    result.hubspot = { upserted: h.upserted, inPipeline: h.inPipeline, removed: h.removed };
     await db.integrationConfig.updateMany({
       where: { provider: "hubspot" },
       data: { lastSyncAt: new Date(), lastSyncStatus: "success" },
