@@ -34,7 +34,7 @@ Pipeline and net-new additions persist in later months (they join the recurring 
   - Deal value ex-GST = `amountExGst ?? amount / 1.1` (Very Warm / Contract out store no ex-GST value).
 - **Net-new business.** `netNewMonthly` = trailing-12-month average monthly new closed-won revenue (sum of ex-GST of closed-won deals whose start month falls in each of the last 12 months, ÷ 12). Added every forecast month.
 - **Churn.**
-  - `knownChurn[m]` = ex-GST of deals whose `churnDate` is in month m (closed-won or churned-but-still-active deals carrying a churn date).
+  - `knownChurn[m]` = ex-GST of **Closed Won base** deals whose `churnDate` is in month m. Restricted to the Closed Won book because only revenue that is currently billing (the base) can churn out of it — subtracting a deal not in the base would over-reduce. (Historical churned deals still drive the `churnRate` below; they just don't double-subtract here.)
   - `churnRate` = (trailing-12-month total churned ex-GST ÷ 12) ÷ currentMrr — the monthly baseline rate (~7.1%/mo on current data; **surfaced prominently** as it is high).
   - `baselineChurn[m]` = `churnRate × max(0, starting − knownChurn[m])` — applies the statistical rate only to the base not already flagged with a known churn date, so no deal is double-counted.
 
