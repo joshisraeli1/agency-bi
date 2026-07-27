@@ -12,7 +12,13 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-import { DIVISIONS, type CumulativeDivisionMonth, type Division } from "@/lib/analytics/division-fy";
+// Type-only import: division-fy.ts reaches @/lib/db (Prisma/native modules) via a
+// lazy import, so importing any RUNTIME value from it into this client component
+// drags server-only code into the browser bundle and breaks `next build`. Keep
+// the division list local here.
+import type { CumulativeDivisionMonth, Division } from "@/lib/analytics/division-fy";
+
+const DIVISION_ORDER: Division[] = ["Content Delivery", "Social Media Management", "Ads Management"];
 
 // From the dataviz skill (Step 1). Content Delivery anchored to brand orange;
 // teal and indigo chosen and validated via scripts/validate_palette.js
@@ -67,7 +73,7 @@ export function CumulativeDivisionRevenueChart({ data }: { data: CumulativeDivis
             <YAxis tickFormatter={shortDollars} tick={{ fontSize: 12, fill: "#64748b" }} width={56} />
             <Tooltip content={<CumulativeTooltip />} cursor={{ fill: "rgba(100,116,139,0.08)" }} />
             <Legend />
-            {DIVISIONS.map((div) => (
+            {DIVISION_ORDER.map((div) => (
               <Bar key={div} dataKey={div} fill={DIVISION_COLORS[div]} radius={[2, 2, 0, 0]} />
             ))}
           </BarChart>
