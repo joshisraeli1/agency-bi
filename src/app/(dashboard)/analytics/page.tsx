@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
-import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths } from "@/lib/analytics/active-revenue";
+import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths, getRevenueComposition } from "@/lib/analytics/active-revenue";
 import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
 import { getCumulativeDivisionRevenueFY } from "@/lib/analytics/division-fy";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
 import { CumulativeDivisionRevenueChart } from "@/components/dashboard/cumulative-division-revenue-chart";
+import { RevenueCompositionChart } from "@/components/dashboard/revenue-composition-chart";
 import { AvgDealSizeComparisonCard } from "@/components/dashboard/avg-deal-size-comparison";
 import {
   getLTVData,
@@ -53,6 +54,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     avgDealSizeComparison,
     avgTenure,
     cumulativeDivisionFY,
+    revenueComposition,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -73,6 +75,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getAvgDealSizeComparison(),
     getAvgClientTenureMonths(),
     getCumulativeDivisionRevenueFY(),
+    getRevenueComposition(),
   ]);
 
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
@@ -142,6 +145,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       <DivisionGoals byPackageType={activeSnapshot.byPackageType} goals={divisionGoals} />
 
       <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} />
+
+      <RevenueCompositionChart rows={revenueComposition.rows} windowMonths={revenueComposition.windowMonths} />
 
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection

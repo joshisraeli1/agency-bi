@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { foldUpsells } from "./upsells";
+import { foldUpsells, isUpsell, isOneOff } from "./upsells";
 import { getExcludedClientIds } from "./excluded-clients";
 
 export const DIVISION_GOALS_PROVIDER = "division_goals";
@@ -44,6 +44,82 @@ export interface ActiveRevenueSnapshot {
   monthlyRevenueIncGst: number; // sum of closed-won deal Amount (inc-GST) — matches HubSpot
   monthlyRevenueExGst: number; // sum of closed-won deal ex-GST property
   byPackageType: PackageTypeRow[];
+}
+
+export interface RevenueCompositionRow {
+  packageType: string;
+  total: number;
+  existing: number;
+  newRevenue: number;
+  upsell: number;
+  newDeals: { name: string; revenue: number; month: string }[];
+  upsellDeals: { name: string; revenue: number }[];
+}
+
+/**
+ * Composition of each package type's closed-won revenue (ex-GST): existing base
+ * vs new deals won in the last `newWindowMonths` vs upsells (expansion). One-off
+ * / ad-hoc deals are excluded (not recurring). Upsells are counted unfolded so
+ * their contribution is visible. Powers the revenue-composition view.
+ */
+export async function getRevenueComposition(
+  newWindowMonths = 3
+): Promise<{ rows: RevenueCompositionRow[]; windowMonths: string[] }> {
+  const [excludedIds, deals] = await Promise.all([
+    getExcludedClientIds(),
+    db.hubspotDeal.findMany({
+      where: { stage: "closed_won" },
+      select: { clientId: true, name: true, contentPackageType: true, packageDescription: true, amount: true, amountExGst: true, startDate: true, closeDate: true },
+    }),
+  ]);
+
+  const now = new Date();
+  const windowKeys = new Set<string>();
+  for (let i = 0; i < newWindowMonths; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    windowKeys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  const monthOf = (d: Date | null | undefined): string | null =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
+  // Ad-hoc shoots etc. are one-time work — treat as non-recurring even when
+  // they're mistagged "Upsell" in HubSpot.
+  const isAdHoc = (name: string) => /ad[\s-]?hoc/i.test(name);
+
+  const byPkg = new Map<string, RevenueCompositionRow>();
+  for (const d of deals) {
+    if (d.clientId && excludedIds.has(d.clientId)) continue;
+    if (isOneOff(d) || isAdHoc(d.name)) continue;
+    const ex = d.amountExGst ?? 0;
+    if (ex <= 0) continue;
+    const pkg = classifyPackageType(d.contentPackageType);
+    const row = byPkg.get(pkg) ?? { packageType: pkg, total: 0, existing: 0, newRevenue: 0, upsell: 0, newDeals: [], upsellDeals: [] };
+    row.total += ex;
+    if (isUpsell(d)) {
+      row.upsell += ex;
+      row.upsellDeals.push({ name: d.name, revenue: Math.round(ex) });
+    } else if (windowKeys.has(monthOf(d.startDate ?? d.closeDate) ?? "")) {
+      row.newRevenue += ex;
+      row.newDeals.push({ name: d.name, revenue: Math.round(ex), month: monthOf(d.startDate ?? d.closeDate)! });
+    } else {
+      row.existing += ex;
+    }
+    byPkg.set(pkg, row);
+  }
+
+  const order = ["Content Delivery Paid", "Social Media Management", "Ads Management"];
+  const rows = Array.from(byPkg.values())
+    .map((r) => ({
+      ...r,
+      total: Math.round(r.total),
+      existing: Math.round(r.existing),
+      newRevenue: Math.round(r.newRevenue),
+      upsell: Math.round(r.upsell),
+      newDeals: r.newDeals.sort((a, b) => b.revenue - a.revenue),
+      upsellDeals: r.upsellDeals.sort((a, b) => b.revenue - a.revenue),
+    }))
+    .sort((a, b) => order.indexOf(a.packageType) - order.indexOf(b.packageType));
+
+  return { rows, windowMonths: Array.from(windowKeys).sort() };
 }
 
 /**
