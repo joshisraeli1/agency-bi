@@ -16,7 +16,7 @@ export function PipelineStageTool({ stages }: { stages: PipelineStageColumn[] })
         <CardTitle>Revenue by Pipeline Stage</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {stages.map((s) => (
             <button
               key={s.stage}

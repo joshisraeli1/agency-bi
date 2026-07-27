@@ -15,6 +15,7 @@ export type PipelineDealInput = {
   stageLabel: string | null;
   amount: number | null;
   amountExGst: number | null;
+  startDate: Date | null;
 };
 
 // The raw HubSpot stage labels each column collects. The two "Churned but still
@@ -32,11 +33,14 @@ const dealValue = (d: PipelineDealInput): number =>
   Math.round(d.amountExGst ?? (d.amount != null ? d.amount / GST_MULTIPLIER : 0));
 
 /**
- * Buckets synced HubSpot deals into four pipeline-stage columns, keyed purely
- * on the raw `stageLabel`. Columns are mutually exclusive (one label per deal).
+ * Buckets synced HubSpot deals into five pipeline-stage columns, keyed on the
+ * raw `stageLabel` (with Contract out split by start-date presence). Columns are
+ * mutually exclusive (one deal → one column).
  *
  *  - Very Warm    : stageLabel === "Very Warm"
- *  - Contract out : stageLabel === "Contract out"
+ *  - Contract out : stageLabel === "Contract out" AND no start date (not yet scheduled)
+ *  - Incoming     : stageLabel === "Contract out" AND a start date is set
+ *                   (signed / 100% starting — matches the forecast waterfall's "incoming")
  *  - Closed Won   : stageLabel === "Closed Won"
  *  - Churned (still active) : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
  *
@@ -52,10 +56,11 @@ export function bucketPipelineStages(
   const columns: PipelineStageColumn[] = [
     { stage: "Very Warm", total: 0, deals: [] },
     { stage: "Contract out", total: 0, deals: [] },
+    { stage: "Incoming", total: 0, deals: [] },
     { stage: "Closed Won", total: 0, deals: [] },
     { stage: "Churned (still active)", total: 0, deals: [] },
   ];
-  const [veryWarm, contractOut, closedWon, churned] = columns;
+  const [veryWarm, contractOut, incoming, closedWon, churned] = columns;
 
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
@@ -64,7 +69,9 @@ export function bucketPipelineStages(
     if (d.stageLabel === "Very Warm") {
       veryWarm.deals.push({ name: d.name, amount });
     } else if (d.stageLabel === "Contract out") {
-      contractOut.deals.push({ name: d.name, amount });
+      // A start date means the deal is signed and scheduled — "Incoming"
+      // revenue, matching the forecast waterfall. No start date → still Contract out.
+      (d.startDate ? incoming : contractOut).deals.push({ name: d.name, amount });
     } else if (d.stageLabel === "Closed Won") {
       closedWon.deals.push({ name: d.name, amount });
     } else if (d.stageLabel && CHURNED_LABELS.includes(d.stageLabel)) {
@@ -101,6 +108,7 @@ export async function getPipelineStageSnapshot(): Promise<PipelineStageColumn[]>
         stageLabel: true,
         amount: true,
         amountExGst: true,
+        startDate: true,
       },
     }),
   ]);

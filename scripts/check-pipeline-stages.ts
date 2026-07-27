@@ -15,27 +15,29 @@ const now = new Date("2026-07-21T00:00:00Z");
 
 const deals: PipelineDealInput[] = [
   // Very Warm — amountExGst null, so value falls back to inc-GST `amount / 1.1`
-  { name: "Warm A", clientId: "c1", stageLabel: "Very Warm", amount: 1100, amountExGst: null },
-  { name: "Warm G", clientId: "c6", stageLabel: "Very Warm", amount: 550, amountExGst: null },
-  // Contract out
-  { name: "Contract B", clientId: "c2", stageLabel: "Contract out", amount: 2200, amountExGst: 2000 },
+  { name: "Warm A", clientId: "c1", stageLabel: "Very Warm", amount: 1100, amountExGst: null, startDate: null },
+  { name: "Warm G", clientId: "c6", stageLabel: "Very Warm", amount: 550, amountExGst: null, startDate: null },
+  // Contract out with NO start date → stays in "Contract out"
+  { name: "Contract B", clientId: "c2", stageLabel: "Contract out", amount: 2200, amountExGst: 2000, startDate: null },
+  // Contract out WITH a start date → "Incoming"
+  { name: "Incoming J", clientId: "c9", stageLabel: "Contract out", amount: 0, amountExGst: 5000, startDate: new Date("2026-09-01") },
   // Closed Won
-  { name: "Won C", clientId: "c3", stageLabel: "Closed Won", amount: 3300, amountExGst: 3000 },
-  { name: "Won D", clientId: "c4", stageLabel: "Closed Won", amount: 4400, amountExGst: 4000 },
+  { name: "Won C", clientId: "c3", stageLabel: "Closed Won", amount: 3300, amountExGst: 3000, startDate: null },
+  { name: "Won D", clientId: "c4", stageLabel: "Closed Won", amount: 4400, amountExGst: 4000, startDate: null },
   // Churned column = "Churned but still active" + "Current (Not Paying)"
-  { name: "Still Active E", clientId: "c5", stageLabel: "Churned but still active", amount: 0, amountExGst: 6000 },
-  { name: "Not Paying H", clientId: "c7", stageLabel: "Current (Not Paying)", amount: 0, amountExGst: 1000 },
-  // Plain "Churned" → dropped (not one of the four columns)
-  { name: "Dead I", clientId: "c8", stageLabel: "Churned", amount: 0, amountExGst: 99999 },
+  { name: "Still Active E", clientId: "c5", stageLabel: "Churned but still active", amount: 0, amountExGst: 6000, startDate: null },
+  { name: "Not Paying H", clientId: "c7", stageLabel: "Current (Not Paying)", amount: 0, amountExGst: 1000, startDate: null },
+  // Plain "Churned" → dropped (not one of the columns)
+  { name: "Dead I", clientId: "c8", stageLabel: "Churned", amount: 0, amountExGst: 99999, startDate: null },
   // Excluded client → dropped from ALL buckets even though its label matches
-  { name: "Excluded F", clientId: "cx", stageLabel: "Closed Won", amount: 9999, amountExGst: 9999 },
+  { name: "Excluded F", clientId: "cx", stageLabel: "Closed Won", amount: 9999, amountExGst: 9999, startDate: null },
 ];
 
 const excluded = new Set(["cx"]);
 const cols = bucketPipelineStages(deals, excluded, now);
 
-assert(cols.length === 4, "returns exactly 4 columns");
-assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Closed Won,Churned (still active)", "columns in progression order");
+assert(cols.length === 5, "returns exactly 5 columns");
+assert(cols.map((c) => c.stage).join(",") === "Very Warm,Contract out,Incoming,Closed Won,Churned (still active)", "columns in progression order");
 
 const byStage = Object.fromEntries(cols.map((c) => [c.stage, c]));
 
@@ -44,8 +46,13 @@ assert(byStage["Very Warm"].total === 1500, "Very Warm total derives ex-GST from
 assert(byStage["Very Warm"].deals.length === 2, "Very Warm has 2 deals");
 assert(byStage["Very Warm"].deals[0].name === "Warm A", "Very Warm sorted high→low (Warm A first)");
 
-// Contract out: Contract B (2000, ex-GST)
-assert(byStage["Contract out"].total === 2000, "Contract out total = 2000");
+// Contract out (no start date): Contract B (2000, ex-GST) only — Incoming J excluded
+assert(byStage["Contract out"].total === 2000, "Contract out = only Contract-out deals WITHOUT a start date");
+assert(byStage["Contract out"].deals.length === 1 && byStage["Contract out"].deals[0].name === "Contract B", "Contract out holds the no-start-date deal");
+
+// Incoming: Contract-out deals WITH a start date → Incoming J (5000)
+assert(byStage["Incoming"].total === 5000, "Incoming = Contract-out deals WITH a start date");
+assert(byStage["Incoming"].deals.length === 1 && byStage["Incoming"].deals[0].name === "Incoming J", "Incoming holds the start-date deal");
 
 // Closed Won: Won C + Won D = 3000 + 4000 = 7000; Excluded F dropped
 assert(byStage["Closed Won"].total === 7000, "Closed Won sums stageLabel='Closed Won', excludes excluded client");

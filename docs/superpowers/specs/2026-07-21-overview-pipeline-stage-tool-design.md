@@ -19,9 +19,12 @@ literal pipeline stages, not values derived from `churnDate` or the mapped
 | # | Column | Predicate (`stageLabel` ∈) | Notes |
 |---|--------|-----------|-------|
 | 1 | **Very Warm** | `"Very Warm"` | Pre-close pipeline stage |
-| 2 | **Contract out** | `"Contract out"` | Pre-close pipeline stage |
-| 3 | **Closed Won** | `"Closed Won"` | Won and currently paying — naturally includes deals that carry a future churn date |
-| 4 | **Churned (still active)** | `"Churned but still active"`, `"Current (Not Paying)"` | Two post-close stages merged into one column |
+| 2 | **Contract out** | `"Contract out"` **and no start date** | Contract-out deals not yet scheduled |
+| 3 | **Incoming** | `"Contract out"` **and a start date is set** | Signed / scheduled — matches the forecast waterfall's "incoming" figure to the dollar |
+| 4 | **Closed Won** | `"Closed Won"` | Won and currently paying — naturally includes deals that carry a future churn date |
+| 5 | **Churned (still active)** | `"Churned but still active"`, `"Current (Not Paying)"` | Two post-close stages merged into one column |
+
+(Contract out is split by start-date presence: a populated start date means the deal is signed and scheduled — "Incoming" — matching the forecast waterfall; no start date keeps it in "Contract out". The two columns together equal the full Contract-out book.)
 
 Notes:
 - These are **mutually exclusive** columns — each deal has exactly one
