@@ -167,45 +167,45 @@ export default async function OverviewPage({ searchParams }: Props) {
             </CardContent>
           </Card>
         )}
-
-        {recentImports.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Imports</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {recentImports.map((imp) => (
-                  <div
-                    key={imp.id}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <span className="font-medium capitalize">{imp.provider}</span>
-                    <span className="text-muted-foreground">
-                      {imp.recordsSynced} records &middot;{" "}
-                      <span
-                        className={
-                          imp.status === "completed"
-                            ? "text-green-600"
-                            : imp.status === "failed"
-                            ? "text-red-600"
-                            : "text-yellow-600"
-                        }
-                      >
-                        {imp.status}
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       <PipelineStageTool stages={pipelineStages} />
 
       <ThreeMonthForecast data={threeMonthForecast} />
+
+      {recentImports.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Imports</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {recentImports.map((imp) => (
+                <div
+                  key={imp.id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="font-medium capitalize">{imp.provider}</span>
+                  <span className="text-muted-foreground">
+                    {imp.recordsSynced} records &middot;{" "}
+                    <span
+                      className={
+                        imp.status === "completed"
+                          ? "text-green-600"
+                          : imp.status === "failed"
+                          ? "text-red-600"
+                          : "text-yellow-600"
+                      }
+                    >
+                      {imp.status}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
