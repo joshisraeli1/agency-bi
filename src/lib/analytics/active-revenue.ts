@@ -56,15 +56,29 @@ export interface RevenueCompositionRow {
   upsellDeals: { name: string; revenue: number }[];
 }
 
+export interface RevenueCompositionFY {
+  fy: string; // label, e.g. "FY26/27"
+  rows: RevenueCompositionRow[];
+}
+
+// AU financial year (Jul–Jun): the FY-start calendar year of a given month.
+function fyStartYearOf(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return m >= 7 ? y : y - 1;
+}
+const fyLabelOf = (startYear: number): string =>
+  `FY${String(startYear).slice(2)}/${String(startYear + 1).slice(2)}`;
+
 /**
- * Composition of each package type's closed-won revenue (ex-GST): existing base
- * vs new deals won in the last `newWindowMonths` vs upsells (expansion). One-off
- * / ad-hoc deals are excluded (not recurring). Upsells are counted unfolded so
- * their contribution is visible. Powers the revenue-composition view.
+ * Composition of each package type's closed-won revenue (ex-GST) split into
+ * established base vs new deals won during a financial year vs upsells
+ * (expansion), computed for every FY that has activity. The consumer picks a FY
+ * via a toggle: "new" = deals whose start month falls in that FY, "existing" =
+ * the rest of the recurring book, "upsell" = expansion (constant across FYs).
+ * One-off / ad-hoc deals are excluded. Totals equal the current book regardless
+ * of the selected FY. Newest FY first.
  */
-export async function getRevenueComposition(
-  newWindowMonths = 3
-): Promise<{ rows: RevenueCompositionRow[]; windowMonths: string[] }> {
+export async function getRevenueComposition(): Promise<{ byFY: RevenueCompositionFY[] }> {
   const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
@@ -73,53 +87,68 @@ export async function getRevenueComposition(
     }),
   ]);
 
-  const now = new Date();
-  const windowKeys = new Set<string>();
-  for (let i = 0; i < newWindowMonths; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    windowKeys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }
   const monthOf = (d: Date | null | undefined): string | null =>
     d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
   // Ad-hoc shoots etc. are one-time work — treat as non-recurring even when
   // they're mistagged "Upsell" in HubSpot.
   const isAdHoc = (name: string) => /ad[\s-]?hoc/i.test(name);
 
-  const byPkg = new Map<string, RevenueCompositionRow>();
+  // First pass: keep only recurring deals, tag each with pkg, ex-GST, upsell,
+  // and (for non-upsells) the FY its start month belongs to. Collect FY options.
+  type Tagged = { pkg: string; name: string; ex: number; month: string; upsell: boolean; fy: number | null };
+  const tagged: Tagged[] = [];
+  const fyYears = new Set<number>();
+  const now = new Date();
+  const currentFy = fyStartYearOf(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+  fyYears.add(currentFy);
+
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
     if (isOneOff(d) || isAdHoc(d.name)) continue;
     const ex = d.amountExGst ?? 0;
     if (ex <= 0) continue;
     const pkg = classifyPackageType(d.contentPackageType);
-    const row = byPkg.get(pkg) ?? { packageType: pkg, total: 0, existing: 0, newRevenue: 0, upsell: 0, newDeals: [], upsellDeals: [] };
-    row.total += ex;
-    if (isUpsell(d)) {
-      row.upsell += ex;
-      row.upsellDeals.push({ name: d.name, revenue: Math.round(ex) });
-    } else if (windowKeys.has(monthOf(d.startDate ?? d.closeDate) ?? "")) {
-      row.newRevenue += ex;
-      row.newDeals.push({ name: d.name, revenue: Math.round(ex), month: monthOf(d.startDate ?? d.closeDate)! });
-    } else {
-      row.existing += ex;
-    }
-    byPkg.set(pkg, row);
+    const month = monthOf(d.startDate ?? d.closeDate) ?? "";
+    const upsell = isUpsell(d);
+    const fy = upsell || !month ? null : fyStartYearOf(month);
+    if (fy !== null) fyYears.add(fy);
+    tagged.push({ pkg, name: d.name, ex, month, upsell, fy });
   }
 
   const order = ["Content Delivery Paid", "Social Media Management", "Ads Management"];
-  const rows = Array.from(byPkg.values())
-    .map((r) => ({
-      ...r,
-      total: Math.round(r.total),
-      existing: Math.round(r.existing),
-      newRevenue: Math.round(r.newRevenue),
-      upsell: Math.round(r.upsell),
-      newDeals: r.newDeals.sort((a, b) => b.revenue - a.revenue),
-      upsellDeals: r.upsellDeals.sort((a, b) => b.revenue - a.revenue),
-    }))
-    .sort((a, b) => order.indexOf(a.packageType) - order.indexOf(b.packageType));
+  const fyList = Array.from(fyYears).sort((a, b) => b - a); // newest first
 
-  return { rows, windowMonths: Array.from(windowKeys).sort() };
+  const byFY: RevenueCompositionFY[] = fyList.map((selYear) => {
+    const byPkg = new Map<string, RevenueCompositionRow>();
+    for (const t of tagged) {
+      const row = byPkg.get(t.pkg) ?? { packageType: t.pkg, total: 0, existing: 0, newRevenue: 0, upsell: 0, newDeals: [], upsellDeals: [] };
+      row.total += t.ex;
+      if (t.upsell) {
+        row.upsell += t.ex;
+        row.upsellDeals.push({ name: t.name, revenue: Math.round(t.ex) });
+      } else if (t.fy === selYear) {
+        row.newRevenue += t.ex;
+        row.newDeals.push({ name: t.name, revenue: Math.round(t.ex), month: t.month });
+      } else {
+        row.existing += t.ex;
+      }
+      byPkg.set(t.pkg, row);
+    }
+    const rows = Array.from(byPkg.values())
+      .map((r) => ({
+        ...r,
+        total: Math.round(r.total),
+        existing: Math.round(r.existing),
+        newRevenue: Math.round(r.newRevenue),
+        upsell: Math.round(r.upsell),
+        newDeals: r.newDeals.sort((a, b) => b.revenue - a.revenue),
+        upsellDeals: r.upsellDeals.sort((a, b) => b.revenue - a.revenue),
+      }))
+      .sort((a, b) => order.indexOf(a.packageType) - order.indexOf(b.packageType));
+    return { fy: fyLabelOf(selYear), rows };
+  });
+
+  return { byFY };
 }
 
 /**

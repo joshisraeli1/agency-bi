@@ -13,24 +13,23 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatMonth } from "@/lib/utils";
-import type { RevenueCompositionRow } from "@/lib/analytics/active-revenue";
+import type { RevenueCompositionFY, RevenueCompositionRow } from "@/lib/analytics/active-revenue";
 
 interface Props {
-  rows: RevenueCompositionRow[];
-  windowMonths: string[];
+  byFY: RevenueCompositionFY[];
 }
 
 const EXISTING = "#cbd5e1"; // slate-300 — established base
 const NEW = "#ea580c"; // brand orange — new business
 const UPSELL = "#14b8a6"; // teal — expansion
 
-export function RevenueCompositionChart({ rows, windowMonths }: Props) {
+export function RevenueCompositionChart({ byFY }: Props) {
   const [selected, setSelected] = useState<RevenueCompositionRow | null>(null);
+  const [fy, setFy] = useState<string>(byFY[0]?.fy ?? "");
 
-  const windowLabel =
-    windowMonths.length > 0
-      ? `${formatMonth(windowMonths[0])}–${formatMonth(windowMonths[windowMonths.length - 1])}`
-      : "recent";
+  const active = byFY.find((f) => f.fy === fy) ?? byFY[0] ?? { fy: "", rows: [] };
+  const rows = active.rows;
+  const windowLabel = active.fy;
 
   const chartData = rows.map((r) => ({
     name: r.packageType.replace(" Management", "").replace(" Paid", ""),
@@ -46,7 +45,24 @@ export function RevenueCompositionChart({ rows, windowMonths }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Revenue Composition — New vs Upsell vs Base</CardTitle>
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="text-base">Revenue Composition — New vs Upsell vs Base</CardTitle>
+          <select
+            value={fy}
+            onChange={(e) => {
+              setFy(e.target.value);
+              setSelected(null);
+            }}
+            className="h-8 rounded-md border bg-background px-2 text-sm"
+            aria-label="Financial year"
+          >
+            {byFY.map((f) => (
+              <option key={f.fy} value={f.fy}>
+                {f.fy}
+              </option>
+            ))}
+          </select>
+        </div>
         <p className="text-muted-foreground text-sm mt-1">
           Each package type&apos;s closed-won revenue (ex-GST) split into established base, new deals won in {windowLabel}, and upsells. Excludes one-off / ad-hoc work.
         </p>

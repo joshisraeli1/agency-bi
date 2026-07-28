@@ -1,83 +1,146 @@
 "use client";
 
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Pencil, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
-// Type-only import: division-fy.ts reaches @/lib/db (Prisma/native modules) via a
-// lazy import, so importing any RUNTIME value from it into this client component
-// drags server-only code into the browser bundle and breaks `next build`. Keep
-// the division list local here.
-import type { CumulativeDivisionMonth, Division } from "@/lib/analytics/division-fy";
+import type { CumulativeDivisionMonth } from "@/lib/analytics/division-fy";
 
-const DIVISION_ORDER: Division[] = ["Content Delivery", "Social Media Management", "Ads Management"];
-
-// From the dataviz skill (Step 1). Content Delivery anchored to brand orange;
-// teal and indigo chosen and validated via scripts/validate_palette.js
-// (all-pairs, light + dark) — see task-2-div-report.md for the full readout.
-const DIVISION_COLORS: Record<Division, string> = {
-  "Content Delivery": "#ea580c",
+// The division-goals store is keyed by goal names ("Content Delivery Paid" …);
+// map each to its cumulative-revenue series name and brand colour.
+const GOAL_TO_DATA: Record<string, string> = {
+  "Content Delivery Paid": "Content Delivery",
+  "Social Media Management": "Social Media Management",
+  "Ads Management": "Ads Management",
+};
+const COLORS: Record<string, string> = {
+  "Content Delivery Paid": "#ea580c",
   "Social Media Management": "#0d9488",
   "Ads Management": "#6366f1",
 };
 
-const shortDollars = (v: number) =>
-  Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}K` : `$${v}`;
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function CumulativeTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const total = payload.reduce((s: number, p: any) => s + (Number(p.value) || 0), 0);
-  return (
-    <div className="rounded-md border bg-background p-2 text-xs shadow-sm">
-      <div className="mb-1 font-semibold text-[#334155]">{label}</div>
-      {payload.map((p: any) => (
-        <div key={String(p.name)} className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: p.color }} />
-            {String(p.name)}
-          </span>
-          <span className="tabular-nums">{formatCurrency(Number(p.value))}</span>
-        </div>
-      ))}
-      <div className="mt-1 flex items-center justify-between gap-4 border-t pt-1 font-semibold">
-        <span>Total</span>
-        <span className="tabular-nums">{formatCurrency(total)}</span>
-      </div>
-    </div>
-  );
+interface Props {
+  data: CumulativeDivisionMonth[];
+  goals: Record<string, number>; // per-division MONTHLY goals (shared with the monthly card)
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
-export function CumulativeDivisionRevenueChart({ data }: { data: CumulativeDivisionMonth[] }) {
-  const fyLabel = data.length ? `FY${data[0].rawMonth.slice(2, 4)}/${String(Number(data[0].rawMonth.slice(0, 4)) + 1).slice(2)}` : "FY";
+export function CumulativeDivisionRevenueChart({ data, goals }: Props) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // FY goal = monthly goal × 12; edit here in FY terms.
+  const fyGoalsOf = (g: Record<string, number>) =>
+    Object.fromEntries(Object.entries(g).map(([k, v]) => [k, v * 12]));
+  const [form, setForm] = useState<Record<string, number>>(() => fyGoalsOf(goals));
+
+  const fyLabel = data.length
+    ? `FY${data[0].rawMonth.slice(2, 4)}/${String(Number(data[0].rawMonth.slice(0, 4)) + 1).slice(2)}`
+    : "FY";
+  const last = data.length ? data[data.length - 1] : null;
+  const cumOf = (goalKey: string): number => {
+    if (!last) return 0;
+    const dataKey = GOAL_TO_DATA[goalKey] ?? goalKey;
+    return (last as unknown as Record<string, number>)[dataKey] ?? 0;
+  };
+
+  async function save() {
+    setSaving(true);
+    try {
+      // Stored as monthly (FY ÷ 12) so this and the monthly card share one goal.
+      const monthly = Object.fromEntries(
+        Object.entries(form).map(([k, v]) => [k, Math.round(Number(v) / 12)])
+      );
+      const res = await fetch("/api/settings/division-goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(monthly),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("FY goals updated");
+      setEditing(false);
+      router.refresh();
+    } catch {
+      toast.error("Failed to save goals");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const divisions = Object.keys(goals);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Cumulative Revenue by Division — {fyLabel}</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Cumulative Revenue by Division vs Goal — {fyLabel}</CardTitle>
+          {editing ? (
+            <div className="flex gap-2">
+              <Button size="sm" onClick={save} disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setForm(fyGoalsOf(goals));
+                  setEditing(false);
+                }}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit goals
+            </Button>
+          )}
+        </div>
+        <p className="text-muted-foreground text-sm mt-1">
+          Cumulative recognized revenue (ex-GST) this financial year to date, vs each division&apos;s FY goal.
+        </p>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={data} barGap={0} barCategoryGap="20%" margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#64748b" }} />
-            <YAxis tickFormatter={shortDollars} tick={{ fontSize: 12, fill: "#64748b" }} width={56} />
-            <Tooltip content={<CumulativeTooltip />} cursor={{ fill: "rgba(100,116,139,0.08)" }} />
-            <Legend />
-            {DIVISION_ORDER.map((div) => (
-              <Bar key={div} dataKey={div} fill={DIVISION_COLORS[div]} radius={[2, 2, 0, 0]} />
-            ))}
-          </BarChart>
-        </ResponsiveContainer>
+      <CardContent className="space-y-4">
+        {divisions.map((div) => {
+          const actual = cumOf(div);
+          const goal = form[div] ?? 0;
+          const pct = goal > 0 ? Math.min(100, Math.round((actual / goal) * 100)) : 0;
+          const hit = goal > 0 && actual >= goal;
+          const color = COLORS[div] ?? "#64748b";
+          return (
+            <div key={div}>
+              <div className="flex items-baseline justify-between text-sm mb-1">
+                <span className="font-medium">{GOAL_TO_DATA[div] ?? div}</span>
+                {editing ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground tabular-nums">{formatCurrency(actual)} /</span>
+                    <Input
+                      type="number"
+                      value={form[div] ?? 0}
+                      onChange={(e) => setForm((p) => ({ ...p, [div]: Number(e.target.value) }))}
+                      className="w-36 h-8"
+                    />
+                  </div>
+                ) : (
+                  <span className="tabular-nums">
+                    <span className={hit ? "font-semibold text-green-600" : "font-semibold"}>{formatCurrency(actual)}</span>
+                    <span className="text-muted-foreground"> / {formatCurrency(goal)}</span>
+                    <span className="text-muted-foreground ml-2">{goal > 0 ? `${Math.round((actual / goal) * 100)}%` : "—"}</span>
+                  </span>
+                )}
+              </div>
+              {!editing && (
+                <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: hit ? "#16a34a" : color }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );

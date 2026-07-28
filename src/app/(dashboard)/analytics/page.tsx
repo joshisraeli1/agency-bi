@@ -144,9 +144,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       {/* Revenue by Division vs Goal (editable monthly targets) */}
       <DivisionGoals byPackageType={activeSnapshot.byPackageType} goals={divisionGoals} />
 
-      <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} />
-
-      <RevenueCompositionChart rows={revenueComposition.rows} windowMonths={revenueComposition.windowMonths} />
+      <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} goals={divisionGoals} />
 
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection
@@ -172,6 +170,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         industryBreakdown={industryBreakdown}
         kpiData={data}
       />
+
+      {/* Revenue Composition — moved to the bottom, FY-selectable */}
+      <RevenueCompositionChart byFY={revenueComposition.byFY} />
 
     </div>
   );
