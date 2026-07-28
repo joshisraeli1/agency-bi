@@ -71,9 +71,15 @@ function MonthBlock({
       <div className="mb-2 text-sm font-semibold">{m.month}</div>
       <div className="space-y-0.5">
         <Row label="Starting" value={m.starting} />
-        <Row label="Pipeline" value={m.pipelineAdded} sign="+" onClick={() => onToggle(pipeKey)} active={openKey === pipeKey} />
+        <Row
+          label="Pipeline"
+          value={m.pipelineAdded}
+          sign="+"
+          note={m.pipelineAssumed ? "assumed run-rate" : undefined}
+          onClick={() => onToggle(pipeKey)}
+          active={openKey === pipeKey}
+        />
         {openKey === pipeKey && <DealList deals={m.pipelineDeals} />}
-        <Row label="Net-new" value={m.netNewAdded} sign="+" note="run-rate" />
         <Row label="Known churn" value={m.knownChurn} sign="−" onClick={() => onToggle(churnKey)} active={openKey === churnKey} />
         {openKey === churnKey && <DealList deals={m.churnDeals} />}
         <Row label="Baseline churn" value={m.baselineChurn} sign="−" note="rate" />
@@ -98,7 +104,8 @@ export function ThreeMonthForecast({ data }: { data: ThreeMonthForecastData }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          From current MRR {formatCurrency(data.currentMrr)} · net-new {formatCurrency(assumptions.netNewMonthly)}/mo ·{" "}
+          From current MRR {formatCurrency(data.currentMrr)} · pipeline run-rate{" "}
+          <span className="font-semibold text-foreground">{formatCurrency(assumptions.pipelineRunRate)}/mo</span> (recent 3-mo) ·{" "}
           churn <span className="font-semibold text-foreground">{assumptions.churnRatePct}%/mo</span> ·{" "}
           {assumptions.stageProbabilities.map((s) => `${s.stage} ${Math.round(s.probability * 100)}%`).join(" · ")} ·{" "}
           timing ~{assumptions.medianLagDays}d

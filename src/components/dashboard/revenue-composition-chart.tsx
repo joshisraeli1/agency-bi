@@ -13,23 +13,23 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatMonth } from "@/lib/utils";
-import type { RevenueCompositionFY, RevenueCompositionRow } from "@/lib/analytics/active-revenue";
+import type { RevenueCompositionMonth, RevenueCompositionRow } from "@/lib/analytics/active-revenue";
 
 interface Props {
-  byFY: RevenueCompositionFY[];
+  byMonth: RevenueCompositionMonth[];
 }
 
 const EXISTING = "#cbd5e1"; // slate-300 — established base
 const NEW = "#ea580c"; // brand orange — new business
 const UPSELL = "#14b8a6"; // teal — expansion
 
-export function RevenueCompositionChart({ byFY }: Props) {
+export function RevenueCompositionChart({ byMonth }: Props) {
   const [selected, setSelected] = useState<RevenueCompositionRow | null>(null);
-  const [fy, setFy] = useState<string>(byFY[0]?.fy ?? "");
+  const [month, setMonth] = useState<string>(byMonth[0]?.month ?? "");
 
-  const active = byFY.find((f) => f.fy === fy) ?? byFY[0] ?? { fy: "", rows: [] };
+  const active = byMonth.find((m) => m.month === month) ?? byMonth[0] ?? { month: "", rows: [] };
   const rows = active.rows;
-  const windowLabel = active.fy;
+  const windowLabel = active.month ? formatMonth(active.month) : "recent";
 
   const chartData = rows.map((r) => ({
     name: r.packageType.replace(" Management", "").replace(" Paid", ""),
@@ -48,17 +48,17 @@ export function RevenueCompositionChart({ byFY }: Props) {
         <div className="flex items-start justify-between gap-3">
           <CardTitle className="text-base">Revenue Composition — New vs Upsell vs Base</CardTitle>
           <select
-            value={fy}
+            value={month}
             onChange={(e) => {
-              setFy(e.target.value);
+              setMonth(e.target.value);
               setSelected(null);
             }}
             className="h-8 rounded-md border bg-background px-2 text-sm"
-            aria-label="Financial year"
+            aria-label="Month"
           >
-            {byFY.map((f) => (
-              <option key={f.fy} value={f.fy}>
-                {f.fy}
+            {byMonth.map((m) => (
+              <option key={m.month} value={m.month}>
+                {formatMonth(m.month)}
               </option>
             ))}
           </select>

@@ -171,8 +171,8 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         kpiData={data}
       />
 
-      {/* Revenue Composition — moved to the bottom, FY-selectable */}
-      <RevenueCompositionChart byFY={revenueComposition.byFY} />
+      {/* Revenue Composition — moved to the bottom, month-selectable */}
+      <RevenueCompositionChart byMonth={revenueComposition.byMonth} />
 
     </div>
   );

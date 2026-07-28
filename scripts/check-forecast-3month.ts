@@ -40,31 +40,34 @@ assert(expectedStartMonth(base({ createDate: new Date("2026-07-20") }), 30, mont
 assert(expectedStartMonth(base({ startDate: new Date("2026-06-01") }), 30, months, now) === "2026-08", "overdue (past) → clamped to first forecast month");
 assert(expectedStartMonth(base({ startDate: new Date("2027-02-01") }), 30, months, now) === null, "beyond horizon → null");
 
-// buildForecast running balance
+// buildForecast running balance — new business each month = max(visible pipeline, run-rate)
 const forecast = buildForecast({
   currentMrr: 100000,
   months,
   pipeline: [
-    { name: "Deal A", expected: 5000, month: "2026-09" }, // lands month 2
+    { name: "Deal A", expected: 5000, month: "2026-09" }, // visible pipeline lands month 2
   ],
   churn: [
     { name: "Churn X", amount: 2000, month: "2026-08" }, // known churn month 1
   ],
-  netNewMonthly: 3000,
+  pipelineRunRate: 4000,
   churnRate: 0.10,
 });
 assert(forecast.length === 3, "three forecast months");
-// Month 1 (Aug): starting 100000, +0 pipeline, +3000 net-new, -2000 known, -baseline 0.10*(100000-2000)=9800 → 91200
+// Month 1 (Aug): visible pipeline 0 → floored to run-rate 4000 (assumed); -2000 known; baseline 0.10*(100000-2000)=9800 → 92200
+assert(forecast[0].pipelineAdded === 4000 && forecast[0].pipelineAssumed === true, "month1 pipeline floored to run-rate (assumed)");
+assert(forecast[0].pipelineDeals.length === 0, "month1 has no visible pipeline deals");
 assert(forecast[0].knownChurn === 2000 && forecast[0].baselineChurn === 9800, "month1 churn split (baseline on base minus known)");
-assert(forecast[0].projected === 91200, "month1 projected = 100000+0+3000-2000-9800");
-assert(forecast[0].churnDeals.length === 1 && forecast[0].pipelineDeals.length === 0, "month1 drill-downs");
-// Month 2 (Sep): starting 91200, +5000 pipeline, +3000, -0 known, -baseline 0.10*91200=9120 → 90080
-assert(forecast[1].starting === 91200, "month2 starts from month1 projected");
-assert(forecast[1].pipelineAdded === 5000 && forecast[1].pipelineDeals[0].name === "Deal A", "month2 pipeline add + drill-down");
-assert(forecast[1].projected === 90080, "month2 projected = 91200+5000+3000-0-9120");
-// Month 3 (Oct): pipeline deal persists via running balance (no new pipeline add, but starting already includes it)
-assert(forecast[2].pipelineAdded === 0, "month3 has no NEW pipeline add");
-assert(forecast[2].starting === 90080, "month3 starts from month2 projected (pipeline persisted)");
+assert(forecast[0].projected === 92200, "month1 projected = 100000+4000-2000-9800");
+// Month 2 (Sep): visible pipeline 5000 > run-rate 4000 → uses visible (not assumed); baseline 0.10*92200=9220 → 87980
+assert(forecast[1].starting === 92200, "month2 starts from month1 projected");
+assert(forecast[1].pipelineAdded === 5000 && forecast[1].pipelineAssumed === false, "month2 uses visible pipeline over run-rate");
+assert(forecast[1].pipelineDeals[0].name === "Deal A", "month2 pipeline drill-down");
+assert(forecast[1].projected === 87980, "month2 projected = 92200+5000-0-9220");
+// Month 3 (Oct): visible 0 → floored to run-rate 4000 (assumed); baseline 0.10*87980=8798 → 83182
+assert(forecast[2].pipelineAdded === 4000 && forecast[2].pipelineAssumed === true, "month3 pipeline floored to run-rate");
+assert(forecast[2].starting === 87980, "month3 starts from month2 projected");
+assert(forecast[2].projected === 83182, "month3 projected = 87980+4000-0-8798");
 
 if (failures > 0) { console.error(`\n${failures} assertion(s) FAILED`); process.exit(1); }
 console.log("\nAll forecast-3month assertions passed.");

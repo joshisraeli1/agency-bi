@@ -84,7 +84,7 @@ export interface ForecastMonth {
   rawMonth: string;
   starting: number;
   pipelineAdded: number;
-  netNewAdded: number;
+  pipelineAssumed: boolean; // true when the run-rate floor exceeded the visible pipeline
   knownChurn: number;
   baselineChurn: number;
   projected: number;
@@ -96,7 +96,7 @@ export interface ThreeMonthForecast {
   currentMrr: number;
   months: ForecastMonth[];
   assumptions: {
-    netNewMonthly: number;
+    pipelineRunRate: number; // assumed new business/mo for months with thin visible pipeline
     churnRatePct: number;
     medianLagDays: number;
     stageProbabilities: { stage: string; probability: number }[];
@@ -108,28 +108,39 @@ interface BuildForecastArgs {
   months: string[];
   pipeline: { name: string; expected: number; month: string }[];
   churn: { name: string; amount: number; month: string }[];
-  netNewMonthly: number;
+  pipelineRunRate: number;
   churnRate: number;
 }
 
-/** Roll the running MRR balance forward across the forecast months. */
+/**
+ * Roll the running MRR balance forward across the forecast months.
+ *
+ * Expected new business each month = max(visible probability-weighted pipeline,
+ * pipelineRunRate). The run-rate floor is the "pipeline we'll build" assumption:
+ * later months (Sep/Oct) have little visible pipeline only because those deals
+ * aren't in the CRM yet, so we assume they land at the recent run-rate rather
+ * than zero. When the floor is used, the drill-down still lists whatever visible
+ * deals exist and the month is flagged `pipelineAssumed`.
+ */
 export function buildForecast(args: BuildForecastArgs): ForecastMonth[] {
-  const { currentMrr, months, pipeline, churn, netNewMonthly, churnRate } = args;
+  const { currentMrr, months, pipeline, churn, pipelineRunRate, churnRate } = args;
   const out: ForecastMonth[] = [];
   let starting = currentMrr;
   for (const m of months) {
     const pDeals = pipeline.filter((p) => p.month === m);
-    const pipelineAdded = pDeals.reduce((s, p) => s + p.expected, 0);
+    const visiblePipeline = pDeals.reduce((s, p) => s + p.expected, 0);
+    const pipelineAdded = Math.max(visiblePipeline, pipelineRunRate);
+    const pipelineAssumed = pipelineRunRate > visiblePipeline;
     const cDeals = churn.filter((c) => c.month === m);
     const knownChurn = cDeals.reduce((s, c) => s + c.amount, 0);
     const baselineChurn = churnRate * Math.max(0, starting - knownChurn);
-    const projected = starting + pipelineAdded + netNewMonthly - knownChurn - baselineChurn;
+    const projected = starting + pipelineAdded - knownChurn - baselineChurn;
     out.push({
       month: formatMonth(m),
       rawMonth: m,
       starting: Math.round(starting),
       pipelineAdded: Math.round(pipelineAdded),
-      netNewAdded: Math.round(netNewMonthly),
+      pipelineAssumed,
       knownChurn: Math.round(knownChurn),
       baselineChurn: Math.round(baselineChurn),
       projected: Math.round(projected),
@@ -177,20 +188,30 @@ export async function getThreeMonthForecast(now: Date = new Date()): Promise<Thr
   const closedWon = kept.filter((d) => d.stageLabel === "Closed Won");
   const currentMrr = closedWon.reduce((s, d) => s + dealExGst(d), 0);
 
-  // trailing 12 months (excluding current)
-  const last12: string[] = [];
-  for (let i = 1; i <= 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    last12.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }
+  // Trailing-N-month month keys (excluding the current month).
+  const trailingMonths = (n: number): string[] => {
+    const out: string[] = [];
+    for (let i = 1; i <= n; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    return out;
+  };
+  const last12 = trailingMonths(12);
+  const last3 = trailingMonths(3);
 
-  let newSum = 0;
+  // Pipeline run-rate = the RECENT (trailing-3mo) monthly new-business rate.
+  // Later forecast months have little visible pipeline only because those deals
+  // aren't in the CRM yet; we assume they land at this recent run-rate. Using a
+  // recent window (not 12mo) reflects the current growth trajectory.
+  let recentNewSum = 0;
   for (const d of closedWon) {
     const m = monthKeyOf(d.startDate ?? d.closeDate);
-    if (m && last12.includes(m)) newSum += dealExGst(d);
+    if (m && last3.includes(m)) recentNewSum += dealExGst(d);
   }
-  const netNewMonthly = newSum / 12;
+  const pipelineRunRate = recentNewSum / 3;
 
+  // Churn rate stays on the trailing-12mo basis (steady baseline).
   let churnSum = 0;
   for (const d of kept) {
     const m = monthKeyOf(d.churnDate);
@@ -217,12 +238,12 @@ export async function getThreeMonthForecast(now: Date = new Date()): Promise<Thr
     if (m && months.includes(m)) churn.push({ name: d.name, amount: dealExGst(d), month: m });
   }
 
-  const monthsOut = buildForecast({ currentMrr, months, pipeline, churn, netNewMonthly, churnRate });
+  const monthsOut = buildForecast({ currentMrr, months, pipeline, churn, pipelineRunRate, churnRate });
   return {
     currentMrr: Math.round(currentMrr),
     months: monthsOut,
     assumptions: {
-      netNewMonthly: Math.round(netNewMonthly),
+      pipelineRunRate: Math.round(pipelineRunRate),
       churnRatePct: Math.round(churnRate * 1000) / 10,
       medianLagDays,
       stageProbabilities: Object.entries(STAGE_PROBABILITY).map(([stage, probability]) => ({ stage, probability })),

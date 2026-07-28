@@ -56,29 +56,21 @@ export interface RevenueCompositionRow {
   upsellDeals: { name: string; revenue: number }[];
 }
 
-export interface RevenueCompositionFY {
-  fy: string; // label, e.g. "FY26/27"
+export interface RevenueCompositionMonth {
+  month: string; // yyyy-MM
   rows: RevenueCompositionRow[];
 }
 
-// AU financial year (Jul–Jun): the FY-start calendar year of a given month.
-function fyStartYearOf(month: string): number {
-  const [y, m] = month.split("-").map(Number);
-  return m >= 7 ? y : y - 1;
-}
-const fyLabelOf = (startYear: number): string =>
-  `FY${String(startYear).slice(2)}/${String(startYear + 1).slice(2)}`;
-
 /**
  * Composition of each package type's closed-won revenue (ex-GST) split into
- * established base vs new deals won during a financial year vs upsells
- * (expansion), computed for every FY that has activity. The consumer picks a FY
- * via a toggle: "new" = deals whose start month falls in that FY, "existing" =
- * the rest of the recurring book, "upsell" = expansion (constant across FYs).
- * One-off / ad-hoc deals are excluded. Totals equal the current book regardless
- * of the selected FY. Newest FY first.
+ * established base vs new deals won in a given month vs upsells (expansion),
+ * computed for every month that has new activity (plus the current month). The
+ * consumer picks a month via a toggle: "new" = deals whose start month equals
+ * the selected month, "existing" = the rest of the recurring book, "upsell" =
+ * expansion (constant across months). One-off / ad-hoc deals are excluded.
+ * Totals equal the current book regardless of the selected month. Newest first.
  */
-export async function getRevenueComposition(): Promise<{ byFY: RevenueCompositionFY[] }> {
+export async function getRevenueComposition(): Promise<{ byMonth: RevenueCompositionMonth[] }> {
   const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
@@ -94,13 +86,12 @@ export async function getRevenueComposition(): Promise<{ byFY: RevenueCompositio
   const isAdHoc = (name: string) => /ad[\s-]?hoc/i.test(name);
 
   // First pass: keep only recurring deals, tag each with pkg, ex-GST, upsell,
-  // and (for non-upsells) the FY its start month belongs to. Collect FY options.
-  type Tagged = { pkg: string; name: string; ex: number; month: string; upsell: boolean; fy: number | null };
+  // and its start month. Collect the set of months that have new activity.
+  type Tagged = { pkg: string; name: string; ex: number; month: string; upsell: boolean };
   const tagged: Tagged[] = [];
-  const fyYears = new Set<number>();
+  const monthsSet = new Set<string>();
   const now = new Date();
-  const currentFy = fyStartYearOf(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
-  fyYears.add(currentFy);
+  monthsSet.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
 
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
@@ -110,15 +101,14 @@ export async function getRevenueComposition(): Promise<{ byFY: RevenueCompositio
     const pkg = classifyPackageType(d.contentPackageType);
     const month = monthOf(d.startDate ?? d.closeDate) ?? "";
     const upsell = isUpsell(d);
-    const fy = upsell || !month ? null : fyStartYearOf(month);
-    if (fy !== null) fyYears.add(fy);
-    tagged.push({ pkg, name: d.name, ex, month, upsell, fy });
+    if (!upsell && month) monthsSet.add(month);
+    tagged.push({ pkg, name: d.name, ex, month, upsell });
   }
 
   const order = ["Content Delivery Paid", "Social Media Management", "Ads Management"];
-  const fyList = Array.from(fyYears).sort((a, b) => b - a); // newest first
+  const monthList = Array.from(monthsSet).filter(Boolean).sort().reverse(); // newest first
 
-  const byFY: RevenueCompositionFY[] = fyList.map((selYear) => {
+  const byMonth: RevenueCompositionMonth[] = monthList.map((selMonth) => {
     const byPkg = new Map<string, RevenueCompositionRow>();
     for (const t of tagged) {
       const row = byPkg.get(t.pkg) ?? { packageType: t.pkg, total: 0, existing: 0, newRevenue: 0, upsell: 0, newDeals: [], upsellDeals: [] };
@@ -126,7 +116,7 @@ export async function getRevenueComposition(): Promise<{ byFY: RevenueCompositio
       if (t.upsell) {
         row.upsell += t.ex;
         row.upsellDeals.push({ name: t.name, revenue: Math.round(t.ex) });
-      } else if (t.fy === selYear) {
+      } else if (t.month === selMonth) {
         row.newRevenue += t.ex;
         row.newDeals.push({ name: t.name, revenue: Math.round(t.ex), month: t.month });
       } else {
@@ -145,10 +135,10 @@ export async function getRevenueComposition(): Promise<{ byFY: RevenueCompositio
         upsellDeals: r.upsellDeals.sort((a, b) => b.revenue - a.revenue),
       }))
       .sort((a, b) => order.indexOf(a.packageType) - order.indexOf(b.packageType));
-    return { fy: fyLabelOf(selYear), rows };
+    return { month: selMonth, rows };
   });
 
-  return { byFY };
+  return { byMonth };
 }
 
 /**
