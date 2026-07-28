@@ -133,7 +133,12 @@ export function buildForecast(args: BuildForecastArgs): ForecastMonth[] {
     const pipelineAssumed = pipelineRunRate > visiblePipeline;
     const cDeals = churn.filter((c) => c.month === m);
     const knownChurn = cDeals.reduce((s, c) => s + c.amount, 0);
-    const baselineChurn = churnRate * Math.max(0, starting - knownChurn);
+    // Total churn = max(known scheduled churn, the statistical monthly average).
+    // Baseline only TOPS UP to the average — it never stacks on top of known
+    // churn. So a month with actual data from the waterfall (e.g. a big
+    // scheduled churn) uses that real figure, not average + known.
+    const expectedChurn = churnRate * starting;
+    const baselineChurn = Math.max(0, expectedChurn - knownChurn);
     const projected = starting + pipelineAdded - knownChurn - baselineChurn;
     out.push({
       month: formatMonth(m),
