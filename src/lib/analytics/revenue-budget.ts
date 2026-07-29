@@ -55,7 +55,24 @@ const monthKey = (d: Date | null | undefined): string | null =>
  */
 export async function getBudgetVsActual(): Promise<BudgetVsActualRow[]> {
   const budget = await getRevenueBudget();
-  const months = Object.keys(budget).sort();
+  // Show every budgeted month, extended forward to the current month so a
+  // recently-completed month (e.g. July, before its budget is entered) still
+  // appears with its actual revenue. Months without a defined budget show 0
+  // until entered via "Edit budget".
+  const budgetMonths = Object.keys(budget).sort();
+  const months = [...budgetMonths];
+  if (budgetMonths.length) {
+    const now = new Date();
+    const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    let last = budgetMonths[budgetMonths.length - 1];
+    while (last < curKey) {
+      const [y, mo] = last.split("-").map(Number);
+      const next = new Date(y, mo, 1); // mo is 1-based → this is the following month
+      last = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+      if (!months.includes(last)) months.push(last);
+    }
+    months.sort();
+  }
 
   const [excludedIds, deals] = await Promise.all([
     getExcludedClientIds(),
@@ -80,7 +97,7 @@ export async function getBudgetVsActual(): Promise<BudgetVsActualRow[]> {
 
   return months.map((m) => {
     const actual = Math.round(actualByMonth[m]);
-    const b = Math.round(budget[m]);
+    const b = Math.round(budget[m] ?? 0);
     return { month: m, label: formatMonth(m), budget: b, actual, variance: actual - b };
   });
 }
