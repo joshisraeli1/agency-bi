@@ -58,9 +58,15 @@ single source of truth, every surface that enumerates deals runs it.
 
 ### Identify
 
-`isDownsell(d)`: the `packageDescription` tag set contains `downsell`, OR the name matches
-`/\bdown-?sells?\b/i`. The `Dowsell` misspelling is also matched — cheap insurance against
-typos, removable once HubSpot is clean.
+`Package Description = Downsell` is **the** signal. The deal name is not a signal; it is
+only used afterwards to work out which company the deal belongs to.
+
+`isDownsell(d)`: the `packageDescription` tag set contains `downsell`, OR — as a fallback
+safety net for deals that were never tagged — the name matches `/\bdown-?sells?\b/i`,
+including the `Dowsell` misspelling. This mirrors `isUpsell()` (`upsells.ts:36`), which
+carries the same fallback for untagged upsells; keeping both consistent avoids one rule for
+upsells and another for downsells. All three current downsells are properly tagged, so the
+fallback is insurance rather than load-bearing.
 
 ### Pair
 
