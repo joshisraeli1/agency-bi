@@ -201,6 +201,23 @@ August must report **$11,000 churn and $0 new revenue** — not the $40,250 chur
 new that the current code would produce. Deal count unchanged, no churned clients, three
 lifecycles continuous from April, MRR down exactly $11,000 month on month.
 
+Measured against the live local DB on 2026-08-05, the whole-chart figures for the
+*New Revenue vs Churn* bars are:
+
+| August 2026 | Current | Required after fix |
+|---|---|---|
+| New Revenue (ex-GST) | $95,050 | **$65,800** |
+| Churned Revenue (ex-GST) | $104,900 | **$75,650** |
+
+This flips August from −$9,850 net to +$9,850 net. The remaining August churn is genuine
+and must be untouched: EatClub Upsell $17,000, Mighty Munch $9,000, Affinity Education
+$8,000, Shift4 Ads Mgmt $8,000, Shift4 Content $6,500, Juniper Ad Hoc Shoot $6,000, Sortd
+$5,650, Credabl $4,500.
+
+Upsells continue to appear as new revenue in this chart (Juniper Upsell $15,000, Chill
+Chair Upsell $7,500, and others in August) — that is existing, intended behaviour and is
+explicitly out of scope.
+
 Note `Hello Fresh NZ` and `Hello Fresh AU` must not cross-pair: `NZ` and `AU` are not in
 `QUALIFIER_WORDS`, so the company roots stay distinct (`hellofreshnz` / `hellofreshau`).
 This gets an explicit assertion.
