@@ -54,7 +54,7 @@ export function dealDivision(pkg: string | null | undefined): string {
   return "Content Delivery";
 }
 
-const normalize = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const normalize = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 // Remove "Upsell"/"Upsells" wherever it appears (not just trailing), so
 // "BowWowMeow Upsell Ads" / "Blue Light Card Upsell Content" reduce to the
 // company + qualifier, e.g. "BowWowMeow Ads" / "Blue Light Card Content".
@@ -69,7 +69,7 @@ const QUALIFIER_WORDS = new Set([
   "ads", "ad", "media", "content", "management", "mgmt", "mgt", "social",
   "paid", "buying", "creative", "combo", "suite", "full", "package", "retainer",
 ]);
-const companyRoot = (name: string): string => {
+export const companyRoot = (name: string): string => {
   let words = stripUpsell(name).split(/\s+/).filter(Boolean);
   while (words.length > 1 && QUALIFIER_WORDS.has(words[words.length - 1].toLowerCase().replace(/[^a-z]/g, ""))) {
     words = words.slice(0, -1);
