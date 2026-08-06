@@ -92,6 +92,7 @@ A paired downsell extends its predecessor rather than standing alone:
 |---|---|
 | Identity | One logical deal keyed on the **predecessor's** id and `clientId`; the downsell inherits that `clientId`, which is what holds tenure and LTV on a single client row |
 | Timeline | Predecessor's amount runs to the **handover month**, the downsell's amount from that month on. Handover = month of the downsell's start date, falling back to the predecessor's churn month. Derived from the pair, so a few days' mismatch in the raw dates cannot open a gap or double-count a month |
+| Stale predecessors | The predecessor's window ends at the **earlier** of its real churn month and the handover month. Pairing on churn reason alone is deliberately unbounded by date, so without this a predecessor churned months before its replacement began would keep earning revenue through the gap — the client genuinely was not paying, and a real gap must survive. A few days' mismatch still collapses to one month and opens no gap |
 | Deal count | One, at the current (lower) amount |
 | Churn | At the handover month, churn = `predecessorExGst − downsellExGst`; new revenue = 0 |
 | Never new business | A downsell is **never** new business on any surface. It is not a new deal, not new revenue, not a new client, and not an upsell. Wherever deals are classified by start month, a paired downsell classifies as **existing** revenue. Enumerated exhaustively below |
