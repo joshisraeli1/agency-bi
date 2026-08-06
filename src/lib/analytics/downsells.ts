@@ -209,12 +209,27 @@ export function pairDownsells(deals: PairableDeal[]): DownsellResolution {
   const successorIds = new Set(pairs.map((p) => p.successorId));
   const predecessorIds = new Set(pairs.map((p) => p.predecessorId));
   const heldOutIds = new Set(heldOut.map((h) => h.id));
+  const byId = new Map(deals.map((d) => [d.id, d]));
   const handoverStart = new Map(pairs.map((p) => [p.successorId, p.handoverMonth]));
-  const handoverChurn = new Map(pairs.map((p) => [p.predecessorId, p.handoverMonth]));
+
+  // A predecessor's churn window is the EARLIER of its real churn month and
+  // the handover month. Pairing can succeed on a churn-reason match alone
+  // with no date confirmation (deliberate — the user may set the reason
+  // without tidy dates), so the real churn date can sit well before the
+  // handover; using it when it's earlier preserves that gap instead of
+  // pretending the client paid full price right up to the handover. A close
+  // churn date still collapses to the handover month, same as before.
+  const handoverChurn = new Map<string, string>();
+  for (const p of pairs) {
+    const realChurn = monthKey(byId.get(p.predecessorId)?.churnDate);
+    handoverChurn.set(
+      p.predecessorId,
+      realChurn && monthIdx(realChurn) < monthIdx(p.handoverMonth) ? realChurn : p.handoverMonth
+    );
+  }
 
   // Walk each chain back to its origin for clientId and lifecycle start.
   const predecessorOf = new Map(pairs.map((p) => [p.successorId, p.predecessorId]));
-  const byId = new Map(deals.map((d) => [d.id, d]));
   const inheritedClientId = new Map<string, string>();
   const lifecycleStartByDeal = new Map<string, Date>();
   const originOf = (id: string): PairableDeal | undefined => {
@@ -235,6 +250,13 @@ export function pairDownsells(deals: PairableDeal[]): DownsellResolution {
     }
   }
 
+  // clientId must resolve from the chain origin, not the immediate
+  // predecessor — otherwise the second and later links of a downsell chain
+  // silently lose client identity.
+  for (const p of pairs) {
+    p.clientId = inheritedClientId.get(p.successorId) ?? p.clientId;
+  }
+
   const contractionsByMonth = new Map<string, DownsellPair[]>();
   for (const p of pairs) {
     const list = contractionsByMonth.get(p.handoverMonth) ?? [];
@@ -249,10 +271,20 @@ export function pairDownsells(deals: PairableDeal[]): DownsellResolution {
 }
 
 /**
- * Effective active-window month keys for a deal, with the pair's handover month
- * overriding the raw dates. Using the handover for BOTH sides means a few days'
- * mismatch between the predecessor's churn date and the successor's start date
- * can never open a revenue gap or double-count a month.
+ * Effective active-window month keys for a deal, with the pair's handover
+ * month overriding the raw dates.
+ *
+ * The successor's start is always the handover month — a few days' mismatch
+ * between the predecessor's churn date and the successor's start date can
+ * never open a revenue gap or double-count a month.
+ *
+ * The predecessor's churn is the EARLIER of its real churn month and the
+ * handover month. Pairing itself can succeed on a churn-reason match alone,
+ * with no date confirmation (a deliberate choice — the user may set the
+ * reason without tidy dates), so the real churn date can sit well before the
+ * handover; a close churn date still collapses to the handover month, but a
+ * genuinely stale one is preserved — the client genuinely was not paying
+ * during that gap.
  */
 export function windowKeys(
   d: { id: string; startDate?: Date | null; closeDate?: Date | null; churnDate?: Date | null },
