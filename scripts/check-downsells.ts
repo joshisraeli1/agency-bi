@@ -124,6 +124,16 @@ assert(pending.pairs.length === 0, "a downsell that is not yet won does not supe
 assert(pending.pendingIds.has("S"), "it is marked pending");
 assert(pending.heldOut.length === 0, "and is NOT flagged as needing attention");
 
+// ---------- exact-root matching ----------
+console.log("\nexact-root matching:");
+const exactRootMatch = pairDownsells([
+  deal({ id: "P_prefix", name: "Acme", amountExGst: 8000, startDate: new Date(2026, 0, 1), churnDate: new Date(2026, 7, 1), churnReason: "Downsell", stage: "churned" }),
+  deal({ id: "P_exact", name: "Acme NZ", amountExGst: 5000, startDate: new Date(2026, 0, 1), churnDate: new Date(2026, 7, 1), churnReason: "Downsell", stage: "churned" }),
+  deal({ id: "S", name: "Acme NZ Downsell", amountExGst: 3000, startDate: new Date(2026, 7, 1), packageDescription: "Downsell" }),
+]);
+assert(exactRootMatch.pairs.length === 1, "one pair formed");
+assert(exactRootMatch.pairs[0].predecessorId === "P_exact", "exact root match wins over larger prefix-only candidate");
+
 // ---------- a predecessor is claimed once ----------
 const twoDownsells = pairDownsells([
   deal({ id: "P", name: "Acme", amountExGst: 9000, startDate: new Date(2026, 0, 1), churnDate: new Date(2026, 7, 1), churnReason: "Downsell", stage: "churned" }),

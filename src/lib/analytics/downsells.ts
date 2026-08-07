@@ -172,7 +172,14 @@ export function pairDownsells(deals: PairableDeal[]): DownsellResolution {
         const reasonMatch = (c.churnReason ?? "").toLowerCase().includes("downsell");
         const cChurn = monthKey(c.churnDate);
         const distance = cChurn ? Math.abs(monthIdx(cChurn) - monthIdx(startKey)) : Infinity;
-        return { c, reasonMatch, distance, sameDivision: dealDivision(c.contentPackageType) === dealDivision(s.contentPackageType) };
+        const cRoot = rootOf(c.name, isDownsell(c));
+        return {
+          c,
+          reasonMatch,
+          distance,
+          exactRoot: cRoot === root,
+          sameDivision: dealDivision(c.contentPackageType) === dealDivision(s.contentPackageType),
+        };
       })
       .filter((x) => x.reasonMatch || x.distance <= 1);
 
@@ -183,6 +190,7 @@ export function pairDownsells(deals: PairableDeal[]): DownsellResolution {
 
     scored.sort(
       (a, b) =>
+        Number(b.exactRoot) - Number(a.exactRoot) ||
         Number(b.reasonMatch) - Number(a.reasonMatch) ||
         a.distance - b.distance ||
         Number(b.sameDivision) - Number(a.sameDivision) ||
