@@ -156,7 +156,20 @@ async function main() {
   assert(!augUpsell.some((n) => /downsell|dowsell/i.test(n)), "no downsell in the upsell bucket");
 
   const snap = await getActiveRevenueSnapshot();
-  assert(!snap.byPackageType.some((r) => r.deals.some((d) => /dowsell/i.test(d.name))), "held-out downsells absent from the snapshot");
+  // Held-out (unpaired) downsells must be absent from the current book...
+  const heldOutNames = new Set(res.heldOut.map((h) => h.name));
+  assert(
+    !snap.byPackageType.some((r) => r.deals.some((d) => heldOutNames.has(d.name))),
+    `held-out downsells absent from the snapshot (${heldOutNames.size} held out)`
+  );
+  // ...but PAIRED replacements must remain: they are the client's current revenue.
+  const snapshotNames = new Set(snap.byPackageType.flatMap((r) => r.deals.map((d) => d.name)));
+  const missingPaired = res.pairs.map((p) => p.successorName).filter((n) => !snapshotNames.has(n));
+  console.log(`  checked ${res.pairs.length} paired replacements for presence in the snapshot`);
+  assert(
+    missingPaired.length === 0,
+    `paired downsell replacements remain in the current book (missing: ${missingPaired.join(", ") || "none"})`
+  );
   console.log(`  snapshot deal count: ${snap.dealCount}, ex-GST $${snap.monthlyRevenueExGst}`);
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
