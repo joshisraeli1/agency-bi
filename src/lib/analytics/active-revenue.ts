@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { foldUpsells, isUpsell, isOneOff } from "./upsells";
 import { getExcludedClientIds } from "./excluded-clients";
+import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 
 export const DIVISION_GOALS_PROVIDER = "division_goals";
 
@@ -194,21 +195,20 @@ export async function getAvgClientTenureMonths(): Promise<{ months: number; clie
 export async function getPackageRevenueByMonth(
   monthKey: string
 ): Promise<{ packageType: string; revenue: number; count: number }[]> {
-  const [excludedIds, rawDeals] = await Promise.all([
+  const [excludedIds, rawDeals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true, startDate: true, closeDate: true, churnDate: true },
+      select: DOWNSELL_DEAL_SELECT,
     }),
+    getDownsellResolution(),
   ]);
-  const monthOf = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
   const active = rawDeals.filter((d) => {
     if (d.clientId && excludedIds.has(d.clientId)) return false;
-    const start = monthOf(d.startDate ?? d.closeDate);
-    if (!start) return false;
-    const churn = monthOf(d.churnDate);
-    return monthKey >= start && (!churn || monthKey < churn);
+    if (downsells.heldOutIds.has(d.id)) return false;
+    const { startKey, churnKey } = windowKeys(d, downsells);
+    if (!startKey) return false;
+    return monthKey >= startKey && (!churnKey || monthKey < churnKey);
   });
   const { deals } = foldUpsells(active);
   const byPkg = new Map<string, { revenue: number; count: number }>();

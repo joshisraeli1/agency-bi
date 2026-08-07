@@ -1,7 +1,7 @@
 import { loadDownsellResolution } from "@/lib/analytics/downsells";
 import { companyRoot, normalize } from "@/lib/analytics/upsells";
 import { db } from "@/lib/db";
-import { getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
+import { getRevenueVsChurn, getRevenueOverview } from "@/lib/analytics/revenue-overview";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -132,6 +132,17 @@ async function main() {
     !aug?.churnedClients.some((c) => c.retainerValue === 17750),
     "YouFoodz predecessor's full $17,750 is not booked as churn"
   );
+
+  const overview = await getRevenueOverview(12);
+  const t = overview.monthlyTrend;
+  const jul = t.find((m) => m.month === "2026-07")?.hubspotRevenue ?? 0;
+  const augMrr = t.find((m) => m.month === "2026-08")?.hubspotRevenue ?? 0;
+  assert(jul > 0 && augMrr > 0, "July and August MRR both present");
+  assert(
+    Math.abs((jul - augMrr) - 11000) < 12000,
+    `Aug MRR drops from Jul by roughly the $11,000 contraction plus genuine churn (Jul $${jul}, Aug $${augMrr})`
+  );
+  assert(augMrr < jul, "August MRR is lower than July, not higher");
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   process.exit(failures === 0 ? 0 : 1);

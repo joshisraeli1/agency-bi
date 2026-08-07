@@ -3,6 +3,7 @@ import { getExcludedClientIds } from "./excluded-clients";
 import { classifyPackageType } from "./active-revenue";
 import { foldUpsells } from "./upsells";
 import { formatMonth } from "@/lib/utils";
+import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 
 // Package-type buckets in the order shown on the slide.
 const DIVISIONS = ["Social Media Management", "Ads Management", "Content Delivery Paid"] as const;
@@ -24,9 +25,6 @@ export interface AvgDealSizeComparison {
   rows: AvgDealSizeRow[];
 }
 
-const monthKey = (d: Date | null | undefined): string | null =>
-  d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
-
 /**
  * Average deal size (ex-GST) per package type, comparing two point-in-time
  * months (default Jun 2025 vs Jun 2026). "Active in month" = deal started on or
@@ -37,26 +35,23 @@ export async function getAvgDealSizeComparison(
   prevMonth = "2025-06",
   currMonth = "2026-06"
 ): Promise<AvgDealSizeComparison> {
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: {
-        clientId: true, name: true, stage: true, contentPackageType: true,
-        packageDescription: true, amount: true, amountExGst: true,
-        startDate: true, closeDate: true, churnDate: true,
-      },
+      select: DOWNSELL_DEAL_SELECT,
     }),
+    getDownsellResolution(),
   ]);
 
   // Sum ex-GST + count of active, upsell-folded deals per division for a month.
   const statsFor = (month: string) => {
     const active = deals.filter((d) => {
       if (d.clientId && excludedIds.has(d.clientId)) return false;
-      const start = monthKey(d.startDate ?? d.closeDate);
-      if (!start) return false;
-      const churn = monthKey(d.churnDate);
-      return month >= start && (!churn || month < churn);
+      if (downsells.heldOutIds.has(d.id)) return false;
+      const { startKey, churnKey } = windowKeys(d, downsells);
+      if (!startKey) return false;
+      return month >= startKey && (!churnKey || month < churnKey);
     });
     const { deals: folded } = foldUpsells(active);
     const agg: Record<string, { sum: number; n: number }> = {};

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { dealDivisionSplit } from "./division-fy";
-import { getDownsellResolution, DOWNSELL_DEAL_SELECT } from "./downsells";
+import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { RevenueOverview } from "./types";
 
 export async function getRevenueOverview(
@@ -13,7 +13,7 @@ export async function getRevenueOverview(
   const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
   const EXCLUDED_ROLES = ["Director", "BDM"];
 
-  const [excludedIds, financialsRaw, settings, teamMembers, hubspotDeals] = await Promise.all([
+  const [excludedIds, financialsRaw, settings, teamMembers, hubspotDeals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
@@ -40,8 +40,9 @@ export async function getRevenueOverview(
     // current month, so we compute MRR from deal active windows instead).
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, name: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
+      select: { id: true, clientId: true, name: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
     }),
+    getDownsellResolution(),
   ]);
 
   // HubSpot monthly recurring revenue from deal active windows: a deal counts
@@ -54,9 +55,11 @@ export async function getRevenueOverview(
   for (const m of monthRange) { hubspotMrrEx[m] = 0; hubspotMrrInc[m] = 0; }
   for (const d of hubspotDeals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
-    const startKey = dealMonthKey(d.startDate ?? d.closeDate);
+    if (downsells.heldOutIds.has(d.id)) continue;
+    // Handover months keep a downsell pair continuous: the predecessor stops
+    // and the successor starts in the same month, whatever the raw dates say.
+    const { startKey, churnKey } = windowKeys(d, downsells);
     if (!startKey) continue;
-    const churnKey = dealMonthKey(d.churnDate);
     const ex = d.amountExGst ?? 0;
     const inc = d.amount ?? 0;
     for (const m of monthRange) {
