@@ -72,12 +72,13 @@ export interface RevenueCompositionMonth {
  * Totals equal the current book regardless of the selected month. Newest first.
  */
 export async function getRevenueComposition(): Promise<{ byMonth: RevenueCompositionMonth[] }> {
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { stage: "closed_won" },
-      select: { clientId: true, name: true, contentPackageType: true, packageDescription: true, amount: true, amountExGst: true, startDate: true, closeDate: true },
+      select: { id: true, clientId: true, name: true, contentPackageType: true, packageDescription: true, amount: true, amountExGst: true, startDate: true, closeDate: true },
     }),
+    getDownsellResolution(),
   ]);
 
   const monthOf = (d: Date | null | undefined): string | null =>
@@ -88,7 +89,7 @@ export async function getRevenueComposition(): Promise<{ byMonth: RevenueComposi
 
   // First pass: keep only recurring deals, tag each with pkg, ex-GST, upsell,
   // and its start month. Collect the set of months that have new activity.
-  type Tagged = { pkg: string; name: string; ex: number; month: string; upsell: boolean };
+  type Tagged = { pkg: string; name: string; ex: number; month: string; upsell: boolean; downsell: boolean };
   const tagged: Tagged[] = [];
   const monthsSet = new Set<string>();
   const now = new Date();
@@ -97,13 +98,17 @@ export async function getRevenueComposition(): Promise<{ byMonth: RevenueComposi
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
     if (isOneOff(d) || isAdHoc(d.name)) continue;
+    if (downsells.heldOutIds.has(d.id)) continue;
     const ex = d.amountExGst ?? 0;
     if (ex <= 0) continue;
     const pkg = classifyPackageType(d.contentPackageType);
     const month = monthOf(d.startDate ?? d.closeDate) ?? "";
     const upsell = isUpsell(d);
-    if (!upsell && month) monthsSet.add(month);
-    tagged.push({ pkg, name: d.name, ex, month, upsell });
+    // A downsell replacement continues existing revenue — it must never open a
+    // "new revenue" month or land in the upsell (expansion) bucket.
+    const downsell = downsells.successorIds.has(d.id);
+    if (!upsell && !downsell && month) monthsSet.add(month);
+    tagged.push({ pkg, name: d.name, ex, month, upsell, downsell });
   }
 
   const order = ["Content Delivery Paid", "Social Media Management", "Ads Management"];
@@ -117,6 +122,8 @@ export async function getRevenueComposition(): Promise<{ byMonth: RevenueComposi
       if (t.upsell) {
         row.upsell += t.ex;
         row.upsellDeals.push({ name: t.name, revenue: Math.round(t.ex) });
+      } else if (t.downsell) {
+        row.existing += t.ex;
       } else if (t.month === selMonth) {
         row.newRevenue += t.ex;
         row.newDeals.push({ name: t.name, revenue: Math.round(t.ex), month: t.month });
@@ -246,18 +253,22 @@ export function classifyPackageType(raw: string | null | undefined): string {
  * Counts every closed-won deal in the pipeline (HubSpot's closed-won total).
  */
 export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot> {
-  const rawDeals = await db.hubspotDeal.findMany({
-    where: { stage: "closed_won" },
-    select: { name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true },
-  });
+  const [rawDeals, downsells] = await Promise.all([
+    db.hubspotDeal.findMany({
+      where: { stage: "closed_won" },
+      select: { id: true, name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true },
+    }),
+    getDownsellResolution(),
+  ]);
   // Count the full closed-won book (matching HubSpot's "Revenue by Package
   // Type" / Revenue Summary) — inc-GST $642,059 / ex-GST $583,646. We do NOT
   // filter by churn here: a deal in the closed-won stage is treated as current
   // revenue even if it carries a churn date (churn-date-based exclusion belongs
   // on the time-series charts, not the headline book).
+  // Unpaired downsells are held out until their HubSpot data is complete.
   // Fold upsells onto their base deal — an upsell is extra revenue for an
   // existing company, not a separate deal in the count / package breakdown.
-  const { deals } = foldUpsells(rawDeals);
+  const { deals } = foldUpsells(rawDeals.filter((d) => !downsells.heldOutIds.has(d.id)));
 
   const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;

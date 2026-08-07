@@ -2,6 +2,7 @@ import { loadDownsellResolution } from "@/lib/analytics/downsells";
 import { companyRoot, normalize } from "@/lib/analytics/upsells";
 import { db } from "@/lib/db";
 import { getRevenueVsChurn, getRevenueOverview } from "@/lib/analytics/revenue-overview";
+import { getRevenueComposition, getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -143,6 +144,20 @@ async function main() {
     `Aug MRR drops from Jul by roughly the $11,000 contraction plus genuine churn (Jul $${jul}, Aug $${augMrr})`
   );
   assert(augMrr < jul, "August MRR is lower than July, not higher");
+
+  const comp = await getRevenueComposition();
+  const augComp = comp.byMonth.find((m) => m.month === "2026-08");
+  assert(!!augComp, "August composition row present");
+  const augNew = (augComp?.rows ?? []).reduce((s, r) => s + r.newRevenue, 0);
+  const namedNew = (augComp?.rows ?? []).flatMap((r) => r.newDeals.map((d) => d.name));
+  assert(!namedNew.some((n) => /downsell|dowsell/i.test(n)), "no downsell in the composition's new deals");
+  console.log(`  August composition new revenue: $${augNew}`);
+  const augUpsell = (augComp?.rows ?? []).flatMap((r) => r.upsellDeals.map((d) => d.name));
+  assert(!augUpsell.some((n) => /downsell|dowsell/i.test(n)), "no downsell in the upsell bucket");
+
+  const snap = await getActiveRevenueSnapshot();
+  assert(!snap.byPackageType.some((r) => r.deals.some((d) => /dowsell/i.test(d.name))), "held-out downsells absent from the snapshot");
+  console.log(`  snapshot deal count: ${snap.dealCount}, ex-GST $${snap.monthlyRevenueExGst}`);
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   process.exit(failures === 0 ? 0 : 1);
