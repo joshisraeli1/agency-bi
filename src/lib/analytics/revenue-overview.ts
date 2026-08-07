@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { dealDivisionSplit } from "./division-fy";
+import { getDownsellResolution, DOWNSELL_DEAL_SELECT } from "./downsells";
 import type { RevenueOverview } from "./types";
 
 export async function getRevenueOverview(
@@ -351,21 +352,13 @@ export interface RevenueVsChurnRow {
 export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: {
-        id: true,
-        clientId: true,
-        name: true,
-        amount: true,
-        amountExGst: true,
-        startDate: true,
-        closeDate: true,
-        churnDate: true,
-      },
+      select: DOWNSELL_DEAL_SELECT,
     }),
+    getDownsellResolution(),
   ]);
 
   const monthKeyOf = (d: Date | null | undefined): string | null => {
@@ -381,16 +374,43 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
 
     for (const d of deals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
+      // Unpaired downsells are held out until their HubSpot data is complete.
+      if (downsells.heldOutIds.has(d.id)) continue;
       const amt = d.amountExGst ?? d.amount ?? 0;
       if (!amt) continue;
 
-      if (monthKeyOf(d.startDate ?? d.closeDate) === month) {
+      // A downsell replacement is never new business, and the deal it replaces
+      // never churns in full — the pair contributes its net contraction below.
+      if (monthKeyOf(d.startDate ?? d.closeDate) === month && !downsells.successorIds.has(d.id)) {
         newRevenue += amt;
         newClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
       }
-      if (monthKeyOf(d.churnDate) === month) {
+      if (monthKeyOf(d.churnDate) === month && !downsells.predecessorIds.has(d.id)) {
         churnedRevenue += amt;
         churnedClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
+      }
+    }
+
+    // Net movement for each downsell pair handing over this month. A positive
+    // contraction is churn; a larger replacement books the increase as new
+    // revenue, so no chart ever renders a negative bar.
+    for (const p of downsells.contractionsByMonth.get(month) ?? []) {
+      if (p.clientId && excludedIds.has(p.clientId)) continue;
+      if (p.contractionExGst > 0) {
+        churnedRevenue += p.contractionExGst;
+        churnedClients.push({
+          id: p.clientId ?? p.successorId,
+          name: `${p.predecessorName} (downsell)`,
+          retainerValue: p.contractionExGst,
+        });
+      } else if (p.contractionExGst < 0) {
+        const gain = -p.contractionExGst;
+        newRevenue += gain;
+        newClients.push({
+          id: p.clientId ?? p.successorId,
+          name: `${p.predecessorName} (upgrade)`,
+          retainerValue: gain,
+        });
       }
     }
 

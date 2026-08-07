@@ -1,6 +1,7 @@
 import { loadDownsellResolution } from "@/lib/analytics/downsells";
 import { companyRoot, normalize } from "@/lib/analytics/upsells";
 import { db } from "@/lib/db";
+import { getRevenueVsChurn } from "@/lib/analytics/revenue-overview";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -110,6 +111,27 @@ async function main() {
       console.log(`    start month: ${cMonth}; handover month: 2026-08; excluded by date filter: ${cMonth ? cMonth >= "2026-08" : "no start date"}`);
     }
   }
+
+  const rows = await getRevenueVsChurn(12);
+  const aug = rows.find((r) => r.month === "2026-08");
+  assert(!!aug, "August 2026 row present");
+  // Point-in-time acceptance figures. These move whenever a deal is added,
+  // won or churned in August 2026 — e.g. "Hello Fresh Upsell" ($3,600 ex-GST)
+  // was created on 2026-08-05 and lifted new revenue from $65,800 to $69,400.
+  // Upsells legitimately count as new revenue; only downsells are excluded.
+  // The structural assertions below are the drift-proof ones.
+  assert(aug?.newRevenue === 69400, `August new revenue $69,400 (got $${aug?.newRevenue})`);
+  assert(aug?.churnedRevenue === 75650, `August churned revenue $75,650 (got $${aug?.churnedRevenue})`);
+  assert(
+    !aug?.newClients.some((c) => /downsell|dowsell/i.test(c.name)),
+    "no downsell appears as new business"
+  );
+  const contraction = aug?.churnedClients.find((c) => /Hello Fresh NZ/i.test(c.name));
+  assert(contraction?.retainerValue === 2250, `Hello Fresh NZ churn entry is the $2,250 contraction (got ${contraction?.retainerValue})`);
+  assert(
+    !aug?.churnedClients.some((c) => c.retainerValue === 17750),
+    "YouFoodz predecessor's full $17,750 is not booked as churn"
+  );
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   process.exit(failures === 0 ? 0 : 1);
