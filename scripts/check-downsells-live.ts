@@ -3,6 +3,7 @@ import { companyRoot, normalize } from "@/lib/analytics/upsells";
 import { db } from "@/lib/db";
 import { getRevenueVsChurn, getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import { getRevenueComposition, getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
+import { getLTVData } from "@/lib/analytics/advanced-analytics";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -171,6 +172,17 @@ async function main() {
     `paired downsell replacements remain in the current book (missing: ${missingPaired.join(", ") || "none"})`
   );
   console.log(`  snapshot deal count: ${snap.dealCount}, ex-GST $${snap.monthlyRevenueExGst}`);
+
+  const ltv = await getLTVData();
+  for (const label of ["Hello Fresh NZ", "Hello Fresh AU", "YouFoodz"]) {
+    const matches = ltv.clients.filter((c) => c.clientName.toLowerCase().startsWith(label.toLowerCase().slice(0, 10)));
+    assert(matches.length === 1, `${label} appears as exactly one client (got ${matches.length})`);
+    const c = matches[0];
+    if (!c) continue;
+    assert(c.startDate.getFullYear() === 2026 && c.startDate.getMonth() <= 3, `${label} lifecycle starts April 2026 or earlier (got ${c.startDate.toISOString().slice(0, 10)})`);
+    assert(c.monthsActive >= 4, `${label} tenure is at least 4 months (got ${c.monthsActive})`);
+    assert(c.monthlyAvgRevenue > 0, `${label} carries its replacement deal's revenue`);
+  }
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   process.exit(failures === 0 ? 0 : 1);

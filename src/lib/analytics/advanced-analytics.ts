@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { isOneOff, isUpsell } from "./upsells";
+import { getDownsellResolution } from "./downsells";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -70,7 +71,7 @@ export interface TeamUtilizationData {
 }
 
 export async function getLTVData(): Promise<LTVData> {
-  const [allClients, deals, , excludedIds] = await Promise.all([
+  const [allClients, deals, , excludedIds, downsells] = await Promise.all([
     db.client.findMany({
       where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
       select: {
@@ -84,11 +85,12 @@ export async function getLTVData(): Promise<LTVData> {
       },
     }),
     db.hubspotDeal.findMany({
-      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }], clientId: { not: null } },
-      select: { clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true },
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: { id: true, clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true },
     }),
     db.appSettings.findFirst(),
     getExcludedClientIds(),
+    getDownsellResolution(),
   ]);
 
   const clients = allClients.filter((c) => !excludedIds.has(c.id));
@@ -96,8 +98,28 @@ export async function getLTVData(): Promise<LTVData> {
   // Per-client monthly MRR (ex-GST) from their closed-won/churned deals
   const clientMrr = new Map<string, number>();
   for (const d of deals) {
-    if (!d.clientId || isOneOff(d)) continue; // one-offs are not recurring LTV
-    clientMrr.set(d.clientId, (clientMrr.get(d.clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
+    if (isOneOff(d)) continue; // one-offs are not recurring LTV
+    if (downsells.heldOutIds.has(d.id)) continue;
+    // A downsell replacement is created fresh in HubSpot with no client link
+    // (Client.hubspotDealId is unique and still points at the deal it
+    // replaced), so it inherits its predecessor's client. Without this the
+    // client's lifecycle splits in two and tenure resets.
+    const clientId = d.clientId ?? downsells.inheritedClientId.get(d.id) ?? null;
+    if (!clientId) continue;
+    // The predecessor's revenue stopped at the handover — only the current
+    // replacement counts toward present MRR.
+    if (downsells.predecessorIds.has(d.id)) continue;
+    clientMrr.set(clientId, (clientMrr.get(clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
+  }
+
+  // Earliest chain start per client, so a downgraded client's tenure is measured
+  // from its ORIGINAL deal rather than from the replacement.
+  const chainStartByClient = new Map<string, Date>();
+  for (const [dealId, start] of downsells.lifecycleStartByDeal) {
+    const cid = downsells.inheritedClientId.get(dealId);
+    if (!cid) continue;
+    const cur = chainStartByClient.get(cid);
+    if (!cur || start < cur) chainStartByClient.set(cid, start);
   }
 
   const now = new Date();
@@ -105,7 +127,9 @@ export async function getLTVData(): Promise<LTVData> {
 
   const clientData = clients.map((c) => {
     const mrr = clientMrr.get(c.id) || 0;
-    const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
+    const clientStart = c.startDate ? new Date(c.startDate) : c.createdAt;
+    const chainStart = chainStartByClient.get(c.id);
+    const effectiveStart = chainStart && chainStart < clientStart ? chainStart : clientStart;
 
     // Months active = ACTUAL tenure (start → end for churned, start → now for
     // active). No projection — LTV is revenue earned to date, not forecast.
