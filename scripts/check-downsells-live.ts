@@ -174,14 +174,30 @@ async function main() {
   console.log(`  snapshot deal count: ${snap.dealCount}, ex-GST $${snap.monthlyRevenueExGst}`);
 
   const ltv = await getLTVData();
-  for (const label of ["Hello Fresh NZ", "Hello Fresh AU", "YouFoodz"]) {
-    const matches = ltv.clients.filter((c) => c.clientName.toLowerCase().startsWith(label.toLowerCase().slice(0, 10)));
-    assert(matches.length === 1, `${label} appears as exactly one client (got ${matches.length})`);
+  // Exact names — a prefix match conflates the NZ and AU rows.
+  // monthlyAvgRevenue is the load-bearing figure: before this task the client
+  // carried its churned PREDECESSOR's amount, because the replacement deal
+  // arrives with clientId = null (Client.hubspotDealId is unique and still
+  // points at the deal it replaced) and so contributed nothing.
+  const LTV_EXPECTED: { name: string; mrr: number }[] = [
+    { name: "Hello Fresh NZ", mrr: 6750 },
+    { name: "Hello Fresh AU", mrr: 10500 },
+    { name: "YouFoodz", mrr: 12000 },
+  ];
+  for (const { name, mrr } of LTV_EXPECTED) {
+    const matches = ltv.clients.filter((c) => c.clientName.toLowerCase() === name.toLowerCase());
+    assert(matches.length === 1, `${name} appears as exactly one client (got ${matches.length})`);
     const c = matches[0];
     if (!c) continue;
-    assert(c.startDate.getFullYear() === 2026 && c.startDate.getMonth() <= 3, `${label} lifecycle starts April 2026 or earlier (got ${c.startDate.toISOString().slice(0, 10)})`);
-    assert(c.monthsActive >= 4, `${label} tenure is at least 4 months (got ${c.monthsActive})`);
-    assert(c.monthlyAvgRevenue > 0, `${label} carries its replacement deal's revenue`);
+    assert(
+      c.startDate.getFullYear() === 2026 && c.startDate.getMonth() <= 3,
+      `${name} lifecycle starts April 2026 or earlier (got ${c.startDate.toISOString().slice(0, 10)})`
+    );
+    assert(c.monthsActive >= 4, `${name} tenure is at least 4 months (got ${c.monthsActive})`);
+    assert(
+      Math.round(c.monthlyAvgRevenue) === mrr,
+      `${name} carries its REPLACEMENT deal's revenue $${mrr}, not the churned predecessor's (got $${Math.round(c.monthlyAvgRevenue)})`
+    );
   }
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
