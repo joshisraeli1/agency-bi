@@ -898,7 +898,8 @@ git commit -m "Book downsells as contraction only in New Revenue vs Churn"
 The predecessor must stop and the successor start on the same handover month, from the pair rather than the raw dates.
 
 **Files:**
-- Modify: `src/lib/analytics/revenue-overview.ts:40-67` (`getRevenueOverview`)
+- Modify: `src/lib/analytics/revenue-overview.ts:40-67` (`getRevenueOverview` MRR loop)
+- Modify: `src/lib/analytics/revenue-overview.ts:225-261` (`divisionRevenueTrend` — same function, same deals, same treatment; added during Task 5 review after it was found to be an omission in this plan)
 - Modify: `src/lib/analytics/active-revenue.ts:195-225` (`getPackageRevenueByMonth`)
 - Modify: `src/lib/analytics/avg-deal-size-comparison.ts:40-72`
 - Modify: `scripts/check-downsells-live.ts`
