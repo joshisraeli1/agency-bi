@@ -211,12 +211,21 @@ lifecycles continuous from April, MRR down exactly $11,000 month on month.
 Measured against the live local DB on 2026-08-05, the whole-chart figures for the
 *New Revenue vs Churn* bars are:
 
-| August 2026 | Current | Required after fix |
+| August 2026 (as measured 2026-08-05) | Current | Required after fix |
 |---|---|---|
 | New Revenue (ex-GST) | $95,050 | **$65,800** |
 | Churned Revenue (ex-GST) | $104,900 | **$75,650** |
 
-This flips August from −$9,850 net to +$9,850 net. The remaining August churn is genuine
+This flips August from −$9,850 net to +$9,850 net.
+
+**These are point-in-time figures and have already drifted.** On 2026-08-07 a genuine
+new upsell — "Hello Fresh Upsell", $3,600 ex-GST, `Package Description = Upsell`, start
+2026-08-05 — synced in, lifting August new revenue to **$69,400** (churn unchanged at
+$75,650). An upsell counting as new revenue is correct and intended; only downsells are
+excluded. Expect the exact figures to move again whenever an August deal is added, won or
+churned. The structural assertions — no downsell in the new-revenue list, the Hello Fresh
+NZ churn entry being the $2,250 contraction, no full-value $17,750 churn entry — are the
+drift-proof ones and are what actually protect the behaviour. The remaining August churn is genuine
 and must be untouched: EatClub Upsell $17,000, Mighty Munch $9,000, Affinity Education
 $8,000, Shift4 Ads Mgmt $8,000, Shift4 Content $6,500, Juniper Ad Hoc Shoot $6,000, Sortd
 $5,650, Credabl $4,500.
