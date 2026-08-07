@@ -48,8 +48,6 @@ export async function getRevenueOverview(
   // HubSpot monthly recurring revenue from deal active windows: a deal counts
   // in every month from its start (startDate, fallback closeDate) up to but not
   // including its churn month. ex-GST = amountExGst, inc-GST = amount.
-  const dealMonthKey = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
   const hubspotMrrEx: Record<string, number> = {};
   const hubspotMrrInc: Record<string, number> = {};
   for (const m of monthRange) { hubspotMrrEx[m] = 0; hubspotMrrInc[m] = 0; }
@@ -239,9 +237,9 @@ export async function getRevenueOverview(
     };
     for (const d of hubspotDeals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
-      const startKey = dealMonthKey(d.startDate ?? d.closeDate);
+      if (downsells.heldOutIds.has(d.id)) continue;
+      const { startKey, churnKey } = windowKeys(d, downsells);
       if (!startKey) continue;
-      const churnKey = dealMonthKey(d.churnDate);
       if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
       const amt = d.amountExGst ?? 0;
       if (!amt) continue;
