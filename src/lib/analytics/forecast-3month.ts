@@ -1,4 +1,5 @@
 import { formatMonth } from "@/lib/utils";
+import { getDownsellResolution } from "./downsells";
 
 export const STAGE_PROBABILITY: Record<string, number> = {
   "Very Warm": 0.7,
@@ -168,26 +169,39 @@ export async function getThreeMonthForecast(now: Date = new Date()): Promise<Thr
     import("./excluded-clients"),
   ]);
   const excludedIds = await getExcludedClientIds();
-  const deals = await db.hubspotDeal.findMany({
-    where: {
-      OR: [
-        { stageLabel: { in: ["Very Warm", "Contract out", "Closed Won"] } },
-        { churnDate: { not: null } },
-      ],
-    },
-    select: {
-      name: true,
-      clientId: true,
-      stageLabel: true,
-      amount: true,
-      amountExGst: true,
-      startDate: true,
-      closeDate: true,
-      createDate: true,
-      churnDate: true,
-    },
-  });
-  const kept = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)));
+  const [deals, downsells] = await Promise.all([
+    db.hubspotDeal.findMany({
+      where: {
+        OR: [
+          { stageLabel: { in: ["Very Warm", "Contract out", "Closed Won"] } },
+          { churnDate: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        clientId: true,
+        stageLabel: true,
+        amount: true,
+        amountExGst: true,
+        startDate: true,
+        closeDate: true,
+        createDate: true,
+        churnDate: true,
+      },
+    }),
+    getDownsellResolution(),
+  ]);
+  // A downsell is a scheduled reduction, never incoming revenue: won ones are
+  // already reflected in current MRR, pending ones are not money arriving, and
+  // held-out ones are excluded everywhere until their HubSpot data is complete.
+  const kept = deals.filter(
+    (d) =>
+      !(d.clientId && excludedIds.has(d.clientId)) &&
+      !downsells.successorIds.has(d.id) &&
+      !downsells.pendingIds.has(d.id) &&
+      !downsells.heldOutIds.has(d.id)
+  );
   const months = forecastMonths(now, 3);
 
   const closedWon = kept.filter((d) => d.stageLabel === "Closed Won");

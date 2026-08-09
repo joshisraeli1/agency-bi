@@ -3,7 +3,8 @@ import { companyRoot, normalize } from "@/lib/analytics/upsells";
 import { db } from "@/lib/db";
 import { getRevenueVsChurn, getRevenueOverview } from "@/lib/analytics/revenue-overview";
 import { getRevenueComposition, getActiveRevenueSnapshot } from "@/lib/analytics/active-revenue";
-import { getLTVData } from "@/lib/analytics/advanced-analytics";
+import { getLTVData, getNewClientDealSize } from "@/lib/analytics/advanced-analytics";
+import { getThreeMonthForecast } from "@/lib/analytics/forecast-3month";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -199,6 +200,13 @@ async function main() {
       `${name} carries its REPLACEMENT deal's revenue $${mrr}, not the churned predecessor's (got $${Math.round(c.monthlyAvgRevenue)})`
     );
   }
+
+  const ncds = await getNewClientDealSize(12);
+  const ncdsJson = JSON.stringify(ncds);
+  assert(!/downsell|dowsell/i.test(ncdsJson), "no downsell in new-client deal size");
+
+  const f3 = await getThreeMonthForecast();
+  assert(!/downsell|dowsell/i.test(JSON.stringify(f3)), "no downsell in the 3-month forecast");
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   process.exit(failures === 0 ? 0 : 1);

@@ -652,29 +652,35 @@ export async function getNewClientDealSize(
   // in its start month and "churned" in its churn month. Keying off Client.endDate
   // missed churn the client record hadn't been updated for (e.g. June's mycar /
   // Stockspot / Chill Chair, which have a deal churnDate but no client endDate).
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
       select: {
-        id: true,
-        clientId: true,
-        name: true,
-        amountExGst: true,
-        amount: true,
-        startDate: true,
-        closeDate: true,
-        churnDate: true,
-        contentPackageType: true,
+        id: true, clientId: true, name: true, amountExGst: true, amount: true,
+        startDate: true, closeDate: true, churnDate: true, contentPackageType: true,
+        packageDescription: true,
       },
     }),
+    getDownsellResolution(),
   ]);
 
   // Exclude one-off (non-recurring) deals — these are revenue but not retainer,
   // so they don't belong in deal-size / new-retainer movement.
   // Exclude one-offs and upsells — neither is a new client acquisition, so
   // they shouldn't skew the new-client average deal size.
-  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)) && !isOneOff(d) && !isUpsell(d));
+  // Exclude downsells on BOTH sides: a downsell is not an acquisition (the
+  // successor), and its predecessor's churn is a contraction rather than a
+  // lost client — the client was retained at a lower rate, not lost.
+  const visible = deals.filter(
+    (d) =>
+      !(d.clientId && excludedIds.has(d.clientId)) &&
+      !isOneOff(d) &&
+      !isUpsell(d) &&
+      !downsells.successorIds.has(d.id) &&
+      !downsells.predecessorIds.has(d.id) &&
+      !downsells.heldOutIds.has(d.id)
+  );
   const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(d) : null);
   const dealSizeOf = (d: { amountExGst: number | null; amount: number | null }) =>
     Math.round(d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0));
