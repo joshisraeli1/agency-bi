@@ -1572,19 +1572,26 @@ Replace the query at `forecast-3month.ts:171-189` and the `kept` filter on the l
     }),
     getDownsellResolution(),
   ]);
-  // A downsell is a scheduled reduction, never incoming revenue: won ones are
-  // already reflected in current MRR, pending ones are not money arriving, and
-  // held-out ones are excluded everywhere until their HubSpot data is complete.
+  // A downsell is never incoming revenue: pending ones are a scheduled
+  // reduction rather than pipeline, and held-out ones are excluded everywhere
+  // until their HubSpot data is complete. Paired successors DO remain — they
+  // are closed-won ongoing revenue and form part of the currentMrr baseline.
   const kept = deals.filter(
     (d) =>
       !(d.clientId && excludedIds.has(d.clientId)) &&
-      !downsells.successorIds.has(d.id) &&
       !downsells.pendingIds.has(d.id) &&
       !downsells.heldOutIds.has(d.id)
   );
 ```
 
 Note the predecessors are deliberately *not* excluded here — their churn is real MRR leaving the book on the handover, which the forecast should see.
+
+**Corrected during Task 9 review.** An earlier draft of this step also excluded `successorIds`.
+That was wrong: `kept` feeds BOTH the pipeline logic and `currentMrr`
+(`forecast-3month.ts:207-208` computes the baseline as `kept.filter(stageLabel === "Closed
+Won")`), so excluding paired successors deleted $29,250 of real ongoing revenue from the
+forecast baseline and cascaded into the churn rate and every projected month. "Not pipeline"
+and "not revenue" are different things; only pending and held-out downsells are neither.
 
 - [ ] **Step 5: Run both check scripts**
 
