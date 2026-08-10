@@ -1524,19 +1524,35 @@ In `src/lib/analytics/advanced-analytics.ts`, in `getNewClientDealSize`, add the
   ]);
 ```
 
-and extend the `visible` filter — a downsell is not an acquisition, and its predecessor's churn is a contraction rather than a lost client:
+and split the filter per-side. **The two exclusions must NOT share one filter**: `visible`
+feeds both `newMonths` (keyed on `startDate`) and `churnedMonths` (keyed on `churnDate`),
+so excluding predecessors from the shared filter deletes real acquisitions — the three
+predecessors genuinely began in April 2026 and their clients are still active.
 
 ```ts
+  // One-offs and upsells are never a new-client acquisition. Held-out
+  // (unpaired) downsells are excluded everywhere until their data is complete.
   const visible = deals.filter(
     (d) =>
       !(d.clientId && excludedIds.has(d.clientId)) &&
       !isOneOff(d) &&
       !isUpsell(d) &&
-      !downsells.successorIds.has(d.id) &&
-      !downsells.predecessorIds.has(d.id) &&
       !downsells.heldOutIds.has(d.id)
   );
+  // A downsell replacement is not an acquisition...
+  const newVisible = visible.filter((d) => !downsells.successorIds.has(d.id));
+  // ...and the deal it replaced is a contraction, not a lost client. The
+  // predecessor STAYS in the new-client view: its own start month was a genuine
+  // acquisition and the client is still active.
+  const churnVisible = visible.filter((d) => !downsells.predecessorIds.has(d.id));
 ```
+
+Use `newVisible` in `newMonths` and `churnVisible` in `churnedMonths`.
+
+Note `packageDescription` must be added to this query's `select`: `isOneOff` and `isUpsell`
+both read it (`upsells.ts:32,46`) and it was absent before, so one-off exclusion never
+worked here and upsell detection silently fell back to name matching. Adding it corrects a
+pre-existing bug and will move some monthly counts on its own.
 
 - [ ] **Step 4: Exclude downsells from the forecast**
 
