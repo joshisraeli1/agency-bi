@@ -124,6 +124,25 @@ assert(pending.pairs.length === 0, "a downsell that is not yet won does not supe
 assert(pending.pendingIds.has("S"), "it is marked pending");
 assert(pending.heldOut.length === 0, "and is NOT flagged as needing attention");
 
+// A pending downsell must never be selected as the PREDECESSOR of a later
+// downsell either — the candidate filter requires closed_won or a churn
+// date, which a pending deal has neither of. Widening the live query (Fix 1)
+// to surface pending downsells must not let one slip through as a stand-in
+// predecessor for the next link in a chain.
+const pendingAsPredecessor = pairDownsells([
+  deal({ id: "PEND", name: "Acme Downsell", amountExGst: 4000, startDate: new Date(2026, 0, 1), packageDescription: "Downsell", stage: "negotiation" }),
+  deal({ id: "S2", name: "Acme Downsell", amountExGst: 3000, startDate: new Date(2026, 5, 1), packageDescription: "Downsell" }),
+]);
+assert(pendingAsPredecessor.pendingIds.has("PEND"), "PEND (unwon downsell) is itself marked pending");
+assert(
+  !pendingAsPredecessor.pairs.some((p) => p.predecessorId === "PEND"),
+  "a pending downsell is never selected as a predecessor for another downsell"
+);
+assert(
+  pendingAsPredecessor.heldOut.some((h) => h.id === "S2"),
+  "S2 is held out — its only same-company candidate (PEND) was never won, so there is no valid predecessor"
+);
+
 // ---------- exact-root matching ----------
 console.log("\nexact-root matching:");
 const exactRootMatch = pairDownsells([

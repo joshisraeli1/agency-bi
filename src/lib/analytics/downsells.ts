@@ -311,10 +311,29 @@ export const DOWNSELL_DEAL_SELECT = {
   contentPackageType: true, packageDescription: true,
 } as const;
 
-/** Uncached loader — call this from scripts, where React `cache` has no request scope. */
+/**
+ * Uncached loader — call this from scripts, where React `cache` has no request
+ * scope.
+ *
+ * The `OR` here must ALSO catch downsells that are not yet won — the
+ * "closed_won OR churnDate" predicate is exactly `isWon` inside
+ * `pairDownsells`, so a query limited to that would only ever return won
+ * deals and `pendingIds` (and the `!isWon` branch that populates it) would
+ * never fire. A pending downsell (e.g. stage "Very Warm" / "Contract out",
+ * no churn date) needs to be visible here so it can be recognized and
+ * excluded from pipeline/forecast — otherwise it silently flows through as
+ * incoming NEW revenue instead.
+ */
 export async function loadDownsellResolution(): Promise<DownsellResolution> {
   const deals = await db.hubspotDeal.findMany({
-    where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+    where: {
+      OR: [
+        { stage: "closed_won" },
+        { churnDate: { not: null } },
+        { packageDescription: { contains: "ownsell" } },
+        { name: { contains: "owsell" } },
+      ],
+    },
     select: DOWNSELL_DEAL_SELECT,
   });
   return pairDownsells(deals);
