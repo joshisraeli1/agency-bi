@@ -327,6 +327,12 @@ export interface RevenueVsChurnClient {
   id: string;
   name: string;
   retainerValue: number;
+  /**
+   * Unique per-entry key for list rendering. A downsell contraction shares its
+   * client id with any other deal that client churned in the same month, so the
+   * id alone is not unique; the link still needs the client id, hence both.
+   */
+  entryKey?: string;
 }
 
 export interface RevenueVsChurnRow {
@@ -400,12 +406,12 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       if (p.contractionExGst > 0) {
         churnedRevenue += p.contractionExGst;
         churnedClients.push({
-          // Always the successor's deal id, never `p.clientId` — a client with
-          // BOTH a downsell and a separately-churned deal in the same month
-          // would otherwise produce two churnedClients entries sharing the
-          // same `id` (the client id), which collide as React keys in the
-          // drill-down list.
-          id: p.successorId,
+          // Client id keeps the drill-down link resolving to the actual
+          // client; entryKey (the successor's deal id) keeps the list key
+          // unique when a client has BOTH a downsell and a separately-churned
+          // deal in the same month, which would otherwise share the same id.
+          id: p.clientId ?? p.successorId,
+          entryKey: p.successorId,
           name: `${p.predecessorName} (downsell)`,
           retainerValue: p.contractionExGst,
         });
@@ -413,7 +419,8 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
         const gain = -p.contractionExGst;
         newRevenue += gain;
         newClients.push({
-          id: p.successorId,
+          id: p.clientId ?? p.successorId,
+          entryKey: p.successorId,
           name: `${p.predecessorName} (upgrade)`,
           retainerValue: gain,
         });
