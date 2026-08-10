@@ -659,28 +659,31 @@ export async function getNewClientDealSize(
       select: {
         id: true, clientId: true, name: true, amountExGst: true, amount: true,
         startDate: true, closeDate: true, churnDate: true, contentPackageType: true,
+        // isOneOff/isUpsell both read packageDescription (upsells.ts) — without
+        // it here, one-off exclusion silently never matched and upsell
+        // detection fell back to name-only matching.
         packageDescription: true,
       },
     }),
     getDownsellResolution(),
   ]);
 
-  // Exclude one-off (non-recurring) deals — these are revenue but not retainer,
-  // so they don't belong in deal-size / new-retainer movement.
-  // Exclude one-offs and upsells — neither is a new client acquisition, so
-  // they shouldn't skew the new-client average deal size.
-  // Exclude downsells on BOTH sides: a downsell is not an acquisition (the
-  // successor), and its predecessor's churn is a contraction rather than a
-  // lost client — the client was retained at a lower rate, not lost.
+  // One-offs and upsells are never a new-client acquisition. Held-out
+  // (unpaired) downsells are excluded everywhere until their data is complete.
   const visible = deals.filter(
     (d) =>
       !(d.clientId && excludedIds.has(d.clientId)) &&
       !isOneOff(d) &&
       !isUpsell(d) &&
-      !downsells.successorIds.has(d.id) &&
-      !downsells.predecessorIds.has(d.id) &&
       !downsells.heldOutIds.has(d.id)
   );
+  // A downsell replacement is not an acquisition — it's the same client
+  // continuing at a lower rate, not a new one.
+  const newVisible = visible.filter((d) => !downsells.successorIds.has(d.id));
+  // ...and the deal it replaced is a contraction, not a lost client. The
+  // predecessor STAYS in the new-client view, though: its own start month was
+  // a genuine acquisition and the client is still active.
+  const churnVisible = visible.filter((d) => !downsells.predecessorIds.has(d.id));
   const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(d) : null);
   const dealSizeOf = (d: { amountExGst: number | null; amount: number | null }) =>
     Math.round(d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0));
@@ -693,7 +696,7 @@ export async function getNewClientDealSize(
 
   // New deals by start month (fallback closeDate)
   const newMonths = monthRange.map((month) => {
-    const clientsWithDeal = visible
+    const clientsWithDeal = newVisible
       .filter((d) => mk(d.startDate ?? d.closeDate) === month)
       .map(toRow);
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
@@ -708,7 +711,7 @@ export async function getNewClientDealSize(
 
   // Churned deals by churn month
   const churnedMonths = monthRange.map((month) => {
-    const clientsWithDeal = visible
+    const clientsWithDeal = churnVisible
       .filter((d) => mk(d.churnDate) === month)
       .map(toRow);
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
