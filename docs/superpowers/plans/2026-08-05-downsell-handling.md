@@ -1787,7 +1787,7 @@ npm run dev
 ```
 
 Check on http://localhost:3000:
-- Overview → *New Revenue vs Churn*: August 2026 reads **$65,800 new / $75,650 churned**, and its drill-down lists "Hello Fresh NZ (downsell) $2,250" rather than a $9,000 churn.
+- Overview → *New Revenue vs Churn*: August 2026 reads **$69,400 new / $75,650 churned**, and its drill-down lists "Hello Fresh NZ (downsell) $2,250" rather than a $9,000 churn. (The new-revenue figure was $65,800 when this plan was written; a genuine new upsell, "Hello Fresh Upsell" at $3,600 ex-GST, landed on 2026-08-05 and correctly counts as new revenue.)
 - Overview → deal count and monthly revenue tiles unchanged from before the work.
 - Analytics → *Revenue Composition* for August: no deal named "…Downsell" under new revenue or upsells.
 - Analytics → LTV/tenure: Hello Fresh NZ, Hello Fresh AU and YouFoodz each appear once with tenure from April 2026.
