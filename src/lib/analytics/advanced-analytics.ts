@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { isOneOff, isUpsell } from "./upsells";
-import { getDownsellResolution } from "./downsells";
+import { getDownsellResolution, windowKeys } from "./downsells";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -227,22 +227,20 @@ export async function getRevenueByServiceType(
 ): Promise<RevenueByServiceType> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, deals, cogsRecords] = await Promise.all([
+  const [excludedIds, deals, cogsRecords, downsells] = await Promise.all([
     getExcludedClientIds(),
     // Closed-won + churned deals — revenue per service line from active windows
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
+      select: { id: true, clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
     }),
     // Xero Cost of Sales (COGS) per month — for true gross profit/margin
     db.financialRecord.findMany({
       where: { source: "xero", type: "cost", description: "cogs", month: { in: monthRange } },
       select: { month: true, amount: true },
     }),
+    getDownsellResolution(),
   ]);
-
-  const monthKeyOf = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
 
   const cogsByMonth: Record<string, number> = {};
   for (const r of cogsRecords) cogsByMonth[r.month] = (cogsByMonth[r.month] || 0) + r.amount;
@@ -254,9 +252,12 @@ export async function getRevenueByServiceType(
 
     for (const d of deals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
-      const startKey = monthKeyOf(d.startDate ?? d.closeDate);
+      // Unpaired downsells are held out until their HubSpot data is complete;
+      // a downsell pair's handover month overrides its raw start/churn dates
+      // so this agrees with every other fixed surface on the same page.
+      if (downsells.heldOutIds.has(d.id)) continue;
+      const { startKey, churnKey } = windowKeys(d, downsells);
       if (!startKey) continue;
-      const churnKey = monthKeyOf(d.churnDate);
       if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
       const amt = d.amountExGst ?? 0;
       if (!amt) continue;

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getExcludedClientIds } from "./excluded-clients";
 import { formatMonth } from "@/lib/utils";
+import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 
 export const REVENUE_BUDGET_PROVIDER = "revenue_budget";
 
@@ -44,9 +45,6 @@ export interface BudgetVsActualRow {
   variance: number; // actual - budget
 }
 
-const monthKey = (d: Date | null | undefined): string | null =>
-  d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
-
 /**
  * Budget vs actual revenue, one row per budgeted month. "Actual" is HubSpot
  * ex-GST monthly recurring revenue computed from closed-won deal active windows
@@ -74,21 +72,25 @@ export async function getBudgetVsActual(): Promise<BudgetVsActualRow[]> {
     months.sort();
   }
 
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true },
+      select: DOWNSELL_DEAL_SELECT,
     }),
+    getDownsellResolution(),
   ]);
 
   const actualByMonth: Record<string, number> = {};
   for (const m of months) actualByMonth[m] = 0;
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
-    const startKey = monthKey(d.startDate ?? d.closeDate);
+    // Unpaired downsells are held out until their HubSpot data is complete;
+    // a downsell pair's handover month overrides its raw start/churn dates so
+    // this agrees with every other fixed surface on the same page.
+    if (downsells.heldOutIds.has(d.id)) continue;
+    const { startKey, churnKey } = windowKeys(d, downsells);
     if (!startKey) continue;
-    const churnKey = monthKey(d.churnDate);
     const ex = d.amountExGst ?? 0;
     for (const m of months) {
       if (m >= startKey && (!churnKey || m < churnKey)) actualByMonth[m] += ex;
