@@ -400,7 +400,12 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       if (p.contractionExGst > 0) {
         churnedRevenue += p.contractionExGst;
         churnedClients.push({
-          id: p.clientId ?? p.successorId,
+          // Always the successor's deal id, never `p.clientId` — a client with
+          // BOTH a downsell and a separately-churned deal in the same month
+          // would otherwise produce two churnedClients entries sharing the
+          // same `id` (the client id), which collide as React keys in the
+          // drill-down list.
+          id: p.successorId,
           name: `${p.predecessorName} (downsell)`,
           retainerValue: p.contractionExGst,
         });
@@ -408,7 +413,7 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
         const gain = -p.contractionExGst;
         newRevenue += gain;
         newClients.push({
-          id: p.clientId ?? p.successorId,
+          id: p.successorId,
           name: `${p.predecessorName} (upgrade)`,
           retainerValue: gain,
         });
