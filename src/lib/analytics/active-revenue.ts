@@ -156,30 +156,40 @@ export async function getRevenueComposition(): Promise<{ byMonth: RevenueComposi
  * with several deals counts once). Excludes excluded clients.
  */
 export async function getAvgClientTenureMonths(): Promise<{ months: number; clientCount: number }> {
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
+    // Widened beyond `stage: "closed_won"` so a downsell predecessor (stage
+    // "churned") is visible — its ORIGINAL start date is what the chain's
+    // lifecycle start walks back to via `lifecycleStartByDeal`.
     db.hubspotDeal.findMany({
-      where: { stage: "closed_won" },
-      select: { id: true, clientId: true, startDate: true, closeDate: true, churnDate: true },
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: DOWNSELL_DEAL_SELECT,
     }),
+    getDownsellResolution(),
   ]);
   const now = new Date();
   const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const monthOf = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
 
-  // Earliest active-deal start per client (fall back to deal id when a deal has
-  // no linked client).
+  // Earliest active-deal start per client (fall back to deal id when a deal
+  // has no linked client and isn't part of a downsell chain). A downsell
+  // replacement arrives with clientId = null (Client.hubspotDealId is unique
+  // and still points at the deal it replaced) — without inheriting the
+  // predecessor's clientId here, it keys as its own pseudo-client starting at
+  // the handover month, resetting that client's tenure to 0 AND double-
+  // counting it as an extra client. Held-out (unpaired) downsells are
+  // excluded everywhere until their HubSpot data is complete.
   const startByClient = new Map<string, Date>();
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
-    const start = d.startDate ?? d.closeDate;
-    if (!start) continue;
-    const startKey = monthOf(start)!;
-    const churnKey = monthOf(d.churnDate);
+    if (downsells.heldOutIds.has(d.id)) continue;
+    const { startKey, churnKey } = windowKeys(d, downsells);
+    if (!startKey) continue;
     const active = curKey >= startKey && (!churnKey || curKey < churnKey);
     if (!active) continue;
-    const key = d.clientId ?? `deal:${d.id}`;
+    const clientId = d.clientId ?? downsells.inheritedClientId.get(d.id) ?? null;
+    const key = clientId ?? `deal:${d.id}`;
+    const start = downsells.lifecycleStartByDeal.get(d.id) ?? d.startDate ?? d.closeDate;
+    if (!start) continue;
     const existing = startByClient.get(key);
     if (!existing || start < existing) startByClient.set(key, start);
   }
