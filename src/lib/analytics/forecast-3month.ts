@@ -192,13 +192,13 @@ export async function getThreeMonthForecast(now: Date = new Date()): Promise<Thr
     }),
     getDownsellResolution(),
   ]);
-  // A downsell is a scheduled reduction, never incoming revenue: won ones are
-  // already reflected in current MRR, pending ones are not money arriving, and
-  // held-out ones are excluded everywhere until their HubSpot data is complete.
+  // A downsell is never incoming revenue: pending ones are a scheduled
+  // reduction rather than pipeline, and held-out ones are excluded everywhere
+  // until their HubSpot data is complete. Paired successors DO remain — they
+  // are closed-won ongoing revenue and form part of the currentMrr baseline.
   const kept = deals.filter(
     (d) =>
       !(d.clientId && excludedIds.has(d.clientId)) &&
-      !downsells.successorIds.has(d.id) &&
       !downsells.pendingIds.has(d.id) &&
       !downsells.heldOutIds.has(d.id)
   );
