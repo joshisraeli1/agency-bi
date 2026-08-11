@@ -134,7 +134,7 @@ export function RevenueVsChurnChart({ data }: Props) {
               <div className="space-y-1">
                 {expandedClients.map((client) => (
                   <div
-                    key={client.id}
+                    key={client.entryKey ?? client.id}
                     className="flex items-center justify-between text-sm"
                   >
                     <Link

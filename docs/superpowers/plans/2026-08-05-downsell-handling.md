@@ -898,7 +898,8 @@ git commit -m "Book downsells as contraction only in New Revenue vs Churn"
 The predecessor must stop and the successor start on the same handover month, from the pair rather than the raw dates.
 
 **Files:**
-- Modify: `src/lib/analytics/revenue-overview.ts:40-67` (`getRevenueOverview`)
+- Modify: `src/lib/analytics/revenue-overview.ts:40-67` (`getRevenueOverview` MRR loop)
+- Modify: `src/lib/analytics/revenue-overview.ts:225-261` (`divisionRevenueTrend` — same function, same deals, same treatment; added during Task 5 review after it was found to be an omission in this plan)
 - Modify: `src/lib/analytics/active-revenue.ts:195-225` (`getPackageRevenueByMonth`)
 - Modify: `src/lib/analytics/avg-deal-size-comparison.ts:40-72`
 - Modify: `scripts/check-downsells-live.ts`
@@ -1523,19 +1524,35 @@ In `src/lib/analytics/advanced-analytics.ts`, in `getNewClientDealSize`, add the
   ]);
 ```
 
-and extend the `visible` filter — a downsell is not an acquisition, and its predecessor's churn is a contraction rather than a lost client:
+and split the filter per-side. **The two exclusions must NOT share one filter**: `visible`
+feeds both `newMonths` (keyed on `startDate`) and `churnedMonths` (keyed on `churnDate`),
+so excluding predecessors from the shared filter deletes real acquisitions — the three
+predecessors genuinely began in April 2026 and their clients are still active.
 
 ```ts
+  // One-offs and upsells are never a new-client acquisition. Held-out
+  // (unpaired) downsells are excluded everywhere until their data is complete.
   const visible = deals.filter(
     (d) =>
       !(d.clientId && excludedIds.has(d.clientId)) &&
       !isOneOff(d) &&
       !isUpsell(d) &&
-      !downsells.successorIds.has(d.id) &&
-      !downsells.predecessorIds.has(d.id) &&
       !downsells.heldOutIds.has(d.id)
   );
+  // A downsell replacement is not an acquisition...
+  const newVisible = visible.filter((d) => !downsells.successorIds.has(d.id));
+  // ...and the deal it replaced is a contraction, not a lost client. The
+  // predecessor STAYS in the new-client view: its own start month was a genuine
+  // acquisition and the client is still active.
+  const churnVisible = visible.filter((d) => !downsells.predecessorIds.has(d.id));
 ```
+
+Use `newVisible` in `newMonths` and `churnVisible` in `churnedMonths`.
+
+Note `packageDescription` must be added to this query's `select`: `isOneOff` and `isUpsell`
+both read it (`upsells.ts:32,46`) and it was absent before, so one-off exclusion never
+worked here and upsell detection silently fell back to name matching. Adding it corrects a
+pre-existing bug and will move some monthly counts on its own.
 
 - [ ] **Step 4: Exclude downsells from the forecast**
 
@@ -1571,19 +1588,26 @@ Replace the query at `forecast-3month.ts:171-189` and the `kept` filter on the l
     }),
     getDownsellResolution(),
   ]);
-  // A downsell is a scheduled reduction, never incoming revenue: won ones are
-  // already reflected in current MRR, pending ones are not money arriving, and
-  // held-out ones are excluded everywhere until their HubSpot data is complete.
+  // A downsell is never incoming revenue: pending ones are a scheduled
+  // reduction rather than pipeline, and held-out ones are excluded everywhere
+  // until their HubSpot data is complete. Paired successors DO remain — they
+  // are closed-won ongoing revenue and form part of the currentMrr baseline.
   const kept = deals.filter(
     (d) =>
       !(d.clientId && excludedIds.has(d.clientId)) &&
-      !downsells.successorIds.has(d.id) &&
       !downsells.pendingIds.has(d.id) &&
       !downsells.heldOutIds.has(d.id)
   );
 ```
 
 Note the predecessors are deliberately *not* excluded here — their churn is real MRR leaving the book on the handover, which the forecast should see.
+
+**Corrected during Task 9 review.** An earlier draft of this step also excluded `successorIds`.
+That was wrong: `kept` feeds BOTH the pipeline logic and `currentMrr`
+(`forecast-3month.ts:207-208` computes the baseline as `kept.filter(stageLabel === "Closed
+Won")`), so excluding paired successors deleted $29,250 of real ongoing revenue from the
+forecast baseline and cascaded into the churn rate and every projected month. "Not pipeline"
+and "not revenue" are different things; only pending and held-out downsells are neither.
 
 - [ ] **Step 5: Run both check scripts**
 
@@ -1763,7 +1787,7 @@ npm run dev
 ```
 
 Check on http://localhost:3000:
-- Overview → *New Revenue vs Churn*: August 2026 reads **$65,800 new / $75,650 churned**, and its drill-down lists "Hello Fresh NZ (downsell) $2,250" rather than a $9,000 churn.
+- Overview → *New Revenue vs Churn*: August 2026 reads **$69,400 new / $75,650 churned**, and its drill-down lists "Hello Fresh NZ (downsell) $2,250" rather than a $9,000 churn. (The new-revenue figure was $65,800 when this plan was written; a genuine new upsell, "Hello Fresh Upsell" at $3,600 ex-GST, landed on 2026-08-05 and correctly counts as new revenue.)
 - Overview → deal count and monthly revenue tiles unchanged from before the work.
 - Analytics → *Revenue Composition* for August: no deal named "…Downsell" under new revenue or upsells.
 - Analytics → LTV/tenure: Hello Fresh NZ, Hello Fresh AU and YouFoodz each appear once with tenure from April 2026.

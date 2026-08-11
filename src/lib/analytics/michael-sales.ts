@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getMonthRange } from "@/lib/utils";
+import { getDownsellResolution, isDownsell } from "./downsells";
 
 export const MICHAEL_OWNER_ID = "76570622";
 export const MICHAEL_NAME = "Michael Shenfield";
@@ -148,22 +149,26 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   // -----------------------------------------------------------------------
   // Deal-level data (HubspotDeal)
   // -----------------------------------------------------------------------
-  const deals = await db.hubspotDeal.findMany({
-    where: { ownerId: MICHAEL_OWNER_ID },
-    select: {
-      id: true,
-      name: true,
-      stage: true,
-      stageLabel: true,
-      amountExGst: true,
-      amount: true,
-      startDate: true,
-      createDate: true,
-      closeDate: true,
-      churnDate: true,
-      commissionType: true,
-    },
-  });
+  const [deals, downsells] = await Promise.all([
+    db.hubspotDeal.findMany({
+      where: { ownerId: MICHAEL_OWNER_ID },
+      select: {
+        id: true, name: true, stage: true, stageLabel: true, amountExGst: true, amount: true,
+        startDate: true, createDate: true, closeDate: true, churnDate: true, commissionType: true,
+        packageDescription: true,
+      },
+    }),
+    getDownsellResolution(),
+  ]);
+
+  // A downsell renegotiates existing business — it is neither a win nor new
+  // revenue, so it counts toward no goal and earns no commission. Held-out
+  // (unpaired) downsells are excluded too, until their HubSpot data is complete.
+  const isDownsellDeal = (d: { id: string; name: string; packageDescription?: string | null }) =>
+    downsells.successorIds.has(d.id) ||
+    downsells.heldOutIds.has(d.id) ||
+    downsells.pendingIds.has(d.id) ||
+    isDownsell(d);
 
   // Pipeline snapshot: deal count + value per active stage, in progression order.
   const PIPELINE_STAGES = ["Interested", "Very Warm", "Contract out", "Closed Won"];
@@ -192,6 +197,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
 
   const meetingsByMonth = new Map<string, number>();
   for (const d of deals) {
+    if (isDownsellDeal(d)) continue;
     const k = toMonthKey(d.createDate);
     if (k) meetingsByMonth.set(k, (meetingsByMonth.get(k) || 0) + 1);
   }
@@ -199,6 +205,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   // Deals on commission: Owned = 9%, Support = 1.75%, of the deal's monthly
   // ex-GST value, each month for 6 months from the deal's start.
   const commDeals = deals
+    .filter((d) => !isDownsellDeal(d))
     .filter((d) => d.commissionType === "Owned" || d.commissionType === "Support")
     .map((d) => {
       const startK = toMonthKey(d.startDate ?? d.closeDate);
@@ -257,6 +264,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   const dealsCreatedPerMonth = emptySeries(months24);
   let dealsCreatedLast12mo = 0;
   for (const d of deals) {
+    if (isDownsellDeal(d)) continue;
     const key = toMonthKey(d.createDate);
     if (!key) continue;
     applyToSeries(dealsCreatedPerMonth, key, 1);
@@ -269,6 +277,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   const newRevenuePerMonth = emptySeries(months24);
   for (const d of deals) {
     if (d.stage !== "closed_won") continue;
+    if (isDownsellDeal(d)) continue;
     const amt = d.amountExGst ?? d.amount ?? 0;
     if (!amt) continue;
     const startKey = toMonthKey(d.startDate ?? d.closeDate);

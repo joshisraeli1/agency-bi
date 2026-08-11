@@ -1,4 +1,5 @@
 import { formatMonth } from "@/lib/utils";
+import { windowKeys, type DownsellResolution } from "./downsells";
 
 export const DIVISIONS = ["Content Delivery", "Social Media Management", "Ads Management"] as const;
 export type Division = (typeof DIVISIONS)[number];
@@ -55,6 +56,10 @@ export function financialYearMonths(now: Date): string[] {
 }
 
 export type DivisionDealInput = {
+  /** Optional so existing pure-helper call sites/fixtures need not supply one;
+   * required in practice once a `downsells` resolution is passed in, since
+   * `windowKeys` looks pairs up by id. */
+  id?: string;
   clientId: string | null;
   amountExGst: number | null;
   startDate: Date | null;
@@ -63,11 +68,21 @@ export type DivisionDealInput = {
   contentPackageType: string | null;
 };
 
-/** Recognized ex-GST division revenue for a single month (non-cumulative). */
+/**
+ * Recognized ex-GST division revenue for a single month (non-cumulative).
+ *
+ * When a `downsells` resolution is supplied, a held-out (unpaired) downsell is
+ * excluded, and each deal's active window comes from `windowKeys` instead of
+ * its raw dates — so a downsell pair's handover month overrides the raw
+ * start/churn dates exactly as it does on every other fixed surface. Omitting
+ * `downsells` (the existing test fixtures do) reproduces the prior raw-date
+ * behaviour unchanged.
+ */
 export function divisionRevenueForMonth(
   deals: DivisionDealInput[],
   month: string,
-  excludedIds: Set<string>
+  excludedIds: Set<string>,
+  downsells?: DownsellResolution
 ): Record<Division, number> {
   const rev: Record<Division, number> = {
     "Content Delivery": 0,
@@ -76,9 +91,11 @@ export function divisionRevenueForMonth(
   };
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
-    const startKey = monthKeyOf(d.startDate ?? d.closeDate);
+    if (downsells?.heldOutIds.has(d.id ?? "")) continue;
+    const { startKey, churnKey } = downsells
+      ? windowKeys({ id: d.id ?? "", startDate: d.startDate, closeDate: d.closeDate, churnDate: d.churnDate }, downsells)
+      : { startKey: monthKeyOf(d.startDate ?? d.closeDate), churnKey: monthKeyOf(d.churnDate) };
     if (!startKey) continue;
-    const churnKey = monthKeyOf(d.churnDate);
     if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
     const amt = d.amountExGst ?? 0;
     if (!amt) continue;
@@ -127,15 +144,17 @@ export function cumulateDivisionMonths(
 export async function getCumulativeDivisionRevenueFY(
   now: Date = new Date()
 ): Promise<CumulativeDivisionMonth[]> {
-  const [{ db }, { getExcludedClientIds }] = await Promise.all([
+  const [{ db }, { getExcludedClientIds }, { getDownsellResolution }] = await Promise.all([
     import("@/lib/db"),
     import("./excluded-clients"),
+    import("./downsells"),
   ]);
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
       select: {
+        id: true,
         clientId: true,
         amountExGst: true,
         startDate: true,
@@ -144,8 +163,9 @@ export async function getCumulativeDivisionRevenueFY(
         contentPackageType: true,
       },
     }),
+    getDownsellResolution(),
   ]);
   const months = financialYearMonths(now);
-  const perMonth = months.map((m) => divisionRevenueForMonth(deals, m, excludedIds));
+  const perMonth = months.map((m) => divisionRevenueForMonth(deals, m, excludedIds, downsells));
   return cumulateDivisionMonths(months, perMonth);
 }

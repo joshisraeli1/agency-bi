@@ -1,4 +1,5 @@
 import { formatMonth } from "@/lib/utils";
+import { getDownsellResolution } from "./downsells";
 
 export const STAGE_PROBABILITY: Record<string, number> = {
   "Very Warm": 0.7,
@@ -168,26 +169,39 @@ export async function getThreeMonthForecast(now: Date = new Date()): Promise<Thr
     import("./excluded-clients"),
   ]);
   const excludedIds = await getExcludedClientIds();
-  const deals = await db.hubspotDeal.findMany({
-    where: {
-      OR: [
-        { stageLabel: { in: ["Very Warm", "Contract out", "Closed Won"] } },
-        { churnDate: { not: null } },
-      ],
-    },
-    select: {
-      name: true,
-      clientId: true,
-      stageLabel: true,
-      amount: true,
-      amountExGst: true,
-      startDate: true,
-      closeDate: true,
-      createDate: true,
-      churnDate: true,
-    },
-  });
-  const kept = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)));
+  const [deals, downsells] = await Promise.all([
+    db.hubspotDeal.findMany({
+      where: {
+        OR: [
+          { stageLabel: { in: ["Very Warm", "Contract out", "Closed Won"] } },
+          { churnDate: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        clientId: true,
+        stageLabel: true,
+        amount: true,
+        amountExGst: true,
+        startDate: true,
+        closeDate: true,
+        createDate: true,
+        churnDate: true,
+      },
+    }),
+    getDownsellResolution(),
+  ]);
+  // A downsell is never incoming revenue: pending ones are a scheduled
+  // reduction rather than pipeline, and held-out ones are excluded everywhere
+  // until their HubSpot data is complete. Paired successors DO remain — they
+  // are closed-won ongoing revenue and form part of the currentMrr baseline.
+  const kept = deals.filter(
+    (d) =>
+      !(d.clientId && excludedIds.has(d.clientId)) &&
+      !downsells.pendingIds.has(d.id) &&
+      !downsells.heldOutIds.has(d.id)
+  );
   const months = forecastMonths(now, 3);
 
   const closedWon = kept.filter((d) => d.stageLabel === "Closed Won");
@@ -209,22 +223,41 @@ export async function getThreeMonthForecast(now: Date = new Date()): Promise<Thr
   // Later forecast months have little visible pipeline only because those deals
   // aren't in the CRM yet; we assume they land at this recent run-rate. Using a
   // recent window (not 12mo) reflects the current growth trajectory.
+  //
+  // A paired downsell successor is NOT new business — it's the same client
+  // continuing at a lower amount — even though it stays in `closedWon` (and
+  // therefore `currentMrr`) as ongoing revenue. Excluding it here only,
+  // not from currentMrr, is deliberate: counting it as new business would
+  // double it into the run-rate on top of the MRR it already sits in.
+  const newBusinessClosedWon = closedWon.filter((d) => !downsells.successorIds.has(d.id));
   let recentNewSum = 0;
-  for (const d of closedWon) {
+  for (const d of newBusinessClosedWon) {
     const m = monthKeyOf(d.startDate ?? d.closeDate);
     if (m && last3.includes(m)) recentNewSum += dealExGst(d);
   }
   const pipelineRunRate = recentNewSum / 3;
 
-  // Churn rate stays on the trailing-12mo basis (steady baseline).
+  // Churn rate stays on the trailing-12mo basis (steady baseline). A paired
+  // downsell predecessor did not fully churn — the client kept paying the
+  // (lower) successor amount — so its full churn-date amount is skipped here;
+  // only the pair's net contraction counts, added for the month the handover
+  // actually falls in. Only a positive contraction (a genuine reduction) counts
+  // as churn — a negative one is an upgrade, not churn.
   let churnSum = 0;
   for (const d of kept) {
+    if (downsells.predecessorIds.has(d.id)) continue;
     const m = monthKeyOf(d.churnDate);
     if (m && last12.includes(m)) churnSum += dealExGst(d);
   }
+  for (const m of last12) {
+    for (const p of downsells.contractionsByMonth.get(m) ?? []) {
+      if (p.clientId && excludedIds.has(p.clientId)) continue;
+      if (p.contractionExGst > 0) churnSum += p.contractionExGst;
+    }
+  }
   const churnRate = currentMrr > 0 ? churnSum / 12 / currentMrr : 0;
 
-  const medianLagDays = medianCreateToStartLagDays(closedWon);
+  const medianLagDays = medianCreateToStartLagDays(newBusinessClosedWon);
 
   const pipeline: { name: string; expected: number; month: string }[] = [];
   for (const d of kept) {

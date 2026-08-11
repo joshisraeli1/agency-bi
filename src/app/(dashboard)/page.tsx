@@ -18,6 +18,8 @@ import { BudgetVsActualChart } from "@/components/dashboard/budget-vs-actual-cha
 import { RevenueForecastSection } from "@/components/dashboard/revenue-forecast-section";
 import { ThreeMonthForecast } from "@/components/dashboard/three-month-forecast";
 import { PipelineStageTool } from "@/components/dashboard/pipeline-stage-tool";
+import { getDownsellResolution } from "@/lib/analytics/downsells";
+import { DownsellsAttentionCard } from "@/components/dashboard/downsells-attention-card";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { RefreshDataButton } from "@/components/dashboard/refresh-data-button";
 import { Users, TrendingUp, AlertTriangle, Calendar, Receipt } from "lucide-react";
@@ -38,7 +40,7 @@ export default async function OverviewPage({ searchParams }: Props) {
   const curMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const lastYearMonthKey = `${nowDate.getFullYear() - 1}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages, threeMonthForecast] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages, threeMonthForecast, downsells] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
@@ -50,6 +52,7 @@ export default async function OverviewPage({ searchParams }: Props) {
     getPackageRevenueByMonth(lastYearMonthKey),
     getPipelineStageSnapshot(),
     getThreeMonthForecast(),
+    getDownsellResolution(),
   ]);
 
   // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
@@ -172,6 +175,8 @@ export default async function OverviewPage({ searchParams }: Props) {
       <PipelineStageTool stages={pipelineStages} />
 
       <ThreeMonthForecast data={threeMonthForecast} />
+
+      <DownsellsAttentionCard heldOut={downsells.heldOut} />
 
       {recentImports.length > 0 && (
         <Card>

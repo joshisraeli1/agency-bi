@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { isOneOff, isUpsell } from "./upsells";
+import { getDownsellResolution, windowKeys } from "./downsells";
 import type { XeroMarginTrend, NewClientDealSizeData } from "./types";
 
 export interface LTVData {
@@ -70,7 +71,7 @@ export interface TeamUtilizationData {
 }
 
 export async function getLTVData(): Promise<LTVData> {
-  const [allClients, deals, , excludedIds] = await Promise.all([
+  const [allClients, deals, , excludedIds, downsells] = await Promise.all([
     db.client.findMany({
       where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
       select: {
@@ -84,11 +85,12 @@ export async function getLTVData(): Promise<LTVData> {
       },
     }),
     db.hubspotDeal.findMany({
-      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }], clientId: { not: null } },
-      select: { clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true },
+      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      select: { id: true, clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true },
     }),
     db.appSettings.findFirst(),
     getExcludedClientIds(),
+    getDownsellResolution(),
   ]);
 
   const clients = allClients.filter((c) => !excludedIds.has(c.id));
@@ -96,8 +98,28 @@ export async function getLTVData(): Promise<LTVData> {
   // Per-client monthly MRR (ex-GST) from their closed-won/churned deals
   const clientMrr = new Map<string, number>();
   for (const d of deals) {
-    if (!d.clientId || isOneOff(d)) continue; // one-offs are not recurring LTV
-    clientMrr.set(d.clientId, (clientMrr.get(d.clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
+    if (isOneOff(d)) continue; // one-offs are not recurring LTV
+    if (downsells.heldOutIds.has(d.id)) continue;
+    // A downsell replacement is created fresh in HubSpot with no client link
+    // (Client.hubspotDealId is unique and still points at the deal it
+    // replaced), so it inherits its predecessor's client. Without this the
+    // client's lifecycle splits in two and tenure resets.
+    const clientId = d.clientId ?? downsells.inheritedClientId.get(d.id) ?? null;
+    if (!clientId) continue;
+    // The predecessor's revenue stopped at the handover — only the current
+    // replacement counts toward present MRR.
+    if (downsells.predecessorIds.has(d.id)) continue;
+    clientMrr.set(clientId, (clientMrr.get(clientId) || 0) + (d.amountExGst ?? d.amount ?? 0));
+  }
+
+  // Earliest chain start per client, so a downgraded client's tenure is measured
+  // from its ORIGINAL deal rather than from the replacement.
+  const chainStartByClient = new Map<string, Date>();
+  for (const [dealId, start] of downsells.lifecycleStartByDeal) {
+    const cid = downsells.inheritedClientId.get(dealId);
+    if (!cid) continue;
+    const cur = chainStartByClient.get(cid);
+    if (!cur || start < cur) chainStartByClient.set(cid, start);
   }
 
   const now = new Date();
@@ -105,7 +127,9 @@ export async function getLTVData(): Promise<LTVData> {
 
   const clientData = clients.map((c) => {
     const mrr = clientMrr.get(c.id) || 0;
-    const effectiveStart = c.startDate ? new Date(c.startDate) : c.createdAt;
+    const clientStart = c.startDate ? new Date(c.startDate) : c.createdAt;
+    const chainStart = chainStartByClient.get(c.id);
+    const effectiveStart = chainStart && chainStart < clientStart ? chainStart : clientStart;
 
     // Months active = ACTUAL tenure (start → end for churned, start → now for
     // active). No projection — LTV is revenue earned to date, not forecast.
@@ -203,22 +227,20 @@ export async function getRevenueByServiceType(
 ): Promise<RevenueByServiceType> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, deals, cogsRecords] = await Promise.all([
+  const [excludedIds, deals, cogsRecords, downsells] = await Promise.all([
     getExcludedClientIds(),
     // Closed-won + churned deals — revenue per service line from active windows
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
+      select: { id: true, clientId: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
     }),
     // Xero Cost of Sales (COGS) per month — for true gross profit/margin
     db.financialRecord.findMany({
       where: { source: "xero", type: "cost", description: "cogs", month: { in: monthRange } },
       select: { month: true, amount: true },
     }),
+    getDownsellResolution(),
   ]);
-
-  const monthKeyOf = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
 
   const cogsByMonth: Record<string, number> = {};
   for (const r of cogsRecords) cogsByMonth[r.month] = (cogsByMonth[r.month] || 0) + r.amount;
@@ -230,9 +252,12 @@ export async function getRevenueByServiceType(
 
     for (const d of deals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
-      const startKey = monthKeyOf(d.startDate ?? d.closeDate);
+      // Unpaired downsells are held out until their HubSpot data is complete;
+      // a downsell pair's handover month overrides its raw start/churn dates
+      // so this agrees with every other fixed surface on the same page.
+      if (downsells.heldOutIds.has(d.id)) continue;
+      const { startKey, churnKey } = windowKeys(d, downsells);
       if (!startKey) continue;
-      const churnKey = monthKeyOf(d.churnDate);
       if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
       const amt = d.amountExGst ?? 0;
       if (!amt) continue;
@@ -628,29 +653,38 @@ export async function getNewClientDealSize(
   // in its start month and "churned" in its churn month. Keying off Client.endDate
   // missed churn the client record hadn't been updated for (e.g. June's mycar /
   // Stockspot / Chill Chair, which have a deal churnDate but no client endDate).
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
       select: {
-        id: true,
-        clientId: true,
-        name: true,
-        amountExGst: true,
-        amount: true,
-        startDate: true,
-        closeDate: true,
-        churnDate: true,
-        contentPackageType: true,
+        id: true, clientId: true, name: true, amountExGst: true, amount: true,
+        startDate: true, closeDate: true, churnDate: true, contentPackageType: true,
+        // isOneOff/isUpsell both read packageDescription (upsells.ts) — without
+        // it here, one-off exclusion silently never matched and upsell
+        // detection fell back to name-only matching.
+        packageDescription: true,
       },
     }),
+    getDownsellResolution(),
   ]);
 
-  // Exclude one-off (non-recurring) deals — these are revenue but not retainer,
-  // so they don't belong in deal-size / new-retainer movement.
-  // Exclude one-offs and upsells — neither is a new client acquisition, so
-  // they shouldn't skew the new-client average deal size.
-  const visible = deals.filter((d) => !(d.clientId && excludedIds.has(d.clientId)) && !isOneOff(d) && !isUpsell(d));
+  // One-offs and upsells are never a new-client acquisition. Held-out
+  // (unpaired) downsells are excluded everywhere until their data is complete.
+  const visible = deals.filter(
+    (d) =>
+      !(d.clientId && excludedIds.has(d.clientId)) &&
+      !isOneOff(d) &&
+      !isUpsell(d) &&
+      !downsells.heldOutIds.has(d.id)
+  );
+  // A downsell replacement is not an acquisition — it's the same client
+  // continuing at a lower rate, not a new one.
+  const newVisible = visible.filter((d) => !downsells.successorIds.has(d.id));
+  // ...and the deal it replaced is a contraction, not a lost client. The
+  // predecessor STAYS in the new-client view, though: its own start month was
+  // a genuine acquisition and the client is still active.
+  const churnVisible = visible.filter((d) => !downsells.predecessorIds.has(d.id));
   const mk = (d: Date | null | undefined): string | null => (d ? toMonthKey(d) : null);
   const dealSizeOf = (d: { amountExGst: number | null; amount: number | null }) =>
     Math.round(d.amountExGst ?? (d.amount != null ? d.amount / 1.1 : 0));
@@ -663,7 +697,7 @@ export async function getNewClientDealSize(
 
   // New deals by start month (fallback closeDate)
   const newMonths = monthRange.map((month) => {
-    const clientsWithDeal = visible
+    const clientsWithDeal = newVisible
       .filter((d) => mk(d.startDate ?? d.closeDate) === month)
       .map(toRow);
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);
@@ -678,7 +712,7 @@ export async function getNewClientDealSize(
 
   // Churned deals by churn month
   const churnedMonths = monthRange.map((month) => {
-    const clientsWithDeal = visible
+    const clientsWithDeal = churnVisible
       .filter((d) => mk(d.churnDate) === month)
       .map(toRow);
     const totalDealSize = clientsWithDeal.reduce((s, c) => s + c.dealSize, 0);

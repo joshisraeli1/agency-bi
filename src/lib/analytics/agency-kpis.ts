@@ -3,6 +3,7 @@ import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost, parseDivi
 import { getExcludedClientIds } from "./excluded-clients";
 import { mapAccountToDivisions, DIVISIONS } from "./cost-allocation";
 import { foldUpsells, dealDivision } from "./upsells";
+import { getDownsellResolution } from "./downsells";
 import type { AgencyKPIs, DivisionProfitabilityRow } from "./types";
 
 const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
@@ -338,13 +339,16 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
   // Avg deal size = current monthly MRR per division ÷ active deals in that
   // division (deal-based). The old calc divided period-summed revenue by a
   // client count that included churned clients, inflating it ~N×.
-  const rawCwDeals = await db.hubspotDeal.findMany({
-    where: { stage: "closed_won" },
-    select: { name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true },
-  });
+  const [rawCwDeals, downsellRes] = await Promise.all([
+    db.hubspotDeal.findMany({
+      where: { stage: "closed_won" },
+      select: { id: true, name: true, stage: true, amountExGst: true, amount: true, contentPackageType: true, packageDescription: true },
+    }),
+    getDownsellResolution(),
+  ]);
   // Fold upsells onto their base company deal so they don't count as separate
   // deals (which would distort the per-division average deal size).
-  const { deals: cwDeals } = foldUpsells(rawCwDeals);
+  const { deals: cwDeals } = foldUpsells(rawCwDeals.filter((d) => !downsellRes.heldOutIds.has(d.id)));
   const divDealMrr = new Map<string, number>();
   const divDealCount = new Map<string, number>();
   for (const d of cwDeals) {

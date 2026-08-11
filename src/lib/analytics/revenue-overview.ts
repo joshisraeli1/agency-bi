@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { dealDivisionSplit } from "./division-fy";
+import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { RevenueOverview } from "./types";
 
 export async function getRevenueOverview(
@@ -12,7 +13,7 @@ export async function getRevenueOverview(
   const EXCLUDED_DIVISIONS = ["Unassigned", "NA", "Sales", "Overhead"];
   const EXCLUDED_ROLES = ["Director", "BDM"];
 
-  const [excludedIds, financialsRaw, settings, teamMembers, hubspotDeals] = await Promise.all([
+  const [excludedIds, financialsRaw, settings, teamMembers, hubspotDeals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.financialRecord.findMany({
       where: { month: { in: monthRange } },
@@ -39,23 +40,24 @@ export async function getRevenueOverview(
     // current month, so we compute MRR from deal active windows instead).
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { clientId: true, name: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
+      select: { id: true, clientId: true, name: true, amount: true, amountExGst: true, startDate: true, closeDate: true, churnDate: true, contentPackageType: true },
     }),
+    getDownsellResolution(),
   ]);
 
   // HubSpot monthly recurring revenue from deal active windows: a deal counts
   // in every month from its start (startDate, fallback closeDate) up to but not
   // including its churn month. ex-GST = amountExGst, inc-GST = amount.
-  const dealMonthKey = (d: Date | null | undefined): string | null =>
-    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
   const hubspotMrrEx: Record<string, number> = {};
   const hubspotMrrInc: Record<string, number> = {};
   for (const m of monthRange) { hubspotMrrEx[m] = 0; hubspotMrrInc[m] = 0; }
   for (const d of hubspotDeals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
-    const startKey = dealMonthKey(d.startDate ?? d.closeDate);
+    if (downsells.heldOutIds.has(d.id)) continue;
+    // Handover months keep a downsell pair continuous: the predecessor stops
+    // and the successor starts in the same month, whatever the raw dates say.
+    const { startKey, churnKey } = windowKeys(d, downsells);
     if (!startKey) continue;
-    const churnKey = dealMonthKey(d.churnDate);
     const ex = d.amountExGst ?? 0;
     const inc = d.amount ?? 0;
     for (const m of monthRange) {
@@ -235,9 +237,9 @@ export async function getRevenueOverview(
     };
     for (const d of hubspotDeals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
-      const startKey = dealMonthKey(d.startDate ?? d.closeDate);
+      if (downsells.heldOutIds.has(d.id)) continue;
+      const { startKey, churnKey } = windowKeys(d, downsells);
       if (!startKey) continue;
-      const churnKey = dealMonthKey(d.churnDate);
       if (!(month >= startKey && (!churnKey || month < churnKey))) continue;
       const amt = d.amountExGst ?? 0;
       if (!amt) continue;
@@ -325,6 +327,12 @@ export interface RevenueVsChurnClient {
   id: string;
   name: string;
   retainerValue: number;
+  /**
+   * Unique per-entry key for list rendering. A downsell contraction shares its
+   * client id with any other deal that client churned in the same month, so the
+   * id alone is not unique; the link still needs the client id, hence both.
+   */
+  entryKey?: string;
 }
 
 export interface RevenueVsChurnRow {
@@ -351,21 +359,13 @@ export interface RevenueVsChurnRow {
 export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[]> {
   const monthRange = getMonthRange(months);
 
-  const [excludedIds, deals] = await Promise.all([
+  const [excludedIds, deals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: {
-        id: true,
-        clientId: true,
-        name: true,
-        amount: true,
-        amountExGst: true,
-        startDate: true,
-        closeDate: true,
-        churnDate: true,
-      },
+      select: DOWNSELL_DEAL_SELECT,
     }),
+    getDownsellResolution(),
   ]);
 
   const monthKeyOf = (d: Date | null | undefined): string | null => {
@@ -381,16 +381,49 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
 
     for (const d of deals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
+      // Unpaired downsells are held out until their HubSpot data is complete.
+      if (downsells.heldOutIds.has(d.id)) continue;
       const amt = d.amountExGst ?? d.amount ?? 0;
       if (!amt) continue;
 
-      if (monthKeyOf(d.startDate ?? d.closeDate) === month) {
+      // A downsell replacement is never new business, and the deal it replaces
+      // never churns in full — the pair contributes its net contraction below.
+      if (monthKeyOf(d.startDate ?? d.closeDate) === month && !downsells.successorIds.has(d.id)) {
         newRevenue += amt;
         newClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
       }
-      if (monthKeyOf(d.churnDate) === month) {
+      if (monthKeyOf(d.churnDate) === month && !downsells.predecessorIds.has(d.id)) {
         churnedRevenue += amt;
         churnedClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
+      }
+    }
+
+    // Net movement for each downsell pair handing over this month. A positive
+    // contraction is churn; a larger replacement books the increase as new
+    // revenue, so no chart ever renders a negative bar.
+    for (const p of downsells.contractionsByMonth.get(month) ?? []) {
+      if (p.clientId && excludedIds.has(p.clientId)) continue;
+      if (p.contractionExGst > 0) {
+        churnedRevenue += p.contractionExGst;
+        churnedClients.push({
+          // Client id keeps the drill-down link resolving to the actual
+          // client; entryKey (the successor's deal id) keeps the list key
+          // unique when a client has BOTH a downsell and a separately-churned
+          // deal in the same month, which would otherwise share the same id.
+          id: p.clientId ?? p.successorId,
+          entryKey: p.successorId,
+          name: `${p.predecessorName} (downsell)`,
+          retainerValue: p.contractionExGst,
+        });
+      } else if (p.contractionExGst < 0) {
+        const gain = -p.contractionExGst;
+        newRevenue += gain;
+        newClients.push({
+          id: p.clientId ?? p.successorId,
+          entryKey: p.successorId,
+          name: `${p.predecessorName} (upgrade)`,
+          retainerValue: gain,
+        });
       }
     }
 
