@@ -20,11 +20,13 @@ import {
 import {
   getMonthlyChurn,
 } from "@/lib/analytics/margin-analytics";
+import { getChurnReasons } from "@/lib/analytics/churn-reasons";
 import { formatCurrency, formatPercent, resolveMonthsParam } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
+import { ChurnReasonsSection } from "@/components/dashboard/churn-reasons-section";
 import { DealSizeChart } from "@/components/dashboard/deal-size-chart";
 import { DiscrepancyTable } from "@/components/dashboard/discrepancy-table";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
@@ -47,6 +49,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     xeroMargin,
     newClientDealSize,
     monthlyChurn,
+    churnReasons,
     avgDealSizeResult,
     clientCount,
     activeSnapshot,
@@ -65,6 +68,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getXeroMarginTrend(months),
     getNewClientDealSize(months),
     getMonthlyChurn(12),
+    getChurnReasons(months),
     db.client.aggregate({
       where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }], retainerValue: { gt: 0 } },
       _avg: { retainerValue: true },
@@ -155,6 +159,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* 3. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
+
+      {/* 3b. Reasons for Churn — HubSpot "Reasons for Churn" multi-select */}
+      <ChurnReasonsSection data={churnReasons} />
 
       {/* Avg. Deal Size Improvements — Jun 2025 vs Jun 2026 by package type */}
       <AvgDealSizeComparisonCard data={avgDealSizeComparison} />

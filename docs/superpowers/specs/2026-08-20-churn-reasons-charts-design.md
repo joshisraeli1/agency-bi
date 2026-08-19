@@ -57,9 +57,12 @@ first-reason-only) were rejected: the first produces ~40 slices most holding
 above it and the rest of the page's monthly cadence. At 3–16 churns a month
 the segments stay readable.
 
-**Top 6 reasons + "Other".** Thirteen stacked series exceeds the 12-colour
+**Top 6 reasons + a rollup.** Thirteen stacked series exceeds the 12-colour
 palette and produces indistinguishable 1-deal slivers. The donut still shows
-all 13, so nothing is hidden — only the stack is trimmed.
+all 13, so nothing is hidden — only the stack is trimmed. The rollup is
+labelled **"Less common reasons"**, not "Other": HubSpot has a literal "Other"
+reason of its own that ranks inside the top 6, so two near-identical legend
+entries would otherwise sit side by side.
 
 **Scope follows the page date picker and excludes downsells.** Both charts
 honour the existing `?months=` param like every other card on the page.
@@ -71,6 +74,14 @@ downsell as a contraction rather than a lost client.
 needs no code change here.
 
 ## Architecture
+
+### `src/lib/analytics/churn-reason-labels.ts` (new)
+
+The rollup label, the unspecified label, and the display-name map, in a module
+that imports nothing. `churn-reasons.ts` reaches Prisma, so a client component
+value-importing a constant from there pulls the whole server stack into the
+client bundle — `tsc` passes and `next build` fails on `node:module`. Keeping
+the labels db-free is what lets both sides share them.
 
 ### `src/lib/analytics/churn-reasons.ts` (new)
 
@@ -118,8 +129,12 @@ step 3 has already removed.
 A client component holding both charts, side by side on desktop and stacked on
 mobile. Returns `null` when there is no churn in range.
 
-- **Donut** reuses `PieChartCard` from `@/components/charts/pie-chart` with all
-  reasons. Caption: "N deals cited M reasons — a deal can have more than one."
+- **Donut** is a local Recharts `PieChart` over all reasons, paired with a
+  ranked reason/count/percent list. It does not reuse `PieChartCard`, whose
+  built-in slice labels overlap illegibly at 13 slices, and the exact counts
+  are the point. Slice colours are indexed off the same descending order the
+  stack uses, so a reason keeps one colour across both charts. Caption:
+  "N churned deals cited M reasons — a deal can have more than one."
 - **Stacked bars** is a Recharts `BarChart` with seven `<Bar stackId="a">`
   series coloured from `getChartColor`, `TOOLTIP_STYLE` for the tooltip, and a
   click-a-month drill-down listing which deals cited which reason — the same
@@ -148,7 +163,12 @@ empty range renders nothing rather than an axis with no bars.
 - `topReasons.length <= 6` and each appears in `totals`
 - `unspecified` matches the count of in-range deals with a null/blank reason
 
-Then `npm run build`, which is required before any push on this project.
+Then `npm run build`, which is required before any push on this project —
+and which is what caught the client-bundle import described above.
+
+Live result over a 12-month range: 108 churned deals citing 140 reasons, 12
+distinct reasons, 3 downsell predecessors correctly excluded, all assertions
+passing.
 
 ## Out of scope
 
