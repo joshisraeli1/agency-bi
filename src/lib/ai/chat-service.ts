@@ -3,10 +3,11 @@ import { db } from "@/lib/db";
 import { chatTools } from "./tools";
 import { executeTool } from "./tool-executor";
 import { getSystemPrompt } from "./system-prompt";
+import { isOverloaded, streamWithRetry } from "./stream-with-retry";
 
 const anthropic = new Anthropic();
 
-const CHAT_MODEL = "claude-opus-5";
+const CHAT_MODEL = "claude-opus-4-8";
 const MAX_TOKENS = 16000;
 const MAX_TOOL_ROUNDS = 12;
 
@@ -23,6 +24,9 @@ function userFacingError(err: unknown): string {
     err instanceof Anthropic.PermissionDeniedError
   ) {
     return "The AI service rejected our credentials. An administrator needs to check the Anthropic API key.";
+  }
+  if (isOverloaded(err)) {
+    return "The AI service is at capacity right now. Please try again in a moment.";
   }
   if (err instanceof Anthropic.RateLimitError) {
     return "The AI service is at capacity right now. Please try again in a moment.";
@@ -84,33 +88,29 @@ export async function streamChatResponse(
           continueLoop = false;
           rounds += 1;
 
-          const stream = anthropic.messages.stream({
-            model: CHAT_MODEL,
-            max_tokens: MAX_TOKENS,
-            thinking: { type: "adaptive" },
-            system: systemPrompt,
-            messages: anthropicMessages,
-            tools: chatTools,
-          });
-
           let currentText = "";
           const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
 
-          for await (const event of stream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              currentText += event.delta.text;
+          const finalMessage = await streamWithRetry(
+            anthropic,
+            {
+              model: CHAT_MODEL,
+              max_tokens: MAX_TOKENS,
+              thinking: { type: "adaptive" },
+              system: systemPrompt,
+              messages: anthropicMessages,
+              tools: chatTools,
+            },
+            (text) => {
+              currentText += text;
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ type: "text", content: event.delta.text })}\n\n`
+                  `data: ${JSON.stringify({ type: "text", content: text })}\n\n`
                 )
               );
             }
-          }
+          );
 
-          const finalMessage = await stream.finalMessage();
           append(currentText);
 
           if (finalMessage.stop_reason === "refusal") {

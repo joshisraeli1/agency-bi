@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { streamChatResponse } from "@/lib/ai/chat-service";
 import { requireAuth } from "@/lib/auth";
 
+// Vercel's default route timeout (15s) cuts off multi-round tool answers.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
