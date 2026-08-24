@@ -6,9 +6,40 @@ import { getSystemPrompt } from "./system-prompt";
 
 const anthropic = new Anthropic();
 
+const CHAT_MODEL = "claude-opus-5";
+const MAX_TOKENS = 16000;
+const MAX_TOOL_ROUNDS = 12;
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+// Raw API errors carry billing state, request ids and key details — never put
+// them in the chat. Log the real error, tell the user what can be done.
+function userFacingError(err: unknown): string {
+  if (
+    err instanceof Anthropic.AuthenticationError ||
+    err instanceof Anthropic.PermissionDeniedError
+  ) {
+    return "The AI service rejected our credentials. An administrator needs to check the Anthropic API key.";
+  }
+  if (err instanceof Anthropic.RateLimitError) {
+    return "The AI service is at capacity right now. Please try again in a moment.";
+  }
+  if (err instanceof Anthropic.BadRequestError) {
+    return "The AI service could not accept this request — usually an API configuration or billing problem. An administrator will find the details in the server logs.";
+  }
+  if (err instanceof Anthropic.APIConnectionTimeoutError) {
+    return "The AI service took too long to respond. Please try again.";
+  }
+  if (err instanceof Anthropic.APIConnectionError) {
+    return "Could not reach the AI service. Please check the connection and try again.";
+  }
+  if (err instanceof Anthropic.APIError) {
+    return "The AI service is temporarily unavailable. Please try again shortly.";
+  }
+  return "Something went wrong while answering that. Please try again.";
 }
 
 export async function streamChatResponse(
@@ -28,22 +59,42 @@ export async function streamChatResponse(
         }));
 
         let continueLoop = true;
+        let rounds = 0;
+        // Text streamed across every round, not just the last one — the reply
+        // Claude writes before a tool call is part of the answer too.
+        let fullText = "";
         const allChartData: unknown[] = [];
         const allToolCalls: { name: string; input: unknown }[] = [];
 
+        const append = (text: string) => {
+          if (!text) return;
+          fullText += fullText ? `\n\n${text}` : text;
+        };
+
+        const say = (text: string) => {
+          append(text);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "text", content: `\n\n${text}` })}\n\n`
+            )
+          );
+        };
+
         while (continueLoop) {
           continueLoop = false;
+          rounds += 1;
 
           const stream = anthropic.messages.stream({
-            model: "claude-sonnet-4-5-20250929",
-            max_tokens: 4096,
+            model: CHAT_MODEL,
+            max_tokens: MAX_TOKENS,
+            thinking: { type: "adaptive" },
             system: systemPrompt,
             messages: anthropicMessages,
             tools: chatTools,
           });
 
           let currentText = "";
-          const toolUseBlocks: Anthropic.ContentBlock[] = [];
+          const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
 
           for await (const event of stream) {
             if (
@@ -60,6 +111,13 @@ export async function streamChatResponse(
           }
 
           const finalMessage = await stream.finalMessage();
+          append(currentText);
+
+          if (finalMessage.stop_reason === "refusal") {
+            console.error("[chat] request refused", sessionId);
+            say("I can't answer that one. Try rephrasing the question.");
+            break;
+          }
 
           for (const block of finalMessage.content) {
             if (block.type === "tool_use") {
@@ -68,6 +126,17 @@ export async function streamChatResponse(
           }
 
           if (toolUseBlocks.length > 0) {
+            if (rounds >= MAX_TOOL_ROUNDS) {
+              console.error(
+                `[chat] hit the ${MAX_TOOL_ROUNDS}-round tool limit`,
+                sessionId
+              );
+              say(
+                "This question needed more steps than I'm allowed to take in one go. Try asking it in smaller parts."
+              );
+              break;
+            }
+
             // Execute tools and continue conversation
             const toolResults: Anthropic.MessageParam = {
               role: "user",
@@ -75,8 +144,6 @@ export async function streamChatResponse(
             };
 
             for (const block of toolUseBlocks) {
-              if (block.type !== "tool_use") continue;
-
               allToolCalls.push({ name: block.name, input: block.input });
 
               controller.enqueue(
@@ -111,6 +178,7 @@ export async function streamChatResponse(
                   content: JSON.stringify(result),
                 });
               } catch (err) {
+                console.error(`[chat] tool ${block.name} failed`, err);
                 const msg =
                   err instanceof Error ? err.message : "Tool execution failed";
                 (toolResults.content as Anthropic.ToolResultBlockParam[]).push({
@@ -128,24 +196,21 @@ export async function streamChatResponse(
               toolResults,
             ];
             continueLoop = true;
-          } else {
-            // No more tool calls — save final message
-            await db.chatMessage.create({
-              data: {
-                sessionId,
-                role: "assistant",
-                content: currentText,
-                chartData:
-                  allChartData.length > 0
-                    ? JSON.stringify(allChartData)
-                    : null,
-                toolCalls:
-                  allToolCalls.length > 0
-                    ? JSON.stringify(allToolCalls)
-                    : null,
-              },
-            });
           }
+        }
+
+        if (fullText || allChartData.length > 0) {
+          await db.chatMessage.create({
+            data: {
+              sessionId,
+              role: "assistant",
+              content: fullText,
+              chartData:
+                allChartData.length > 0 ? JSON.stringify(allChartData) : null,
+              toolCalls:
+                allToolCalls.length > 0 ? JSON.stringify(allToolCalls) : null,
+            },
+          });
         }
 
         controller.enqueue(
@@ -153,10 +218,10 @@ export async function streamChatResponse(
         );
         controller.close();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Stream error";
+        console.error("[chat] stream failed", sessionId, err);
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: "error", content: msg })}\n\n`
+            `data: ${JSON.stringify({ type: "error", content: userFacingError(err) })}\n\n`
           )
         );
         controller.close();

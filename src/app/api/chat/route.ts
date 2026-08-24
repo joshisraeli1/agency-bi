@@ -74,7 +74,11 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Chat failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Internal errors (Prisma, JSON parsing) shouldn't reach the browser.
+    console.error("[chat] request failed", err);
+    return NextResponse.json(
+      { error: "Chat is unavailable right now. Please try again." },
+      { status: 500 }
+    );
   }
 }
