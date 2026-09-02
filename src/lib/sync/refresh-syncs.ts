@@ -9,6 +9,7 @@
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
 import { fetchProfitAndLoss, fetchPnlCostLines, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
+import { buildClientIndex, isLinkableStage, resolveDealClient } from "./deal-client-link";
 
 // ---------------------------------------------------------------------------
 // HubSpot deals
@@ -91,7 +92,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
     "dealname", "amount", "amount__excl_gst_", "dealstage", "pipeline",
     "createdate", "closedate", "start_date", "churn_date", "hubspot_owner_id",
     "content_package_type", "package_description", "commission_type", "industry_type",
-    "reasons_for_churn",
+    "reasons_for_churn", "company_name",
   ];
   const relevant: HubSpotResult[] = [];
   let after: string | undefined;
@@ -110,20 +111,42 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
   const clients = await db.client.findMany({ select: { id: true, hubspotDealId: true }, where: { hubspotDealId: { not: null } } });
   const clientByDealId = new Map(clients.map((c) => [c.hubspotDealId!, c.id]));
 
+  // Company associations are not the source of truth in this account — most
+  // Content Machine deals have none, and some companies (e.g. "Blue Light Card")
+  // exist only as a deal property. The team fills in the deal's "Company name",
+  // and that is what ties a base deal to its upsells and downsells.
+  const [allClients, allAliases] = await Promise.all([
+    db.client.findMany({ select: { id: true, name: true } }),
+    db.clientAlias.findMany({ select: { clientId: true, alias: true } }),
+  ]);
+  const clientIndex = buildClientIndex(allClients, allAliases);
+
   const now = new Date();
   const rows = relevant.map((deal) => {
     const p = deal.properties;
     const stageId = p.dealstage ?? "";
     const ownerId = p.hubspot_owner_id ?? null;
+    const stage = mapDealStage(stageId);
+    // Settled deals link by company_name (falling back to the legacy one-deal-per-
+    // client field when it is blank or names no client we hold). Live deals keep
+    // the legacy link untouched.
+    const clientId = isLinkableStage(stage)
+      ? resolveDealClient({
+          dealId: deal.id,
+          companyName: p.company_name,
+          index: clientIndex,
+          fallbackByDealId: clientByDealId,
+        }).clientId
+      : clientByDealId.get(deal.id) ?? null;
     return {
       id: deal.id,
-      clientId: clientByDealId.get(deal.id) ?? null,
+      clientId,
       name: p.dealname ?? "(unnamed)",
       amount: p.amount ? parseFloat(p.amount) : null,
       amountExGst: p.amount__excl_gst_ ? parseFloat(p.amount__excl_gst_) : null,
       ownerId,
       ownerName: ownerId ? ownerNameById.get(ownerId) ?? null : null,
-      stage: mapDealStage(stageId),
+      stage,
       stageLabel: STAGE_LABELS[stageId] ?? stageId,
       pipeline: "Content Machine",
       createDate: parseDate(p.createdate),
@@ -132,6 +155,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
       churnDate: parseDate(p.churn_date),
       churnReason: p.reasons_for_churn ?? null,
       contentPackageType: p.content_package_type ?? null,
+      companyName: p.company_name ?? null,
       packageDescription: p.package_description ?? null,
       commissionType: p.commission_type ?? null,
       industry: p.industry_type ?? null,

@@ -127,6 +127,7 @@ model HubspotDeal {
   churnDate          DateTime?
   churnReason        String? // HubSpot "Reasons for Churn" — Price|Results|Going In-house|Downsell|...
   contentPackageType String?
+  companyName        String? // HubSpot deal property "Company name" — the client identity for this account (associations are unreliable)
   packageDescription String? // HubSpot "Package Description" — Legacy|One-off|Combo|Other|Upsell
   commissionType     String? // HubSpot "Commission Type" — Support|Owned (Owned → 9% commission)
   industry           String?
