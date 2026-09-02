@@ -110,6 +110,23 @@ model TeamMember {
   clientAssignments ClientAssignment[]
 }
 
+/// Sales activity (calls, emails) pulled from HubSpot engagement objects.
+/// One row per engagement; counts only — no bodies, subjects or recipients are stored.
+model HubspotActivity {
+  id           String   @id // HubSpot engagement object id
+  type         String // call | email
+  ownerId      String?
+  ownerName    String?
+  timestamp    DateTime // hs_timestamp — when the activity happened
+  direction    String? // calls: INBOUND/OUTBOUND; emails: EMAIL (sent) / INCOMING_EMAIL
+  status       String? // emails: SENT/BOUNCED; calls: hs_call_status
+  durationMs   Int? // calls only, rarely populated
+  lastSyncedAt DateTime @default(now())
+
+  @@index([type, timestamp])
+  @@index([ownerId, type, timestamp])
+}
+
 model HubspotDeal {
   id                 String    @id // HubSpot deal ID
   clientId           String?

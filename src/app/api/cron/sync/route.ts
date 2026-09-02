@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { syncHubspotDeals, syncXeroPnl } from "@/lib/sync/refresh-syncs";
+import { syncHubspotActivity, syncHubspotDeals, syncXeroPnl } from "@/lib/sync/refresh-syncs";
 
 // Scheduled data refresh (Vercel Cron). Runs the same syncs as the in-app
 // "Resync data" button — HubSpot deals (revenue tiles + new/churn) and the
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   const result: {
     hubspot?: { upserted: number; inPipeline: number; removed: number };
     xero?: { months: number; tenant?: string };
+    activity?: { calls: number; emails: number };
     errors: string[];
   } = { errors: [] };
 
@@ -36,6 +37,15 @@ export async function GET(request: NextRequest) {
     });
   } catch (e) {
     result.errors.push(`HubSpot: ${e instanceof Error ? e.message : "sync failed"}`);
+  }
+
+  // HubSpot sales activity (calls + emails). Isolated from the deal sync so an
+  // activity failure never blocks the revenue refresh.
+  try {
+    const a = await syncHubspotActivity();
+    result.activity = { calls: a.calls, emails: a.emails };
+  } catch (e) {
+    result.errors.push(`HubSpot activity: ${e instanceof Error ? e.message : "sync failed"}`);
   }
 
   try {

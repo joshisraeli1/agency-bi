@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
 import { fetchProfitAndLoss, fetchPnlCostLines, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
 import { buildClientIndex, isLinkableStage, resolveDealClient } from "./deal-client-link";
+import { MICHAEL_OWNER_ID } from "@/lib/analytics/michael-sales";
 
 // ---------------------------------------------------------------------------
 // HubSpot deals
@@ -69,22 +70,27 @@ function parseDate(v: string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/** HubSpot owner id -> display name, used to label deals and activity. */
+async function loadOwnerNames(token: string): Promise<Map<string, string>> {
+  const owners: HubSpotOwner[] = [];
+  let after: string | undefined;
+  do {
+    const page = await hubspotGet<{ results: HubSpotOwner[]; paging?: { next?: { after: string } } }>(
+      `/crm/v3/owners?limit=100${after ? `&after=${after}` : ""}`, token
+    );
+    owners.push(...page.results);
+    after = page.paging?.next?.after;
+  } while (after);
+  const byId = new Map<string, string>();
+  for (const o of owners) byId.set(o.id, [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email || o.id);
+  return byId;
+}
+
 export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted: number; removed: number }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
 
-  // Owners (for ownerName)
-  const owners: HubSpotOwner[] = [];
-  let oAfter: string | undefined;
-  do {
-    const page = await hubspotGet<{ results: HubSpotOwner[]; paging?: { next?: { after: string } } }>(
-      `/crm/v3/owners?limit=100${oAfter ? `&after=${oAfter}` : ""}`, token
-    );
-    owners.push(...page.results);
-    oAfter = page.paging?.next?.after;
-  } while (oAfter);
-  const ownerNameById = new Map<string, string>();
-  for (const o of owners) ownerNameById.set(o.id, [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email || o.id);
+  const ownerNameById = await loadOwnerNames(token);
 
   // Deals — fetch only the Content Machine pipeline via the search endpoint
   // (server-side filter). Avoids paging through all ~23k deals in the account.
@@ -188,6 +194,93 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
   }
 
   return { inPipeline: relevant.length, upserted, removed };
+}
+
+// ---------------------------------------------------------------------------
+// HubSpot sales activity (calls + emails)
+// ---------------------------------------------------------------------------
+
+/**
+ * Owners whose activity we track. Michael is the only rep on a dashboard today;
+ * add ids here to widen it without touching the sync itself.
+ */
+const TRACKED_ACTIVITY_OWNERS = [MICHAEL_OWNER_ID];
+
+/**
+ * Counts only. We request the timestamp, owner and direction and nothing else —
+ * no subject, body or recipient ever leaves HubSpot.
+ */
+const ACTIVITY_SOURCES = [
+  { type: "call", object: "calls", properties: ["hs_timestamp", "hubspot_owner_id", "hs_call_direction", "hs_call_status", "hs_call_duration"] },
+  { type: "email", object: "emails", properties: ["hs_timestamp", "hubspot_owner_id", "hs_email_direction", "hs_email_status"] },
+] as const;
+
+export async function syncHubspotActivity(): Promise<{ calls: number; emails: number }> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
+
+  const ownerNameById = await loadOwnerNames(token);
+  const counts: Record<string, number> = { call: 0, email: 0 };
+  const now = new Date();
+  const allRows: {
+    id: string; type: string; ownerId: string | null; ownerName: string | null;
+    timestamp: Date; direction: string | null; status: string | null;
+    durationMs: number | null; lastSyncedAt: Date;
+  }[] = [];
+
+  for (const source of ACTIVITY_SOURCES) {
+    const results: HubSpotResult[] = [];
+    let after: string | undefined;
+    do {
+      const body: Record<string, unknown> = {
+        filterGroups: [{ filters: [{ propertyName: "hubspot_owner_id", operator: "IN", values: TRACKED_ACTIVITY_OWNERS }] }],
+        properties: source.properties,
+        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
+        limit: 100,
+      };
+      if (after) body.after = after;
+      const page = await hubspotPost<HubSpotPage>(`/crm/v3/objects/${source.object}/search`, body, token);
+      results.push(...page.results);
+      after = page.paging?.next?.after;
+    } while (after);
+
+    const rows = results
+      .map((r) => {
+        const p = r.properties;
+        const ts = parseDate(p.hs_timestamp);
+        if (!ts) return null; // no timestamp -> can't sit in a week bucket
+        const ownerId = p.hubspot_owner_id ?? null;
+        const durationRaw = p.hs_call_duration ? Number(p.hs_call_duration) : NaN;
+        return {
+          id: r.id,
+          type: source.type as string,
+          ownerId,
+          ownerName: ownerId ? ownerNameById.get(ownerId) ?? null : null,
+          timestamp: ts,
+          direction: p.hs_call_direction ?? p.hs_email_direction ?? null,
+          status: p.hs_call_status ?? p.hs_email_status ?? null,
+          durationMs: Number.isFinite(durationRaw) ? durationRaw : null,
+          lastSyncedAt: now,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    counts[source.type] = rows.length;
+    allRows.push(...rows);
+  }
+
+  // Replace the tracked owners' activity wholesale — thousands of per-row upserts
+  // are far too slow against the pooled DB, and a full replace also prunes
+  // activities deleted in HubSpot for free. The length guard is load-bearing:
+  // a transient empty fetch must never wipe the table.
+  if (allRows.length > 0) {
+    await db.$transaction([
+      db.hubspotActivity.deleteMany({ where: { ownerId: { in: TRACKED_ACTIVITY_OWNERS } } }),
+      db.hubspotActivity.createMany({ data: allRows, skipDuplicates: true }),
+    ]);
+  }
+
+  return { calls: counts.call ?? 0, emails: counts.email ?? 0 };
 }
 
 // ---------------------------------------------------------------------------

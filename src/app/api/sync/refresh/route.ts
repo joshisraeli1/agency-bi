@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, logAudit } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { syncHubspotDeals, syncXeroPnl } from "@/lib/sync/refresh-syncs";
+import { syncHubspotActivity, syncHubspotDeals, syncXeroPnl } from "@/lib/sync/refresh-syncs";
 
 // The HubSpot deal fetch can take a while (paginates all deals), so allow a
 // long execution window.
@@ -15,6 +15,7 @@ export async function POST() {
   const result: {
     hubspot?: { upserted: number; inPipeline: number; removed: number };
     xero?: { months: number; tenant?: string };
+    activity?: { calls: number; emails: number };
     errors: string[];
   } = { errors: [] };
 
@@ -28,6 +29,15 @@ export async function POST() {
     });
   } catch (e) {
     result.errors.push(`HubSpot: ${e instanceof Error ? e.message : "sync failed"}`);
+  }
+
+  // HubSpot sales activity (calls + emails). Isolated from the deal sync so an
+  // activity failure never blocks the revenue refresh.
+  try {
+    const a = await syncHubspotActivity();
+    result.activity = { calls: a.calls, emails: a.emails };
+  } catch (e) {
+    result.errors.push(`HubSpot activity: ${e instanceof Error ? e.message : "sync failed"}`);
   }
 
   // Xero P&L
