@@ -86,7 +86,7 @@ async function loadOwnerNames(token: string): Promise<Map<string, string>> {
   return byId;
 }
 
-export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted: number; removed: number }> {
+export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted: number; removed: number; promoted: number }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
 
@@ -193,7 +193,40 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
     removed = pruned.count;
   }
 
-  return { inPipeline: relevant.length, upserted, removed };
+  const promoted = await promoteWonProspects();
+
+  return { inPipeline: relevant.length, upserted, removed, promoted };
+}
+
+/**
+ * A client's `status` is written only when its record is first created, never
+ * updated — so a client created while its deal was still in the pipeline stays
+ * "prospect" forever, even after that deal closes won. Prospects are excluded
+ * from every analytic (see excluded-clients.ts, plus direct `status: "prospect"`
+ * filters in agency-kpis and advanced-analytics), so their live revenue silently
+ * disappears from the dashboard.
+ *
+ * Deals are the source of truth, so reconcile against them each sync: a client
+ * holding a live closed-won deal is not a prospect. Deliberately narrow — churn
+ * transitions are derived elsewhere (the clients page computes them from deal
+ * windows) and are left alone.
+ */
+async function promoteWonProspects(): Promise<number> {
+  const stale = await db.client.findMany({
+    where: {
+      status: "prospect",
+      hubspotDeals: { some: { stage: "closed_won", churnDate: null } },
+    },
+    select: { id: true, name: true },
+  });
+  if (stale.length === 0) return 0;
+
+  await db.client.updateMany({
+    where: { id: { in: stale.map((c) => c.id) } },
+    data: { status: "active" },
+  });
+  console.log(`[sync] promoted ${stale.length} prospect(s) holding live closed-won deals: ${stale.map((c) => c.name).join(", ")}`);
+  return stale.length;
 }
 
 // ---------------------------------------------------------------------------
