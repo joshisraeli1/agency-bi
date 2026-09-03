@@ -61,6 +61,45 @@ function ChartCard({ title, icon, description, headline, headlineNote, children,
   );
 }
 
+
+/**
+ * Net-profit tooltip: the margin is the number people actually want on hover,
+ * and it's already on the data point. The in-progress month is annotated because
+ * its margin is inflated — revenue has landed but most bills haven't.
+ */
+function NetProfitTooltip({
+  active, payload, partialMonth,
+}: {
+  active?: boolean;
+  payload?: { payload: XeroPnlPoint }[];
+  partialMonth: string | null;
+}) {
+  const point = active ? payload?.[0]?.payload : undefined;
+  if (!point) return null;
+  const isPartial = point.month === partialMonth;
+
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-sm">
+      <p className="font-medium">{point.label}</p>
+      <p className="mt-1 tabular-nums">
+        Net profit <span className="font-medium">{formatCurrency(point.netProfit)}</span>
+      </p>
+      <p className="tabular-nums">
+        Margin{" "}
+        <span className="font-medium">
+          {point.marginPercent === null ? "—" : `${point.marginPercent.toFixed(1)}%`}
+        </span>
+        <span className="text-muted-foreground"> of {formatCurrency(point.revenue)} revenue</span>
+      </p>
+      {isPartial && (
+        <p className="mt-1 max-w-[15rem] text-muted-foreground">
+          Month still in progress — costs are incomplete, so this margin is overstated.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function axes(points: XeroPnlPoint[]) {
   // Label every other month past ~8 so ticks never collide.
   const step = points.length > 8 ? 2 : 1;
@@ -129,8 +168,7 @@ export function XeroPnlCharts({ data }: { data: XeroPnlSeries }) {
             <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtAxis} width={48} />
             <Tooltip
               cursor={{ fill: "currentColor", fillOpacity: 0.06 }}
-              formatter={(value) => [formatCurrency(Number(value ?? 0)), "Net profit"]}
-              contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+              content={<NetProfitTooltip partialMonth={partialMonth} />}
             />
             {/* Zero line so a loss month reads as below the baseline, not just a different colour. */}
             <ReferenceLine y={0} className="stroke-muted-foreground" strokeWidth={1} />
