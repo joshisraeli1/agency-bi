@@ -147,6 +147,147 @@ function parseXeroPeriodLabel(label: string): string | null {
   return `${yr}-${mon}`;
 }
 
+/** The `YYYY-MM` keys for the `count` months ending with the month containing `now`. */
+function recentMonthKeys(count: number, now = new Date()): string[] {
+  const out: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/** Inclusive first/last day of a `YYYY-MM` month, as Xero date strings. */
+function monthWindow(month: string): { fromDate: string; toDate: string } {
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return { fromDate: `${month}-01`, toDate: `${month}-${String(last).padStart(2, "0")}` };
+}
+
+export interface PnlSummary {
+  month: string; // YYYY-MM
+  totalIncome: number;
+  otherIncome: number;
+  costOfSales: number;
+  operatingExpenses: number;
+  grossProfit: number;
+  /** Xero's own Net Profit row — authoritative, not recomputed from the parts. */
+  netProfit: number;
+}
+
+interface MonthPnl extends PnlSummary {
+  costs: { account: string; section: "cogs" | "opex"; amount: number }[];
+}
+
+const costSectionKind = (title: string | undefined): "cogs" | "opex" | null => {
+  const t = (title ?? "").toLowerCase();
+  if (t.includes("cost of sales")) return "cogs";
+  if (t.includes("operating expense")) return "opex";
+  return null;
+};
+
+/**
+ * Fetch one month of P&L using an explicit date window.
+ *
+ * We must NOT use `timeframe=MONTH&periods=N` here. Xero renders those columns
+ * ending on the 30th of each month, so every 31-day month silently loses its
+ * last day — August 2026 came back as $623,866 instead of $674,459, and the
+ * eleven months to Aug 2026 were understated by $250,940 in total. An explicit
+ * fromDate/toDate spanning the real month is exact. It costs one request per
+ * month, which is why income and cost lines are parsed from the same response.
+ */
+async function fetchMonthPnl(accessToken: string, tenantId: string, month: string): Promise<MonthPnl> {
+  const { fromDate, toDate } = monthWindow(month);
+  const report = await xeroFetch<{ Reports?: { Rows?: XeroReportRow[] }[] }>(
+    accessToken,
+    tenantId,
+    "/Reports/ProfitAndLoss",
+    { fromDate, toDate, standardLayout: "true" }
+  );
+  const rows = report.Reports?.[0]?.Rows ?? [];
+
+  const num = (v: string | undefined) => parseFloat(v ?? "0") || 0;
+  const summaryValue = (sec: XeroReportRow, label: string): number | null => {
+    const row = (sec.Rows ?? []).find((r) => r.Cells?.[0]?.Value === label);
+    return row ? num(row.Cells?.[1]?.Value) : null;
+  };
+
+  let totalIncome = 0;
+  let otherIncome = 0;
+  let costOfSales = 0;
+  let operatingExpenses = 0;
+  let grossProfit = 0;
+  let netProfit = 0;
+  const costs: MonthPnl["costs"] = [];
+
+  for (const sec of rows) {
+    if (sec.RowType !== "Section") continue;
+
+    // Gross Profit and Net Profit live in untitled sections as plain Rows.
+    const gp = summaryValue(sec, "Gross Profit");
+    if (gp !== null) grossProfit = gp;
+    const np = summaryValue(sec, "Net Profit");
+    if (np !== null) netProfit = np;
+
+    if (sec.Title === "Income") {
+      totalIncome = summaryValue(sec, "Total Income") ?? 0;
+      continue;
+    }
+    if (sec.Title === "Plus Other Income") {
+      otherIncome = summaryValue(sec, "Total Other Income") ?? 0;
+      continue;
+    }
+
+    const kind = costSectionKind(sec.Title);
+    if (!kind) continue;
+    if (kind === "cogs") costOfSales = summaryValue(sec, "Total Cost of Sales") ?? 0;
+    if (kind === "opex") operatingExpenses = summaryValue(sec, "Total Operating Expenses") ?? 0;
+
+    for (const row of sec.Rows ?? []) {
+      if (row.RowType !== "Row") continue; // skip the section's "Total ..." SummaryRow
+      const account = row.Cells?.[0]?.Value ?? "";
+      if (!account) continue;
+      costs.push({ account, section: kind, amount: num(row.Cells?.[1]?.Value) });
+    }
+  }
+
+  return { month, totalIncome, otherIncome, costOfSales, operatingExpenses, grossProfit, netProfit, costs };
+}
+
+/**
+ * Fetch income and cost lines for the most recent `months` calendar months,
+ * one request per month so each window covers the full month. Sequential on
+ * purpose — Xero's report endpoints are rate-limited.
+ */
+export async function fetchPnlByMonth(
+  accessToken: string,
+  tenantId: string,
+  months = 12
+): Promise<{ income: PnlMonth[]; costLines: PnlCostLine[]; summaries: PnlSummary[] }> {
+  const keys = recentMonthKeys(months);
+  const results: MonthPnl[] = [];
+  for (const key of keys) {
+    results.push(await fetchMonthPnl(accessToken, tenantId, key));
+  }
+
+  const income: PnlMonth[] = results.map((r) => ({ month: r.month, totalIncome: r.totalIncome }));
+
+  // Re-shape per-month costs into one entry per account, keyed by month.
+  const byAccount = new Map<string, PnlCostLine>();
+  for (const r of results) {
+    for (const c of r.costs) {
+      const key = `${c.section}:${c.account}`;
+      const line = byAccount.get(key) ?? { account: c.account, section: c.section, byMonth: {} };
+      line.byMonth[r.month] = c.amount;
+      byAccount.set(key, line);
+    }
+  }
+
+  const summaries: PnlSummary[] = results.map(({ costs: _costs, ...rest }) => rest);
+
+  return { income, costLines: [...byAccount.values()], summaries };
+}
+
 /**
  * Fetch monthly Total Income from Xero's Profit & Loss report (accrual basis,
  * standard layout). Returns one entry per period column. Total Income is the

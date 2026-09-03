@@ -6,12 +6,14 @@ import { getActiveRevenueSnapshot, getPackageRevenueByMonth } from "@/lib/analyt
 import { getPipelineStageSnapshot } from "@/lib/analytics/pipeline-stages";
 import { getBudgetVsActual } from "@/lib/analytics/revenue-budget";
 import { getRevenueForecast } from "@/lib/analytics/forecast";
+import { getXeroPnlSeries } from "@/lib/analytics/xero-pnl";
 import { getThreeMonthForecast } from "@/lib/analytics/forecast-3month";
 import { formatCurrency, formatPercent, resolveMonthsParam, formatMonth } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/charts/stat-card";
 import { MarginBadge } from "@/components/charts/margin-badge";
 import { RevenueCharts } from "@/components/dashboard/revenue-charts";
+import { XeroPnlCharts } from "@/components/dashboard/xero-pnl-charts";
 import { RevenueVsChurnChart } from "@/components/dashboard/revenue-vs-churn-chart";
 import { RevenueByPackageChart } from "@/components/dashboard/revenue-by-package-chart";
 import { BudgetVsActualChart } from "@/components/dashboard/budget-vs-actual-chart";
@@ -40,7 +42,7 @@ export default async function OverviewPage({ searchParams }: Props) {
   const curMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const lastYearMonthKey = `${nowDate.getFullYear() - 1}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages, threeMonthForecast, downsells] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages, threeMonthForecast, downsells, xeroPnl] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
@@ -53,6 +55,7 @@ export default async function OverviewPage({ searchParams }: Props) {
     getPipelineStageSnapshot(),
     getThreeMonthForecast(),
     getDownsellResolution(),
+    getXeroPnlSeries(12),
   ]);
 
   // Current monthly revenue from closed-won HubSpot deals — both figures come straight from the
@@ -123,6 +126,9 @@ export default async function OverviewPage({ searchParams }: Props) {
       </div>
 
       <RevenueCharts data={revenue} />
+
+      {/* Expenses and Net Profit, straight from the Xero P&L */}
+      <XeroPnlCharts data={xeroPnl} />
 
       <BudgetVsActualChart data={budgetVsActual} />
 

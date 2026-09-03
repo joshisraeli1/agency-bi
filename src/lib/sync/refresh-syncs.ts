@@ -8,7 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
-import { fetchProfitAndLoss, fetchPnlCostLines, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
+import { fetchPnlByMonth, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
 import { buildClientIndex, isLinkableStage, resolveDealClient } from "./deal-client-link";
 import { MICHAEL_OWNER_ID } from "@/lib/analytics/michael-sales";
 
@@ -385,7 +385,10 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
     await db.integrationConfig.update({ where: { provider: "xero" }, data: { configJson: encryptJson(cfg as unknown as Record<string, unknown>) } });
   }
 
-  const pnl = await fetchProfitAndLoss(cfg.accessToken, cfg.tenantId, 11);
+  // 12 explicit month windows, not `timeframe=MONTH&periods=N`: Xero renders
+  // those columns ending on the 30th, so every 31-day month silently loses its
+  // last day (Aug 2026 read $623,866 instead of $674,459).
+  const { income: pnl, costLines, summaries } = await fetchPnlByMonth(cfg.accessToken, cfg.tenantId, 12);
 
   let synth = await db.client.findFirst({ where: { name: SYNTH_CLIENT_NAME, source: "xero" } });
   if (!synth) synth = await db.client.create({ data: { name: SYNTH_CLIENT_NAME, source: "xero", status: "active" } });
@@ -405,7 +408,6 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
   // Cost lines (Cost of Sales + Operating Expenses) per account/month — used to
   // build divisional margins from actual Xero costs. Stored as type="cost" on
   // the synthetic client; division mapping happens at read time.
-  const costLines = await fetchPnlCostLines(cfg.accessToken, cfg.tenantId, 11);
   await db.financialRecord.deleteMany({ where: { clientId: synth.id, source: "xero", type: "cost" } });
   const costRows: { clientId: string; month: string; type: string; category: string; amount: number; source: string; description: string }[] = [];
   for (const line of costLines) {
@@ -415,6 +417,22 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
     }
   }
   if (costRows.length) await db.financialRecord.createMany({ data: costRows });
+
+  // Monthly P&L summary — powers the Expenses and Net Profit charts. Stored in
+  // its own table rather than as FinancialRecords so summing type="cost" rows
+  // elsewhere can never double-count these totals.
+  for (const m of summaries) {
+    const data = {
+      totalIncome: m.totalIncome,
+      otherIncome: m.otherIncome,
+      costOfSales: m.costOfSales,
+      operatingExpenses: m.operatingExpenses,
+      grossProfit: m.grossProfit,
+      netProfit: m.netProfit,
+      lastSyncedAt: new Date(),
+    };
+    await db.xeroPnlMonth.upsert({ where: { month: m.month }, create: { month: m.month, ...data }, update: data });
+  }
 
   return { months: pnl.length, removed: removed.count, tenant: cfg.tenantName, costLines: costLines.length, costRows: costRows.length };
 }

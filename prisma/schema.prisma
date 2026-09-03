@@ -112,6 +112,20 @@ model TeamMember {
 
 /// Sales activity (calls, emails) pulled from HubSpot engagement objects.
 /// One row per engagement; counts only — no bodies, subjects or recipients are stored.
+/// Monthly Xero Profit & Loss summary, one row per calendar month.
+/// Figures are Xero's own summary rows (ex-GST, accrual) — netProfit is taken
+/// from the report rather than recomputed, so it always ties to Xero.
+model XeroPnlMonth {
+  month              String   @id // YYYY-MM
+  totalIncome        Float
+  otherIncome        Float    @default(0)
+  costOfSales        Float
+  operatingExpenses  Float
+  grossProfit        Float
+  netProfit          Float
+  lastSyncedAt       DateTime @default(now())
+}
+
 model HubspotActivity {
   id           String   @id // HubSpot engagement object id
   type         String // call | email
