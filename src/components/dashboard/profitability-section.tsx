@@ -36,11 +36,6 @@ function DivisionSummaryBlock({
   const totalMultiple = totalCost > 0 ? Number((totalRevenue / totalCost).toFixed(1)) : 0;
   const totalClientCount = data.reduce((s, d) => s + d.clientCount, 0);
 
-  // Shared/Overhead is a cost bucket, not a profit centre. It carries all the
-  // unallocated overhead against whatever non-divisional income exists (interest,
-  // commissions, other revenue), so a margin or multiple for it is meaningless —
-  // Xero-sourced revenue puts ~$14k there and it reads as -962%.
-  const isOverhead = (division: string) => division === "Shared/Overhead";
 
   // Charts show only revenue-bearing divisions — exclude the Shared/Overhead
   // bucket (it has no revenue; its unallocated cost stays in the table below).
@@ -111,11 +106,9 @@ function DivisionSummaryBlock({
                   {data.map((d) => (
                     <td
                       key={d.division}
-                      className={`text-right py-2 px-3 ${
-                        !isOverhead(d.division) && d.marginPercent < 0 ? "text-red-600" : ""
-                      } ${isOverhead(d.division) ? "text-muted-foreground" : ""}`}
+                      className={`text-right py-2 px-3 ${d.marginPercent < 0 ? "text-red-600" : ""}`}
                     >
-                      {isOverhead(d.division) ? "—" : `${d.marginPercent}%`}
+                      {d.marginPercent}%
                     </td>
                   ))}
                   <td className="text-right py-2 px-3 font-semibold">
@@ -127,9 +120,9 @@ function DivisionSummaryBlock({
                   {data.map((d) => (
                     <td
                       key={d.division}
-                      className={`text-right py-2 px-3 ${isOverhead(d.division) ? "text-muted-foreground" : ""}`}
+                      className="text-right py-2 px-3"
                     >
-                      {isOverhead(d.division) ? "—" : `${d.ratio}x`}
+                      {d.ratio}x
                     </td>
                   ))}
                   <td className="text-right py-2 px-3 font-semibold">
@@ -173,7 +166,17 @@ export function ProfitabilitySection({ divisionSummary }: Props) {
   const [month, setMonth] = useState<string>(defaultMonth ?? months[months.length - 1]?.month ?? "");
 
   if (months.length === 0) return null;
-  const active = months.find((m) => m.month === month) ?? months[months.length - 1];
+  const activeMonth = months.find((m) => m.month === month) ?? months[months.length - 1];
+
+  // Report the three delivery divisions only. Shared/Overhead is not a profit
+  // centre — it holds unallocated overhead (rent, overhead salaries, software)
+  // against incidental income, so it has no meaningful margin of its own. The
+  // total below is therefore divisional contribution BEFORE overhead, not
+  // company profit; the Net Profit chart on the overview is the bottom line.
+  const active = {
+    ...activeMonth,
+    rows: activeMonth.rows.filter((r) => r.division !== "Shared/Overhead"),
+  };
 
   // The current calendar month's costs are still being booked, so its margins
   // read far too high — say so rather than let the number be taken at face value.
@@ -186,7 +189,7 @@ export function ProfitabilitySection({ divisionSummary }: Props) {
       {/* Division profitability — revenue and cost both from the Xero P&L */}
       <DivisionSummaryBlock
         title="Profitability by Division"
-        subtitle={`Xero P&L revenue and costs by division — ${active.label}`}
+        subtitle={`Xero P&L revenue and costs by division — ${active.label}. Contribution before shared overhead.`}
         data={active.rows}
         notice={
           isPartial
