@@ -115,6 +115,20 @@ model TeamMember {
 /// Monthly Xero Profit & Loss summary, one row per calendar month.
 /// Figures are Xero's own summary rows (ex-GST, accrual) — netProfit is taken
 /// from the report rather than recomputed, so it always ties to Xero.
+/// Per-account income lines from the Xero P&L, one row per account per month.
+/// Costs live on FinancialRecord (type="cost") for historical reasons; income
+/// is kept here so summing FinancialRecord retainers can never double-count it.
+model XeroPnlIncomeLine {
+  id           String   @id @default(cuid())
+  month        String // YYYY-MM
+  account      String
+  amount       Float // ex-GST
+  lastSyncedAt DateTime @default(now())
+
+  @@unique([month, account])
+  @@index([month])
+}
+
 model XeroPnlMonth {
   month              String   @id // YYYY-MM
   totalIncome        Float

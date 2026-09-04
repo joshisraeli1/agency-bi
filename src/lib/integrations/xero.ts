@@ -164,6 +164,12 @@ function monthWindow(month: string): { fromDate: string; toDate: string } {
   return { fromDate: `${month}-01`, toDate: `${month}-${String(last).padStart(2, "0")}` };
 }
 
+export interface PnlIncomeLine {
+  month: string; // YYYY-MM
+  account: string;
+  amount: number; // ex-GST
+}
+
 export interface PnlSummary {
   month: string; // YYYY-MM
   totalIncome: number;
@@ -177,6 +183,8 @@ export interface PnlSummary {
 
 interface MonthPnl extends PnlSummary {
   costs: { account: string; section: "cogs" | "opex"; amount: number }[];
+  /** Per-account income lines — needed to split revenue by division. */
+  income: { account: string; amount: number }[];
 }
 
 const costSectionKind = (title: string | undefined): "cogs" | "opex" | null => {
@@ -219,6 +227,7 @@ async function fetchMonthPnl(accessToken: string, tenantId: string, month: strin
   let grossProfit = 0;
   let netProfit = 0;
   const costs: MonthPnl["costs"] = [];
+  const income: MonthPnl["income"] = [];
 
   for (const sec of rows) {
     if (sec.RowType !== "Section") continue;
@@ -231,6 +240,11 @@ async function fetchMonthPnl(accessToken: string, tenantId: string, month: strin
 
     if (sec.Title === "Income") {
       totalIncome = summaryValue(sec, "Total Income") ?? 0;
+      for (const row of sec.Rows ?? []) {
+        if (row.RowType !== "Row") continue; // skip the "Total Income" SummaryRow
+        const account = row.Cells?.[0]?.Value ?? "";
+        if (account) income.push({ account, amount: num(row.Cells?.[1]?.Value) });
+      }
       continue;
     }
     if (sec.Title === "Plus Other Income") {
@@ -251,7 +265,7 @@ async function fetchMonthPnl(accessToken: string, tenantId: string, month: strin
     }
   }
 
-  return { month, totalIncome, otherIncome, costOfSales, operatingExpenses, grossProfit, netProfit, costs };
+  return { month, totalIncome, otherIncome, costOfSales, operatingExpenses, grossProfit, netProfit, costs, income };
 }
 
 /**
@@ -263,7 +277,7 @@ export async function fetchPnlByMonth(
   accessToken: string,
   tenantId: string,
   months = 12
-): Promise<{ income: PnlMonth[]; costLines: PnlCostLine[]; summaries: PnlSummary[] }> {
+): Promise<{ income: PnlMonth[]; costLines: PnlCostLine[]; summaries: PnlSummary[]; incomeLines: PnlIncomeLine[] }> {
   const keys = recentMonthKeys(months);
   const results: MonthPnl[] = [];
   for (const key of keys) {
@@ -283,9 +297,16 @@ export async function fetchPnlByMonth(
     }
   }
 
-  const summaries: PnlSummary[] = results.map(({ costs: _costs, ...rest }) => rest);
+  const summaries: PnlSummary[] = results.map(({ costs: _costs, income: _income, ...rest }) => rest);
 
-  return { income, costLines: [...byAccount.values()], summaries };
+  const incomeLines: PnlIncomeLine[] = [];
+  for (const r of results) {
+    for (const line of r.income) {
+      incomeLines.push({ month: r.month, account: line.account, amount: line.amount });
+    }
+  }
+
+  return { income, costLines: [...byAccount.values()], summaries, incomeLines };
 }
 
 /**

@@ -388,7 +388,7 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
   // 12 explicit month windows, not `timeframe=MONTH&periods=N`: Xero renders
   // those columns ending on the 30th, so every 31-day month silently loses its
   // last day (Aug 2026 read $623,866 instead of $674,459).
-  const { income: pnl, costLines, summaries } = await fetchPnlByMonth(cfg.accessToken, cfg.tenantId, 12);
+  const { income: pnl, costLines, summaries, incomeLines } = await fetchPnlByMonth(cfg.accessToken, cfg.tenantId, 12);
 
   let synth = await db.client.findFirst({ where: { name: SYNTH_CLIENT_NAME, source: "xero" } });
   if (!synth) synth = await db.client.create({ data: { name: SYNTH_CLIENT_NAME, source: "xero", status: "active" } });
@@ -417,6 +417,20 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
     }
   }
   if (costRows.length) await db.financialRecord.createMany({ data: costRows });
+
+  // Per-account income lines — used to split revenue by division. Replaced
+  // wholesale for the months we just fetched so a renamed or removed account
+  // can't linger. Guarded: an empty fetch must never clear the table.
+  if (incomeLines.length > 0) {
+    const months = [...new Set(incomeLines.map((l) => l.month))];
+    await db.$transaction([
+      db.xeroPnlIncomeLine.deleteMany({ where: { month: { in: months } } }),
+      db.xeroPnlIncomeLine.createMany({
+        data: incomeLines.map((l) => ({ month: l.month, account: l.account, amount: l.amount })),
+        skipDuplicates: true,
+      }),
+    ]);
+  }
 
   // Monthly P&L summary — powers the Expenses and Net Profit charts. Stored in
   // its own table rather than as FinancialRecords so summing type="cost" rows

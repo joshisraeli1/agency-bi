@@ -57,19 +57,27 @@ export function mapAccountToDivisions(account: string): DivisionAllocation[] {
     { division: d2, weight: 0.5 },
   ];
 
-  // Shared across Content (Ad Creative) + SMM: video editors, freelancers, talent/creators.
+  // An explicit division in the account name always wins. The restructured
+  // chart of accounts names the division on every direct line ("Wages - Ad
+  // Creative", "Creator Expense - Social Media Management", "Content Creator
+  // (Ad Creative)"), so the shared-cost heuristics below must not pre-empt it —
+  // they were written for the old generic accounts and would, for example,
+  // split "Freelancers - Ad Creative" 50/50 despite it naming its division.
+  if (a.includes("social media") || /\bsmm\b/.test(a)) return one("Social Media Management");
+  if (a.includes("ads management") || a.includes("ads mgmt") || a.includes("- ads") || a.includes("meta ads")) {
+    return one("Ads Management");
+  }
+  if (a.includes("ad creative") || a.includes("content delivery")) return one("Content Delivery");
+
+  // No division named — the genuinely shared creative costs split across the
+  // two divisions that consume them.
   if (a.includes("video editor") || a.includes("freelancer") || a.includes("talent") || a.includes("content creator")) {
     return split("Content Delivery", "Social Media Management");
   }
   // Urban Swan (gift-card / commission business) — not an agency division here → Shared.
   if (a.includes("urban swan") || a.includes("stripe")) return one("Shared/Overhead");
-  // Division-tagged direct costs.
-  if (a.includes("social media") || /\bsmm\b/.test(a)) return one("Social Media Management");
-  if (a.includes("ads management") || a.includes("ads mgmt") || a.includes("- ads") || a.includes("meta ads") || a.includes("data support")) {
-    return one("Ads Management");
-  }
+  if (a.includes("data support")) return one("Ads Management");
   if (
-    a.includes("content delivery") || a.includes("ad creative") ||
     a.includes("subscriptions - production") || a.includes("processing fee") || a.includes("studio equipment") ||
     (a.includes("offshore") && (a.includes("creative") || a.includes("graphic") || a.includes("post production")))
   ) {

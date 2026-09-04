@@ -32,6 +32,12 @@ function DivisionSummaryBlock({
   const totalMultiple = totalCost > 0 ? Number((totalRevenue / totalCost).toFixed(1)) : 0;
   const totalClientCount = data.reduce((s, d) => s + d.clientCount, 0);
 
+  // Shared/Overhead is a cost bucket, not a profit centre. It carries all the
+  // unallocated overhead against whatever non-divisional income exists (interest,
+  // commissions, other revenue), so a margin or multiple for it is meaningless —
+  // Xero-sourced revenue puts ~$14k there and it reads as -962%.
+  const isOverhead = (division: string) => division === "Shared/Overhead";
+
   // Charts show only revenue-bearing divisions — exclude the Shared/Overhead
   // bucket (it has no revenue; its unallocated cost stays in the table below).
   const revenueDivisions = data.filter((d) => d.revenue > 0);
@@ -97,9 +103,11 @@ function DivisionSummaryBlock({
                   {data.map((d) => (
                     <td
                       key={d.division}
-                      className={`text-right py-2 px-3 ${d.marginPercent < 0 ? "text-red-600" : ""}`}
+                      className={`text-right py-2 px-3 ${
+                        !isOverhead(d.division) && d.marginPercent < 0 ? "text-red-600" : ""
+                      } ${isOverhead(d.division) ? "text-muted-foreground" : ""}`}
                     >
-                      {d.marginPercent}%
+                      {isOverhead(d.division) ? "—" : `${d.marginPercent}%`}
                     </td>
                   ))}
                   <td className="text-right py-2 px-3 font-semibold">
@@ -109,8 +117,11 @@ function DivisionSummaryBlock({
                 <tr className="border-b">
                   <td className="py-2 px-3 font-medium">Multiple</td>
                   {data.map((d) => (
-                    <td key={d.division} className="text-right py-2 px-3">
-                      {d.ratio}x
+                    <td
+                      key={d.division}
+                      className={`text-right py-2 px-3 ${isOverhead(d.division) ? "text-muted-foreground" : ""}`}
+                    >
+                      {isOverhead(d.division) ? "—" : `${d.ratio}x`}
                     </td>
                   ))}
                   <td className="text-right py-2 px-3 font-semibold">

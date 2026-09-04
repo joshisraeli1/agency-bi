@@ -417,69 +417,42 @@ export async function getAgencyKPIs(months = 6): Promise<AgencyKPIs> {
     .sort((a, b) => b.revenue - a.revenue);
 
   // ── Xero Profitability by Division ──
-  const xeroRecords = await db.financialRecord.findMany({
-    where: { source: "xero", month: { in: monthRange } },
-    select: { type: true, category: true, amount: true },
+  // Revenue and cost both come from the Xero P&L for the latest COMPLETE month,
+  // so the margins reconcile to the accounts rather than mixing contracted MRR
+  // against actual costs. Average deal size stays HubSpot's, since Xero has no
+  // concept of a deal.
+  const xeroIncomeLines = await db.xeroPnlIncomeLine.findMany({
+    where: { month: latestCostMonth },
+    select: { account: true, amount: true },
   });
 
-  // Division mapping for Xero P&L accounts
-  const xeroDivisionMap: Record<string, string> = {
-    // Social Media Management
-    "xero-pnl:Social Media Management": "Social Media Management",
-    "xero-pnl:Content Delivery (Organic)": "Social Media Management",
-    "xero-pnl:COS - Content Delivery (Organic)": "Social Media Management",
-    "xero-pnl:Wages - Social Media Management": "Social Media Management",
-    "xero-pnl:Superannuation - Social Media Management": "Social Media Management",
-    "xero-pnl:Subscriptions - SMM": "Social Media Management",
-    // Content Delivery (Paid)
-    "xero-pnl:Content Delivery (Paid)": "Content Delivery",
-    "xero-pnl:Content Delivery (Plus)": "Content Delivery",
-    "xero-pnl:Content Creator": "Content Delivery",
-    "xero-pnl:COS - Content Delivery (Paid)": "Content Delivery",
-    "xero-pnl:Wages - Content Delivery": "Content Delivery",
-    "xero-pnl:Superannuation - Content Delivery": "Content Delivery",
-    "xero-pnl:Subscriptions - Content Delivery Paid": "Content Delivery",
-    "xero-pnl:Contractor - Video Editor": "Content Delivery",
-    "xero-pnl:Contractor - Talent": "Content Delivery",
-    "xero-pnl:Contractor - Talent Manager": "Content Delivery",
-    // Ads Management
-    "xero-pnl:Ads Management": "Ads Management",
-    "xero-pnl:Social Meda & Ads Management": "Ads Management",
-    "xero-pnl:COS - Ads MGMT": "Ads Management",
-    "xero-pnl:Wages - Ads Management": "Ads Management",
-    "xero-pnl:Superannuation - Ads Management": "Ads Management",
-    "xero-pnl:Subscriptions - Ads MGMT": "Ads Management",
-    "xero-pnl:Contractor - Ads Management": "Ads Management",
-  };
-
   const xeroDivRevenue = new Map<string, number>();
-  const xeroDivCost = new Map<string, number>();
-
-  for (const r of xeroRecords) {
-    const division = r.category ? xeroDivisionMap[r.category] : null;
-    if (!division) continue; // overhead — not allocated to a division
-
-    if (r.type === "retainer") {
-      xeroDivRevenue.set(division, (xeroDivRevenue.get(division) || 0) + r.amount);
-    } else if (r.type === "cost") {
-      xeroDivCost.set(division, (xeroDivCost.get(division) || 0) + r.amount);
+  for (const line of xeroIncomeLines) {
+    const override = costOverrides[line.account];
+    if (override) {
+      xeroDivRevenue.set(override, (xeroDivRevenue.get(override) || 0) + line.amount);
+      continue;
+    }
+    for (const { division, weight } of mapAccountToDivisions(line.account)) {
+      xeroDivRevenue.set(division, (xeroDivRevenue.get(division) || 0) + line.amount * weight);
     }
   }
 
-  const xeroDivisions = new Set([...xeroDivRevenue.keys(), ...xeroDivCost.keys()]);
-  const xeroProfitability: DivisionProfitabilityRow[] = Array.from(xeroDivisions)
+  const xeroProfitability: DivisionProfitabilityRow[] = DIVISIONS
     .map((division) => {
       const rev = xeroDivRevenue.get(division) || 0;
-      const cost = xeroDivCost.get(division) || 0;
+      const cost = divXeroCost.get(division) || 0;
       const margin = rev - cost;
+      const dealCount = divDealCount.get(division) || 0;
       return {
         division,
         revenue: Math.round(rev),
         cost: Math.round(cost),
         ratio: cost > 0 ? Number((rev / cost).toFixed(1)) : 0,
         marginPercent: rev > 0 ? Number(((margin / rev) * 100).toFixed(0)) : 0,
-        clientCount: 0,
-        avgDealSize: 0,
+        clientCount: dealCount,
+        // HubSpot deal book — Xero has no deals, so this stays deal-sourced.
+        avgDealSize: dealCount > 0 ? Math.round((divDealMrr.get(division) || 0) / dealCount) : 0,
       };
     })
     .filter((d) => d.revenue > 0 || d.cost > 0)
