@@ -1,15 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { PieChartCard } from "@/components/charts/pie-chart";
 import { DivisionMarginsChart } from "@/components/dashboard/division-margins-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-import type { DivisionProfitabilityRow, XeroMarginTrend } from "@/lib/analytics/types";
+import type { DivisionProfitabilityRow } from "@/lib/analytics/types";
+import type { DivisionSummary } from "@/lib/analytics/division-summary";
 
 interface Props {
-  hubspotProfitability: DivisionProfitabilityRow[];
-  xeroProfitability: DivisionProfitabilityRow[];
-  xeroMargin: XeroMarginTrend;
+  divisionSummary: DivisionSummary;
 }
 
 function DivisionSummaryBlock({
@@ -17,11 +17,15 @@ function DivisionSummaryBlock({
   subtitle,
   data,
   showPieChart = true,
+  monthControl,
+  notice,
 }: {
   title: string;
   subtitle: string;
   data: DivisionProfitabilityRow[];
   showPieChart?: boolean;
+  monthControl?: React.ReactNode;
+  notice?: string;
 }) {
   if (data.length === 0) return null;
 
@@ -59,7 +63,11 @@ function DivisionSummaryBlock({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Division Summary</CardTitle>
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle className="text-base">Division Summary</CardTitle>
+            {monthControl}
+          </div>
+          {notice && <p className="text-amber-600 text-sm mt-1">{notice}</p>}
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -160,18 +168,46 @@ function DivisionSummaryBlock({
   );
 }
 
-export function ProfitabilitySection({
-  hubspotProfitability,
-}: Props) {
+export function ProfitabilitySection({ divisionSummary }: Props) {
+  const { months, defaultMonth } = divisionSummary;
+  const [month, setMonth] = useState<string>(defaultMonth ?? months[months.length - 1]?.month ?? "");
+
+  if (months.length === 0) return null;
+  const active = months.find((m) => m.month === month) ?? months[months.length - 1];
+
+  // The current calendar month's costs are still being booked, so its margins
+  // read far too high — say so rather than let the number be taken at face value.
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isPartial = active.month === currentKey;
+
   return (
     <div className="space-y-6">
-      {/* Division profitability: HubSpot deal revenue vs Xero P&L costs */}
+      {/* Division profitability — revenue and cost both from the Xero P&L */}
       <DivisionSummaryBlock
         title="Profitability by Division"
-        subtitle="Client deal revenue vs Xero costs by division"
-        data={hubspotProfitability}
+        subtitle={`Xero P&L revenue and costs by division — ${active.label}`}
+        data={active.rows}
+        notice={
+          isPartial
+            ? `${active.label} is still in progress — costs aren't fully booked yet, so margins are overstated.`
+            : undefined
+        }
+        monthControl={
+          <select
+            value={active.month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-sm"
+            aria-label="Month"
+          >
+            {[...months].reverse().map((m) => (
+              <option key={m.month} value={m.month}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        }
       />
-
     </div>
   );
 }

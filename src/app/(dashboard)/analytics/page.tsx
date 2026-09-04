@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths, getRevenueComposition } from "@/lib/analytics/active-revenue";
 import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
+import { getDivisionSummaryByMonth } from "@/lib/analytics/division-summary";
 import { getCumulativeDivisionRevenueFY } from "@/lib/analytics/division-fy";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
 import { CumulativeDivisionRevenueChart } from "@/components/dashboard/cumulative-division-revenue-chart";
@@ -14,7 +15,6 @@ import {
   getClientHealthData,
   getSourceDiscrepancy,
   getIndustryBreakdown,
-  getXeroMarginTrend,
   getNewClientDealSize,
 } from "@/lib/analytics/advanced-analytics";
 import {
@@ -46,7 +46,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     clientHealth,
     discrepancy,
     industryBreakdown,
-    xeroMargin,
     newClientDealSize,
     monthlyChurn,
     churnReasons,
@@ -58,6 +57,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     avgTenure,
     cumulativeDivisionFY,
     revenueComposition,
+    divisionSummary,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -65,7 +65,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getClientHealthData(),
     getSourceDiscrepancy(months),
     getIndustryBreakdown(),
-    getXeroMarginTrend(months),
     getNewClientDealSize(months),
     getMonthlyChurn(12),
     getChurnReasons(months),
@@ -80,6 +79,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getAvgClientTenureMonths(),
     getCumulativeDivisionRevenueFY(),
     getRevenueComposition(),
+    getDivisionSummaryByMonth(12),
   ]);
 
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
@@ -151,11 +151,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
       <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} goals={divisionGoals} />
 
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
-      <ProfitabilitySection
-        hubspotProfitability={data.hubspotProfitability}
-        xeroProfitability={data.xeroProfitability}
-        xeroMargin={xeroMargin}
-      />
+      <ProfitabilitySection divisionSummary={divisionSummary} />
 
       {/* 3. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />
