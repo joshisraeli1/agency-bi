@@ -433,14 +433,16 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
     ]);
   }
 
-  // Financial-year splits for the revenue-allocation chart: the two most recent
-  // COMPLETE years. The in-progress year is excluded (its costs aren't booked),
-  // and so is anything before that — FY23 ran a -$1.0m result on legacy Urban
-  // Swan trading, which can't render as a 100% stack since costs exceeded
-  // revenue.
+  // Financial-year splits for the revenue-allocation chart: the three most
+  // recent COMPLETE years. The in-progress year is excluded because its costs
+  // aren't booked yet. Going back a fourth would reach FY23, which ran a -$1.0m
+  // result on legacy Urban Swan trading with cost of sales at 213% of revenue —
+  // that cannot render as a 100% stack.
+  const FY_HISTORY_YEARS = 3;
   const now = new Date();
   const currentFyStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-  for (const startYear of [currentFyStart - 2, currentFyStart - 1]) {
+  const fyStartYears = Array.from({ length: FY_HISTORY_YEARS }, (_, i) => currentFyStart - FY_HISTORY_YEARS + i);
+  for (const startYear of fyStartYears) {
     const fy = await fetchFyPnl(cfg.accessToken, cfg.tenantId, startYear);
     const { fy: key, ...rest } = fy;
     await db.xeroFinancialYear.upsert({
