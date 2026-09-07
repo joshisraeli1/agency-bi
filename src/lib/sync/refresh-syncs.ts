@@ -8,7 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
-import { fetchPnlByMonth, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
+import { fetchFyPnl, fetchPnlByMonth, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
 import { buildClientIndex, isLinkableStage, resolveDealClient } from "./deal-client-link";
 import { MICHAEL_OWNER_ID } from "@/lib/analytics/michael-sales";
 
@@ -98,7 +98,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
     "dealname", "amount", "amount__excl_gst_", "dealstage", "pipeline",
     "createdate", "closedate", "start_date", "churn_date", "hubspot_owner_id",
     "content_package_type", "package_description", "commission_type", "industry_type",
-    "reasons_for_churn", "company_name",
+    "reasons_for_churn", "company_name", "outreach_source",
   ];
   const relevant: HubSpotResult[] = [];
   let after: string | undefined;
@@ -162,6 +162,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
       churnReason: p.reasons_for_churn ?? null,
       contentPackageType: p.content_package_type ?? null,
       companyName: p.company_name ?? null,
+      outreachSource: p.outreach_source ?? null,
       packageDescription: p.package_description ?? null,
       commissionType: p.commission_type ?? null,
       industry: p.industry_type ?? null,
@@ -430,6 +431,23 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
         skipDuplicates: true,
       }),
     ]);
+  }
+
+  // Financial-year splits for the revenue-allocation chart: the two most recent
+  // COMPLETE years. The in-progress year is excluded (its costs aren't booked),
+  // and so is anything before that — FY23 ran a -$1.0m result on legacy Urban
+  // Swan trading, which can't render as a 100% stack since costs exceeded
+  // revenue.
+  const now = new Date();
+  const currentFyStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  for (const startYear of [currentFyStart - 2, currentFyStart - 1]) {
+    const fy = await fetchFyPnl(cfg.accessToken, cfg.tenantId, startYear);
+    const { fy: key, ...rest } = fy;
+    await db.xeroFinancialYear.upsert({
+      where: { fy: key },
+      create: { fy: key, ...rest, lastSyncedAt: new Date() },
+      update: { ...rest, lastSyncedAt: new Date() },
+    });
   }
 
   // Monthly P&L summary — powers the Expenses and Net Profit charts. Stored in

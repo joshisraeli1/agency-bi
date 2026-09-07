@@ -4,6 +4,9 @@ import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths, getRevenueComposition } from "@/lib/analytics/active-revenue";
 import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
 import { getDivisionSummaryByMonth } from "@/lib/analytics/division-summary";
+import { getBusinessBalance } from "@/lib/analytics/business-balance";
+import { getUpsellTrend } from "@/lib/analytics/upsell-trend";
+import { getDealSourceBreakdown } from "@/lib/analytics/deal-source";
 import { getCumulativeDivisionRevenueFY } from "@/lib/analytics/division-fy";
 import { DivisionGoals } from "@/components/dashboard/division-goals";
 import { CumulativeDivisionRevenueChart } from "@/components/dashboard/cumulative-division-revenue-chart";
@@ -24,6 +27,9 @@ import { getChurnReasons } from "@/lib/analytics/churn-reasons";
 import { formatCurrency, formatPercent, resolveMonthsParam } from "@/lib/utils";
 import { StatCard } from "@/components/charts/stat-card";
 import { AdvancedCharts } from "@/components/dashboard/advanced-charts";
+import { BusinessBalanceChart } from "@/components/dashboard/business-balance-chart";
+import { UpsellTrendCharts } from "@/components/dashboard/upsell-trend-charts";
+import { DealSourceSection } from "@/components/dashboard/deal-source-section";
 import { ProfitabilitySection } from "@/components/dashboard/profitability-section";
 import { ChurnRateSection } from "@/components/dashboard/churn-rate-section";
 import { ChurnReasonsSection } from "@/components/dashboard/churn-reasons-section";
@@ -58,6 +64,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     cumulativeDivisionFY,
     revenueComposition,
     divisionSummary,
+    businessBalance,
+    upsellTrend,
+    dealSource,
   ] = await Promise.all([
     getAgencyKPIs(months),
     getLTVData(),
@@ -80,6 +89,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getCumulativeDivisionRevenueFY(),
     getRevenueComposition(),
     getDivisionSummaryByMonth(12),
+    getBusinessBalance(),
+    getUpsellTrend(12),
+    getDealSourceBreakdown(),
   ]);
 
   // retainerValue is ex-GST (stored from HubSpot's amount__excl_gst_); display directly
@@ -152,6 +164,15 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection divisionSummary={divisionSummary} />
+
+      {/* How each revenue dollar was allocated, by financial year */}
+      <BusinessBalanceChart data={businessBalance} />
+
+      {/* Expansion revenue: upsell dollars and upsells as a share of the book */}
+      <UpsellTrendCharts data={upsellTrend} />
+
+      {/* Where the live book came from */}
+      <DealSourceSection data={dealSource} />
 
       {/* 3. Monthly Churn Rate */}
       <ChurnRateSection data={monthlyChurn} />

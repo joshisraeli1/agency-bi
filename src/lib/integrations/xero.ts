@@ -147,6 +147,92 @@ function parseXeroPeriodLabel(label: string): string | null {
   return `${yr}-${mon}`;
 }
 
+export interface FyPnlSplit {
+  fy: string; // "FY26"
+  fromDate: string;
+  toDate: string;
+  income: number;
+  directLabour: number;
+  costOfSalesOther: number;
+  operatingExpenses: number;
+  operatingProfit: number;
+}
+
+/** Wages, salaries and super are labour; everything else in cost of sales isn't. */
+const isLabourAccount = (account: string): boolean => {
+  const a = account.toLowerCase();
+  return a.includes("wages") || a.includes("salaries") || a.includes("superannuation");
+};
+
+/**
+ * Profit & Loss for one Australian financial year (1 Jul – 30 Jun), split into
+ * the four buckets of the revenue-allocation chart. Direct labour is pulled out
+ * of cost of sales; overhead salaries stay inside operating expenses, which is
+ * what makes "Direct Labour" mean delivery labour rather than all payroll.
+ */
+export async function fetchFyPnl(
+  accessToken: string,
+  tenantId: string,
+  startYear: number
+): Promise<FyPnlSplit> {
+  const fromDate = `${startYear}-07-01`;
+  const toDate = `${startYear + 1}-06-30`;
+  const report = await xeroFetch<{ Reports?: { Rows?: XeroReportRow[] }[] }>(
+    accessToken,
+    tenantId,
+    "/Reports/ProfitAndLoss",
+    { fromDate, toDate, standardLayout: "true" }
+  );
+  const rows = report.Reports?.[0]?.Rows ?? [];
+  const num = (v: string | undefined) => parseFloat(v ?? "0") || 0;
+
+  let income = 0;
+  let directLabour = 0;
+  let costOfSalesOther = 0;
+  let operatingExpenses = 0;
+
+  for (const sec of rows) {
+    if (sec.RowType !== "Section") continue;
+
+    if (sec.Title === "Income") {
+      const t = (sec.Rows ?? []).find((r) => r.Cells?.[0]?.Value === "Total Income");
+      income = num(t?.Cells?.[1]?.Value);
+      continue;
+    }
+    const title = (sec.Title ?? "").toLowerCase();
+    if (title.includes("cost of sales")) {
+      for (const row of sec.Rows ?? []) {
+        if (row.RowType !== "Row") continue;
+        const account = row.Cells?.[0]?.Value ?? "";
+        const amount = num(row.Cells?.[1]?.Value);
+        if (isLabourAccount(account)) directLabour += amount;
+        else costOfSalesOther += amount;
+      }
+      continue;
+    }
+    if (title.includes("operating expense")) {
+      const t = (sec.Rows ?? []).find((r) => r.Cells?.[0]?.Value === "Total Operating Expenses");
+      operatingExpenses = num(t?.Cells?.[1]?.Value);
+    }
+  }
+
+  // Derived from the parts rather than read off Xero's Net Profit row: that row
+  // also includes Other Income (interest), so the four segments would sum to
+  // more than 100% of revenue and the stacked chart would overshoot.
+  const operatingProfit = income - directLabour - costOfSalesOther - operatingExpenses;
+
+  return {
+    fy: `FY${String(startYear + 1).slice(2)}`,
+    fromDate,
+    toDate,
+    income,
+    directLabour,
+    costOfSalesOther,
+    operatingExpenses,
+    operatingProfit,
+  };
+}
+
 /** The `YYYY-MM` keys for the `count` months ending with the month containing `now`. */
 function recentMonthKeys(count: number, now = new Date()): string[] {
   const out: string[] = [];
