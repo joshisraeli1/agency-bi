@@ -163,6 +163,9 @@ model HubspotActivity {
   direction    String? // calls: INBOUND/OUTBOUND; emails: EMAIL (sent) / INCOMING_EMAIL
   status       String? // emails: SENT/BOUNCED; calls: hs_call_status
   durationMs   Int? // calls only, rarely populated
+  fromNumber   String? // calls: the dialler number. Null on manually-logged calls.
+  source       String? // calls: VOIP for dialler calls, null when logged by hand
+  outcome      String? // calls: disposition label — Connected/No answer/Meeting booked/...
   lastSyncedAt DateTime @default(now())
 
   @@index([type, timestamp])

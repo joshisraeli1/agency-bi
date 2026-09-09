@@ -1,5 +1,6 @@
 import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { getSalesActivity } from "@/lib/analytics/sales-activity";
+import { getCallActivity } from "@/lib/analytics/call-activity";
 import { formatMonth } from "@/lib/utils";
 import { MichaelCharts } from "@/components/dashboard/michael-charts";
 import { MichaelGoals } from "@/components/dashboard/michael-goals";
@@ -7,12 +8,14 @@ import { MichaelTiles } from "@/components/dashboard/michael-tiles";
 import { MichaelPipelineChart } from "@/components/dashboard/michael-pipeline-chart";
 import { MichaelCommissionSection } from "@/components/dashboard/michael-commission";
 import { SalesActivityCharts } from "@/components/dashboard/sales-activity-charts";
+import { CallActivityChart } from "@/components/dashboard/call-activity-chart";
 
 export default async function MichaelPage() {
   // 52 weeks fetched once; the card's range selector slices client-side.
-  const [data, activity] = await Promise.all([
+  const [data, activity, callActivity] = await Promise.all([
     getMichaelSalesData(),
     getSalesActivity(52),
+    getCallActivity(90),
   ]);
 
   const revenueChartData = data.monthlyRevenue.map((m) => ({
@@ -65,6 +68,9 @@ export default async function MichaelPage() {
 
       {/* Outreach activity — weekly emails sent and calls logged */}
       <SalesActivityCharts weeks={activity.weeks} />
+
+      {/* Daily dialler output and call outcomes */}
+      <CallActivityChart data={callActivity} />
 
       <MichaelCommissionSection data={data.commission} />
     </div>

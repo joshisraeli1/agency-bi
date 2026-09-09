@@ -245,21 +245,40 @@ const TRACKED_ACTIVITY_OWNERS = [MICHAEL_OWNER_ID];
  * no subject, body or recipient ever leaves HubSpot.
  */
 const ACTIVITY_SOURCES = [
-  { type: "call", object: "calls", properties: ["hs_timestamp", "hubspot_owner_id", "hs_call_direction", "hs_call_status", "hs_call_duration"] },
+  { type: "call", object: "calls", properties: ["hs_timestamp", "hubspot_owner_id", "hs_call_direction", "hs_call_status", "hs_call_duration", "hs_call_from_number", "hs_call_source", "hs_call_disposition"] },
   { type: "email", object: "emails", properties: ["hs_timestamp", "hubspot_owner_id", "hs_email_direction", "hs_email_status"] },
 ] as const;
+
+/**
+ * HubSpot stores a call's outcome as an opaque GUID. The labels come from
+ * /calling/v1/dispositions; this is the account's current set, fetched once per
+ * sync so a renamed or added disposition is picked up automatically.
+ */
+async function loadCallOutcomes(token: string): Promise<Map<string, string>> {
+  try {
+    const rows = await hubspotGet<{ id: string; label: string }[]>("/calling/v1/dispositions", token);
+    return new Map(rows.map((r) => [r.id, r.label]));
+  } catch {
+    // Outcome labels are a nicety — never fail the whole activity sync for them.
+    return new Map();
+  }
+}
 
 export async function syncHubspotActivity(): Promise<{ calls: number; emails: number }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
 
-  const ownerNameById = await loadOwnerNames(token);
+  const [ownerNameById, outcomeLabels] = await Promise.all([
+    loadOwnerNames(token),
+    loadCallOutcomes(token),
+  ]);
   const counts: Record<string, number> = { call: 0, email: 0 };
   const now = new Date();
   const allRows: {
     id: string; type: string; ownerId: string | null; ownerName: string | null;
     timestamp: Date; direction: string | null; status: string | null;
-    durationMs: number | null; lastSyncedAt: Date;
+    durationMs: number | null; fromNumber: string | null; source: string | null;
+    outcome: string | null; lastSyncedAt: Date;
   }[] = [];
 
   for (const source of ACTIVITY_SOURCES) {
@@ -294,6 +313,9 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
           direction: p.hs_call_direction ?? p.hs_email_direction ?? null,
           status: p.hs_call_status ?? p.hs_email_status ?? null,
           durationMs: Number.isFinite(durationRaw) ? durationRaw : null,
+          fromNumber: p.hs_call_from_number ?? null,
+          source: p.hs_call_source ?? null,
+          outcome: p.hs_call_disposition ? outcomeLabels.get(p.hs_call_disposition) ?? null : null,
           lastSyncedAt: now,
         };
       })
