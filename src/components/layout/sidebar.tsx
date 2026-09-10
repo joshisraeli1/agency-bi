@@ -14,7 +14,7 @@ import {
   MessageSquare,
   FileSpreadsheet,
   TrendingUp,
-  Scale,
+  // Scale, // used by the hidden Reconciliation nav entry below
 } from "lucide-react";
 
 const navItems = [
@@ -23,7 +23,11 @@ const navItems = [
   { href: "/client-data", label: "Client Data", icon: FileSpreadsheet },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/michael", label: "Michael", icon: TrendingUp },
-  { href: "/reconciliation", label: "Reconciliation", icon: Scale },
+  // Reconciliation moved to a dedicated tool. The page and its data are intact
+  // and still reachable at /reconciliation for looking back — only the nav entry
+  // is hidden, so the figures here can't be mistaken for the current source of
+  // truth. Restore this line to bring it back.
+  // { href: "/reconciliation", label: "Reconciliation", icon: Scale },
   { href: "/chat", label: "AI Chat", icon: MessageSquare },
   { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/entities", label: "Entity Resolution", icon: GitMerge },
