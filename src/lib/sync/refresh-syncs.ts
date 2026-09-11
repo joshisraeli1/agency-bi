@@ -8,7 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
-import { fetchFyPnl, fetchPnlByMonth, fetchRepeatingInvoices, refreshToken } from "@/lib/integrations/xero";
+import { fetchPeriodPnl, fetchPnlByMonth, fetchRepeatingInvoices, recentCompleteQuarters, refreshToken } from "@/lib/integrations/xero";
 import { buildClientIndex, isLinkableStage, resolveDealClient } from "./deal-client-link";
 import { MICHAEL_OWNER_ID } from "@/lib/analytics/michael-sales";
 
@@ -455,22 +455,17 @@ export async function syncXeroPnl(): Promise<{ months: number; removed: number; 
     ]);
   }
 
-  // Financial-year splits for the revenue-allocation chart: the three most
-  // recent COMPLETE years. The in-progress year is excluded because its costs
-  // aren't booked yet. Going back a fourth would reach FY23, which ran a -$1.0m
-  // result on legacy Urban Swan trading with cost of sales at 213% of revenue —
-  // that cannot render as a 100% stack.
-  const FY_HISTORY_YEARS = 3;
-  const now = new Date();
-  const currentFyStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-  const fyStartYears = Array.from({ length: FY_HISTORY_YEARS }, (_, i) => currentFyStart - FY_HISTORY_YEARS + i);
-  for (const startYear of fyStartYears) {
-    const fy = await fetchFyPnl(cfg.accessToken, cfg.tenantId, startYear);
-    const { fy: key, ...rest } = fy;
-    await db.xeroFinancialYear.upsert({
-      where: { fy: key },
-      create: { fy: key, ...rest, lastSyncedAt: new Date() },
-      update: { ...rest, lastSyncedAt: new Date() },
+  // Quarterly splits for the revenue-allocation chart — eight quarters, so two
+  // years of review sit side by side. Only complete quarters: the in-progress
+  // one hasn't had its costs booked and would show an inflated profit share.
+  for (const q of recentCompleteQuarters(8)) {
+    const { period, label, ...rest } = await fetchPeriodPnl(
+      cfg.accessToken, cfg.tenantId, q.period, q.label, q.fromDate, q.toDate
+    );
+    await db.xeroPeriodPnl.upsert({
+      where: { period },
+      create: { period, label, ...rest, lastSyncedAt: new Date() },
+      update: { label, ...rest, lastSyncedAt: new Date() },
     });
   }
 

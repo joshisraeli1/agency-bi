@@ -118,15 +118,17 @@ model TeamMember {
 /// Per-account income lines from the Xero P&L, one row per account per month.
 /// Costs live on FinancialRecord (type="cost") for historical reasons; income
 /// is kept here so summing FinancialRecord retainers can never double-count it.
-/// Financial-year Profit & Loss split, for the revenue-allocation chart.
-/// Direct labour is separated out of cost of sales; overhead salaries stay in opex.
-model XeroFinancialYear {
-  fy                String   @id // "FY26"
+/// Profit & Loss split per period (FY quarters), for the revenue-allocation
+/// chart. Direct labour is separated out of cost of sales; overhead salaries
+/// stay in opex, so the segment means delivery labour rather than all payroll.
+model XeroPeriodPnl {
+  period            String   @id // "2026-04" — the period's first month, sortable
+  label             String // "Q4 FY26"
   fromDate          String // YYYY-MM-DD
   toDate            String
   income            Float
-  directLabour      Float // wages/superannuation inside cost of sales
-  costOfSalesOther  Float // cost of sales excluding direct labour
+  directLabour      Float
+  costOfSalesOther  Float
   operatingExpenses Float
   operatingProfit   Float
   lastSyncedAt      DateTime @default(now())

@@ -147,8 +147,9 @@ function parseXeroPeriodLabel(label: string): string | null {
   return `${yr}-${mon}`;
 }
 
-export interface FyPnlSplit {
-  fy: string; // "FY26"
+export interface PeriodPnlSplit {
+  period: string; // "2026-Q1" — sortable key
+  label: string; // "Q1 FY27"
   fromDate: string;
   toDate: string;
   income: number;
@@ -165,18 +166,19 @@ const isLabourAccount = (account: string): boolean => {
 };
 
 /**
- * Profit & Loss for one Australian financial year (1 Jul – 30 Jun), split into
- * the four buckets of the revenue-allocation chart. Direct labour is pulled out
- * of cost of sales; overhead salaries stay inside operating expenses, which is
- * what makes "Direct Labour" mean delivery labour rather than all payroll.
+ * Profit & Loss for an arbitrary date window, split into the four buckets of the
+ * revenue-allocation chart. Direct labour is pulled out of cost of sales;
+ * overhead salaries stay inside operating expenses, which is what makes
+ * "Direct Labour" mean delivery labour rather than all payroll.
  */
-export async function fetchFyPnl(
+export async function fetchPeriodPnl(
   accessToken: string,
   tenantId: string,
-  startYear: number
-): Promise<FyPnlSplit> {
-  const fromDate = `${startYear}-07-01`;
-  const toDate = `${startYear + 1}-06-30`;
+  period: string,
+  label: string,
+  fromDate: string,
+  toDate: string
+): Promise<PeriodPnlSplit> {
   const report = await xeroFetch<{ Reports?: { Rows?: XeroReportRow[] }[] }>(
     accessToken,
     tenantId,
@@ -216,21 +218,55 @@ export async function fetchFyPnl(
     }
   }
 
-  // Derived from the parts rather than read off Xero's Net Profit row: that row
-  // also includes Other Income (interest), so the four segments would sum to
-  // more than 100% of revenue and the stacked chart would overshoot.
+  // Derived from the parts rather than Xero's Net Profit row: that row also
+  // includes Other Income (interest), so the four segments would sum to more
+  // than 100% of revenue and the stacked chart would overshoot.
   const operatingProfit = income - directLabour - costOfSalesOther - operatingExpenses;
 
-  return {
-    fy: `FY${String(startYear + 1).slice(2)}`,
-    fromDate,
-    toDate,
-    income,
-    directLabour,
-    costOfSalesOther,
-    operatingExpenses,
-    operatingProfit,
-  };
+  return { period, label, fromDate, toDate, income, directLabour, costOfSalesOther, operatingExpenses, operatingProfit };
+}
+
+/**
+ * The `count` most recent COMPLETE Australian FY quarters (Jul-Sep = Q1), newest
+ * last. The in-progress quarter is excluded — its costs aren't booked yet, so it
+ * would show an inflated profit share.
+ */
+export function recentCompleteQuarters(
+  count: number,
+  now = new Date()
+): { period: string; label: string; fromDate: string; toDate: string }[] {
+  // Index the current quarter, then step back one so we start from a complete one.
+  const qIndex = Math.floor(now.getMonth() / 3); // calendar quarter 0-3
+  let year = now.getFullYear();
+  let q = qIndex - 1;
+  if (q < 0) {
+    q = 3;
+    year -= 1;
+  }
+
+  const out: { period: string; label: string; fromDate: string; toDate: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const startMonth = q * 3; // 0, 3, 6, 9
+    const from = new Date(year, startMonth, 1);
+    const to = new Date(year, startMonth + 3, 0); // last day of the quarter
+    const iso = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    // Australian FY quarter: Jul-Sep is Q1 of the FY ending the following June.
+    const fyQuarter = ((startMonth - 6 + 12) % 12) / 3 + 1;
+    const fyEndYear = startMonth >= 6 ? year + 1 : year;
+    out.push({
+      period: `${iso(from).slice(0, 7)}`,
+      label: `Q${fyQuarter} FY${String(fyEndYear).slice(2)}`,
+      fromDate: iso(from),
+      toDate: iso(to),
+    });
+    q -= 1;
+    if (q < 0) {
+      q = 3;
+      year -= 1;
+    }
+  }
+  return out.reverse();
 }
 
 /** The `YYYY-MM` keys for the `count` months ending with the month containing `now`. */
