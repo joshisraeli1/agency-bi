@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   // Fetch the user's stored (but not yet enabled) TOTP secret
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    select: { id: true, email: true, name: true, role: true, totpSecret: true },
+    select: { id: true, email: true, name: true, role: true, division: true, totpSecret: true },
   });
 
   if (!user || !user.totpSecret) {
@@ -96,12 +96,16 @@ export async function POST(request: NextRequest) {
     data: { totpEnabled: true },
   });
 
-  // Re-create the session with totpEnabled = true so the middleware allows access
+  // Re-create the session with totpEnabled = true so the middleware allows access.
+  // Division must be carried over: a divisional leader signs in with Google,
+  // is sent straight here to set up 2FA, and this session replaces that one —
+  // dropping it left them with "No division assigned" on their first visit.
   await createSession({
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
+    division: user.division,
     totpEnabled: true,
   });
 
