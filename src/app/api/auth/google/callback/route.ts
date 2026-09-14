@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { createSession, hashPassword, logAudit } from "@/lib/auth";
-import { exchangeCodeForProfile, isAllowedGoogleProfile } from "@/lib/auth-google";
+import { accessFor, exchangeCodeForProfile, isAllowedGoogleProfile } from "@/lib/auth-google";
 
 export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
@@ -30,19 +30,26 @@ export async function GET(request: NextRequest) {
   }
   if (!isAllowedGoogleProfile(profile)) return fail("domain");
 
-  // Access is allowlisted (josh + dean), and both are admins — provision new
-  // ones as admin. Existing users keep their role (never downgraded).
+  // Role and division come from the access list — never a hardcoded default.
+  // Provisioning every Google user as admin would hand a divisional leader the
+  // whole dashboard on first sign-in.
+  const access = accessFor(profile.email);
+  if (!access) return fail("domain");
+
   const user = await db.user.upsert({
     where: { email: profile.email },
-    update: { name: profile.name, lastLoginAt: new Date() },
+    // Division is re-asserted on every login so moving someone between
+    // divisions in the list takes effect without touching the database.
+    update: { name: profile.name, lastLoginAt: new Date(), division: access.division ?? null },
     create: {
       email: profile.email,
       name: profile.name,
-      role: "admin",
+      role: access.role,
+      division: access.division ?? null,
       passwordHash: await hashPassword(crypto.randomBytes(32).toString("hex")),
       totpEnabled: false,
     },
-    select: { id: true, email: true, name: true, role: true, totpEnabled: true },
+    select: { id: true, email: true, name: true, role: true, division: true, totpEnabled: true },
   });
 
   await createSession(user);

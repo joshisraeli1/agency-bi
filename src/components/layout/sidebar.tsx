@@ -14,6 +14,7 @@ import {
   MessageSquare,
   FileSpreadsheet,
   TrendingUp,
+  PieChart,
   // Scale, // used by the hidden Reconciliation nav entry below
 } from "lucide-react";
 
@@ -34,8 +35,12 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar() {
+// The only entry a divisional leader sees.
+const divisionNavItems = [{ href: "/division", label: "My Division", icon: PieChart }];
+
+export function Sidebar({ divisionOnly = false }: { divisionOnly?: boolean }) {
   const pathname = usePathname();
+  const items = divisionOnly ? divisionNavItems : navItems;
 
   return (
     <aside className="w-64 border-r bg-card flex flex-col h-full">
@@ -51,7 +56,7 @@ export function Sidebar() {
         <p className="text-xs text-muted-foreground mt-2 tracking-tight">Agency BI</p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"

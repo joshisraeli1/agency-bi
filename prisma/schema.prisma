@@ -12,7 +12,10 @@ model User {
   email          String     @unique
   name           String
   passwordHash   String
-  role           String     @default("admin") // admin | viewer
+  role           String     @default("admin") // admin | manager | viewer | division_lead
+  // Set only for division_lead: the single division that user may see. A
+  // division_lead with no division sees nothing — the check fails closed.
+  division       String?
   totpSecret     String?
   totpEnabled    Boolean    @default(false)
   // Bumped to revoke all "trusted device" cookies for this user at once — a

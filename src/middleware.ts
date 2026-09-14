@@ -11,7 +11,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "";
 // returns a confusing 401 JSON. The authoritative check still runs server-side
 // in getSession(); a plain string compare is fine here (this is a UX gate, not
 // the security boundary).
-function readValidPayload(token: string): { totpEnabled?: boolean } | null {
+function readValidPayload(token: string): { totpEnabled?: boolean; role?: string } | null {
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature) return null;
   try {
@@ -34,6 +34,17 @@ const PUBLIC_PATHS = [
   "/api/integrations/gmail/callback",
   "/api/integrations/calendar/callback",
   "/api/cron", // Vercel Cron — no session cookie; guarded by CRON_SECRET Bearer check in the route
+];
+
+// A divisional leader may reach only their own dashboard and the auth flow.
+// Everything else is denied here for a clean redirect, AND again server-side in
+// requireDivision() — this middleware is a UX gate, not the security boundary.
+const DIVISION_LEAD_ALLOWED_PATHS = [
+  "/division",
+  "/api/division",
+  "/setup-2fa",
+  "/api/auth",
+  "/logout",
 ];
 
 // Paths that users without 2FA may access (setup flow + auth API routes)
@@ -78,6 +89,21 @@ export function middleware(request: NextRequest) {
   if (payload.totpEnabled === false) {
     if (!SETUP_2FA_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
       return NextResponse.redirect(new URL("/setup-2fa", request.url));
+    }
+  }
+
+  // Divisional leaders are confined to their own dashboard. An API path gets a
+  // 403 rather than a redirect so a fetch fails loudly instead of silently
+  // receiving a login page.
+  if (payload.role === "division_lead") {
+    if (!DIVISION_LEAD_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
+      if (pathname.startsWith("/api")) {
+        return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return NextResponse.redirect(new URL("/division", request.url));
     }
   }
 

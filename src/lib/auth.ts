@@ -54,6 +54,8 @@ export interface SessionPayload {
   email: string;
   name: string;
   role: string;
+  /** Only set for division_lead. The single division that user may see. */
+  division?: string | null;
   totpEnabled: boolean;
   exp: number;
 }
@@ -86,6 +88,7 @@ export async function createSession(user: {
   email: string;
   name: string;
   role: string;
+  division?: string | null;
   totpEnabled: boolean;
 }) {
   const payload: SessionPayload = {
@@ -93,6 +96,7 @@ export async function createSession(user: {
     email: user.email,
     name: user.name,
     role: user.role,
+    division: user.division ?? null,
     totpEnabled: user.totpEnabled,
     exp: Date.now() + SESSION_DURATION_MS,
   };
@@ -219,13 +223,24 @@ export { TRUSTED_DEVICE_COOKIE };
 
 type Role = "admin" | "manager" | "viewer";
 
+export const DIVISION_LEAD_ROLE = "division_lead";
+
 /**
  * Check if a session has the required minimum role.
  * Role hierarchy: admin > manager > viewer
+ *
+ * division_lead is deliberately absent from the hierarchy and therefore scores
+ * 0, so it fails EVERY requireRole check. It is a scoped role on a different
+ * axis, not a rung on this ladder — a divisional leader must never inherit
+ * viewer access to agency-wide pages by accident.
  */
 export function hasRole(session: { role: string }, minRole: Role): boolean {
   const hierarchy: Record<string, number> = { admin: 3, manager: 2, viewer: 1 };
   return (hierarchy[session.role] ?? 0) >= (hierarchy[minRole] ?? 99);
+}
+
+export function isDivisionLead(session: { role: string }): boolean {
+  return session.role === DIVISION_LEAD_ROLE;
 }
 
 /**
@@ -253,6 +268,48 @@ export async function requireRole(minRole: Role): Promise<
     return { error: new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) };
   }
   return { session: auth.session };
+}
+
+/**
+ * The division the caller may see, or a 403.
+ *
+ * This is the security boundary for divisional access — the middleware only
+ * redirects, and its own comment says it is a UX gate. Every divisional query
+ * must scope on the value returned here, never on anything the browser sends.
+ *
+ * Fails CLOSED: a division_lead whose division was never set gets 403 rather
+ * than an unfiltered view. Admins pass through with whichever division they
+ * ask for, so the same page can serve both.
+ */
+export async function requireDivision(
+  requested?: string | null
+): Promise<
+  { session: SessionPayload; division: string; error?: never } | { session?: never; division?: never; error: Response }
+> {
+  const auth = await requireAuth();
+  if (auth.error) return { error: auth.error };
+  const session = auth.session;
+
+  if (isDivisionLead(session)) {
+    const own = (session.division ?? "").trim();
+    if (!own) {
+      return {
+        error: new Response(JSON.stringify({ error: "No division assigned" }), { status: 403 }),
+      };
+    }
+    // A divisional lead only ever gets their own division, whatever was asked for.
+    return { session, division: own };
+  }
+
+  if (hasRole(session, "viewer")) {
+    const asked = (requested ?? "").trim();
+    if (!asked) {
+      return { error: new Response(JSON.stringify({ error: "Division required" }), { status: 400 }) };
+    }
+    return { session, division: asked };
+  }
+
+  return { error: new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) };
 }
 
 // ---------------------------------------------------------------------------

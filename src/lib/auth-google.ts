@@ -5,7 +5,31 @@ export const ALLOWED_DOMAIN = "swan.studio"; // used only for the Google `hd` hi
 
 // Access is restricted to these specific accounts (both admins). Add an email
 // here to grant access; nobody else on the domain can sign in.
-export const ALLOWED_EMAILS = ["josh@swan.studio", "dean@swan.studio"];
+/**
+ * Who may sign in with Google, and what they get.
+ *
+ * This map is the ONLY place access is granted. Provisioning reads the role and
+ * division from here rather than defaulting to admin — adding an email without
+ * an entry grants nothing.
+ *
+ * NOTE: the three divisional-leader addresses follow the firstname@swan.studio
+ * pattern of the existing accounts and are unconfirmed. Correct them here if a
+ * lead cannot sign in; nothing else needs to change.
+ */
+export const ACCESS_LIST: Record<string, { role: string; division?: string }> = {
+  "josh@swan.studio": { role: "admin" },
+  "dean@swan.studio": { role: "admin" },
+  "vitor@swan.studio": { role: "division_lead", division: "Content Delivery" },
+  "francesca@swan.studio": { role: "division_lead", division: "Social Media Management" },
+  "vatsal@swan.studio": { role: "division_lead", division: "Ads Management" },
+};
+
+export const ALLOWED_EMAILS = Object.keys(ACCESS_LIST);
+
+/** The role and division to provision for an allowlisted email. */
+export function accessFor(email: string): { role: string; division?: string } | null {
+  return ACCESS_LIST[email.toLowerCase()] ?? null;
+}
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
