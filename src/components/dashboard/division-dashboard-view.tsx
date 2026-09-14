@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, Users, Receipt, ArrowLeftRight } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import type { DivisionDashboard, DivisionMonth } from "@/lib/analytics/division-dashboard";
+import type { DivisionGoalProgress } from "@/lib/analytics/division-goals";
+import { DivisionBonusCard } from "@/components/dashboard/division-bonus-card";
 
 // Reuses the set already validated for this dashboard: contrast >= 3:1 and
 // CVD-separable against the chart surface in both light and dark mode.
@@ -47,13 +49,18 @@ function Tile({ icon, label, value, note }: { icon: React.ReactNode; label: stri
 export function DivisionDashboardView({
   data,
   displayName,
+  goals,
 }: {
   data: DivisionDashboard;
   displayName: string;
+  goals?: DivisionGoalProgress | null;
 }) {
   const [selected, setSelected] = useState<{ month: DivisionMonth; kind: "new" | "churn" } | null>(null);
 
-  const { months, clients } = data;
+  // 18 months are fetched so the bonus period is fully covered; the charts stay
+  // at 12 so they don't get unreadably dense.
+  const months = data.months.slice(-12);
+  const { clients } = data;
   const latest = months[months.length - 1];
   const prev = months[months.length - 2];
   const change = prev && prev.revenue > 0 ? ((latest.revenue - prev.revenue) / prev.revenue) * 100 : null;
@@ -110,6 +117,8 @@ export function DivisionDashboardView({
           note={`+${formatCurrency(latest.newRevenue)} new · −${formatCurrency(latest.churnedRevenue)} churned`}
         />
       </div>
+
+      {goals && <DivisionBonusCard data={goals} />}
 
       <Card>
         <CardHeader>

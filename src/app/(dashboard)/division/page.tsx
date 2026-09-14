@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, isDivisionLead, hasRole } from "@/lib/auth";
 import { getDivisionDashboard } from "@/lib/analytics/division-dashboard";
 import { DivisionDashboardView } from "@/components/dashboard/division-dashboard-view";
+import { computeGoalProgress, getDivisionBonusPlan } from "@/lib/analytics/division-goals";
 import { divisionDisplayName, isDivisionKey, DIVISION_KEYS } from "@/lib/divisions";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,20 @@ export default async function DivisionPage({
     );
   }
 
-  const data = await getDivisionDashboard(division, 12);
+  // 18 months so the bonus period (12 from its start) is fully covered even
+  // once the FY is well under way.
+  const [data, plan] = await Promise.all([
+    getDivisionDashboard(division, 18),
+    getDivisionBonusPlan(division),
+  ]);
 
-  return <DivisionDashboardView data={data} displayName={divisionDisplayName(division)} />;
+  const goals = plan ? computeGoalProgress(plan, data.months) : null;
+
+  return (
+    <DivisionDashboardView
+      data={data}
+      displayName={divisionDisplayName(division)}
+      goals={goals}
+    />
+  );
 }
