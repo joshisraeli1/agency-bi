@@ -34,11 +34,13 @@ export function RevenueVsChurnChart({ data }: Props) {
     net: d.net,
   }));
 
+  // "$0" rather than a blank: an unlabelled zero leaves a gap where a bar should
+  // be, which reads as missing data instead of a month where nothing churned.
   const formatLabel = (value: unknown) => {
     const v = Number(value);
-    if (v === 0) return "";
+    if (v === 0) return "$0";
     if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`;
-    return `$${v}`;
+    return `$${Math.round(v)}`;
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +89,7 @@ export function RevenueVsChurnChart({ data }: Props) {
               dataKey="New Revenue"
               fill="#22c55e"
               radius={[4, 4, 0, 0]}
+              minPointSize={2}
               cursor="pointer"
               onClick={handleBarClick("new")}
             >
@@ -101,6 +104,7 @@ export function RevenueVsChurnChart({ data }: Props) {
               dataKey="Churned Revenue"
               fill="#ef4444"
               radius={[4, 4, 0, 0]}
+              minPointSize={2}
               cursor="pointer"
               onClick={handleBarClick("churn")}
             >

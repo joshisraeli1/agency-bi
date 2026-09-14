@@ -71,11 +71,14 @@ export function DivisionDashboardView({
     month: m.month,
   }));
 
+  // A zero month must still be labelled "$0". Hiding the label leaves a gap
+  // where a bar should be, which reads as missing data rather than as nothing
+  // having happened — and a month with no churn is a result worth seeing.
   const formatLabel = (value: unknown) => {
     const v = Number(value);
-    if (v === 0) return "";
+    if (v === 0) return "$0";
     if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`;
-    return `$${v}`;
+    return `$${Math.round(v)}`;
   };
 
   return (
@@ -143,7 +146,12 @@ export function DivisionDashboardView({
         </CardHeader>
         <CardContent className="space-y-4">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={movementData} margin={{ top: 20, right: 12, bottom: 4, left: 4 }}>
+            <BarChart
+              data={movementData}
+              margin={{ top: 20, right: 12, bottom: 4, left: 4 }}
+              barGap={2}
+              barCategoryGap="22%"
+            >
               <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
               <XAxis dataKey="label" ticks={ticks} tick={{ fontSize: 11 }} tickLine={false} interval={0} />
               <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtAxis} width={52} />
@@ -158,6 +166,7 @@ export function DivisionDashboardView({
                 fill={NEW_COLOR}
                 radius={[4, 4, 0, 0]}
                 maxBarSize={34}
+                minPointSize={2}
                 cursor="pointer"
                 onClick={(bar) => {
                   const month = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
@@ -177,6 +186,7 @@ export function DivisionDashboardView({
                 fill={CHURN_COLOR}
                 radius={[4, 4, 0, 0]}
                 maxBarSize={34}
+                minPointSize={2}
                 cursor="pointer"
                 onClick={(bar) => {
                   const month = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
