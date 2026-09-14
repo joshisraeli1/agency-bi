@@ -13,8 +13,9 @@ export const dynamic = "force-dynamic";
  * edits ?d= still gets their own division. Admins may pass ?d= to preview any
  * division, which is what makes this page reviewable without a lead's login.
  *
- * Fails closed: a lead with no division assigned is sent to /login rather than
- * shown an unscoped view.
+ * Fails closed: a lead whose division is missing or unrecognised is shown an
+ * explanatory message, never an unscoped view. Bouncing them to /login would be
+ * equally safe but baffling — they are signed in; it is the mapping that is wrong.
  */
 export default async function DivisionPage({
   searchParams,
@@ -33,7 +34,18 @@ export default async function DivisionPage({
     division = isDivisionKey(d) ? d : DIVISION_KEYS[0];
   }
 
-  if (!division) redirect("/login");
+  if (!division) {
+    return (
+      <div className="max-w-xl space-y-3">
+        <h1 className="text-2xl font-bold">No division assigned</h1>
+        <p className="text-muted-foreground">
+          Your account is signed in as <span className="font-medium">{session.email}</span> but
+          isn&apos;t linked to a division yet, so there&apos;s nothing to show. Ask Josh to check the
+          access list — it&apos;s a one-line fix.
+        </p>
+      </div>
+    );
+  }
 
   const data = await getDivisionDashboard(division, 12);
 
