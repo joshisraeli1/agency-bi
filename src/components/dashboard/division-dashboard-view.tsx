@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   BarChart,
   Bar,
+  LabelList,
   LineChart,
   Line,
   XAxis,
@@ -21,8 +22,10 @@ import type { DivisionDashboard, DivisionMonth } from "@/lib/analytics/division-
 // Reuses the set already validated for this dashboard: contrast >= 3:1 and
 // CVD-separable against the chart surface in both light and dark mode.
 const REVENUE_COLOR = "#ea580c";
-const NEW_COLOR = "#0d9488";
-const CHURN_COLOR = "#dc2626";
+// Matches the overview's New Revenue vs Churn chart, so the two read as one
+// system rather than two takes on the same measure.
+const NEW_COLOR = "#22c55e";
+const CHURN_COLOR = "#ef4444";
 
 const fmtAxis = (v: number) => (Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}K` : `$${v}`);
 
@@ -58,13 +61,22 @@ export function DivisionDashboardView({
   const step = months.length > 8 ? 2 : 1;
   const ticks = months.filter((_, i) => i % step === 0).map((m) => m.label);
 
+  // Both series positive and drawn side by side, as on the overview. Churn as a
+  // negative made the axis run below zero and the bars read as a diverging
+  // measure, which is harder to compare at a glance than two bars of equal footing.
   const movementData = months.map((m) => ({
     label: m.label,
-    New: m.newRevenue,
-    // Negative so churn draws below the baseline and the two never visually cancel.
-    Churned: -m.churnedRevenue,
+    "New Revenue": m.newRevenue,
+    "Churned Revenue": m.churnedRevenue,
     month: m.month,
   }));
+
+  const formatLabel = (value: unknown) => {
+    const v = Number(value);
+    if (v === 0) return "";
+    if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`;
+    return `$${v}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -131,47 +143,55 @@ export function DivisionDashboardView({
         </CardHeader>
         <CardContent className="space-y-4">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={movementData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }} stackOffset="sign">
+            <BarChart data={movementData} margin={{ top: 20, right: 12, bottom: 4, left: 4 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
               <XAxis dataKey="label" ticks={ticks} tick={{ fontSize: 11 }} tickLine={false} interval={0} />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v: number) => fmtAxis(Math.abs(v))}
-                width={52}
-              />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtAxis} width={52} />
               <Tooltip
                 cursor={{ fill: "currentColor", fillOpacity: 0.06 }}
-                formatter={(value, name) => [formatCurrency(Math.abs(Number(value ?? 0))), String(name)]}
+                formatter={(value, name) => [formatCurrency(Number(value ?? 0)), String(name)]}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
               />
               <Legend />
               <Bar
-                dataKey="New"
+                dataKey="New Revenue"
                 fill={NEW_COLOR}
-                radius={[3, 3, 0, 0]}
+                radius={[4, 4, 0, 0]}
                 maxBarSize={34}
+                cursor="pointer"
                 onClick={(bar) => {
                   const month = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
                   const m = months.find((x) => x.month === month);
                   if (m) setSelected({ month: m, kind: "new" });
                 }}
-                className="cursor-pointer"
-              />
+              >
+                <LabelList
+                  dataKey="New Revenue"
+                  position="top"
+                  formatter={formatLabel}
+                  style={{ fontSize: 10, fill: NEW_COLOR, fontWeight: 600 }}
+                />
+              </Bar>
               <Bar
-                dataKey="Churned"
+                dataKey="Churned Revenue"
                 fill={CHURN_COLOR}
-                radius={[0, 0, 3, 3]}
+                radius={[4, 4, 0, 0]}
                 maxBarSize={34}
+                cursor="pointer"
                 onClick={(bar) => {
                   const month = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
                   const m = months.find((x) => x.month === month);
                   if (m) setSelected({ month: m, kind: "churn" });
                 }}
-                className="cursor-pointer"
-              />
-            </BarChart>
+              >
+                <LabelList
+                  dataKey="Churned Revenue"
+                  position="top"
+                  formatter={formatLabel}
+                  style={{ fontSize: 10, fill: CHURN_COLOR, fontWeight: 600 }}
+                />
+              </Bar>
+          </BarChart>
           </ResponsiveContainer>
 
           {selected && (
