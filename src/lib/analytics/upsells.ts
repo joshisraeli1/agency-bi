@@ -46,6 +46,65 @@ export function isOneOff(d: FoldableDeal): boolean {
   return (d.packageDescription ?? "").toLowerCase().replace(/[^a-z]/g, "") === "oneoff";
 }
 
+/**
+ * Package types that name no division. HubSpot's "Other" covers one-off pieces
+ * of work — a website build, a shoot — which belong to whichever division already
+ * serves that client, not to Content Delivery just because it is the catch-all.
+ */
+const UNSPECIFIED_PACKAGE_TYPES = new Set(["other", ""]);
+
+export interface DivisionResolvable {
+  id: string;
+  clientId?: string | null;
+  companyName?: string | null;
+  contentPackageType?: string | null;
+}
+
+/**
+ * What ties a company's deals together. clientId is preferred, but plenty of
+ * companies have no Client record at all (Ipanema is one), and for those the
+ * HubSpot "Company name" is the only thing linking their deals.
+ */
+const companyKeyOf = (d: DivisionResolvable): string | null =>
+  d.clientId ?? (d.companyName ? `name:${normalize(d.companyName)}` : null);
+
+/**
+ * Division per deal, resolving unspecified package types by the client they
+ * belong to.
+ *
+ * dealDivision() alone maps "Other" to Content Delivery via its catch-all, which
+ * silently credited Ipanema's website build to Ad Creative even though Ipanema is
+ * an Ads Management client. Here an unspecified deal takes the division of the
+ * client's highest-value specified deal, falling back to dealDivision() when the
+ * client has nothing else to go on.
+ */
+export function resolveDealDivisions<T extends DivisionResolvable & { amountExGst?: number | null }>(
+  deals: T[]
+): Map<string, string> {
+  // Strongest signal per company: the division of their largest specified deal.
+  const byCompany = new Map<string, { division: string; amount: number }>();
+  for (const d of deals) {
+    const pkg = (d.contentPackageType ?? "").toLowerCase().trim();
+    if (UNSPECIFIED_PACKAGE_TYPES.has(pkg)) continue;
+    const key = companyKeyOf(d);
+    if (!key) continue;
+    const amount = d.amountExGst ?? 0;
+    const best = byCompany.get(key);
+    if (!best || amount > best.amount) {
+      byCompany.set(key, { division: dealDivision(d.contentPackageType), amount });
+    }
+  }
+
+  const out = new Map<string, string>();
+  for (const d of deals) {
+    const pkg = (d.contentPackageType ?? "").toLowerCase().trim();
+    const key = companyKeyOf(d);
+    const inherited = UNSPECIFIED_PACKAGE_TYPES.has(pkg) && key ? byCompany.get(key) : undefined;
+    out.set(d.id, inherited ? inherited.division : dealDivision(d.contentPackageType));
+  }
+  return out;
+}
+
 /** Canonical 3-way division for matching an upsell to a same-division base. */
 export function dealDivision(pkg: string | null | undefined): string {
   const p = (pkg ?? "").toLowerCase().trim();

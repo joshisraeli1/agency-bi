@@ -3,7 +3,7 @@ import { formatMonth } from "@/lib/utils";
 import { DIVISIONS, mapAccountToDivisions } from "./cost-allocation";
 import { getExcludedClientIds } from "./excluded-clients";
 import { foldUpsells } from "./upsells";
-import { dealDivision } from "./upsells";
+import { resolveDealDivisions } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { DivisionProfitabilityRow } from "./types";
 
@@ -39,7 +39,7 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: DOWNSELL_DEAL_SELECT,
+      select: { ...DOWNSELL_DEAL_SELECT, companyName: true },
     }),
     getDownsellResolution(),
   ]);
@@ -81,6 +81,8 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     }
   }
 
+  const divisionByDeal = resolveDealDivisions(deals);
+
   // Deals live in a given month, folded so an upsell isn't counted as its own
   // deal — the same basis the avg-deal-size comparison uses.
   const dealStatsFor = (month: string) => {
@@ -97,7 +99,7 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     for (const d of folded) {
       const ex = d.amountExGst ?? d.amount ?? 0;
       if (ex <= 0) continue;
-      const div = dealDivision(d.contentPackageType);
+      const div = divisionByDeal.get(d.id) ?? "Content Delivery";
       sum.set(div, (sum.get(div) ?? 0) + ex);
       count.set(div, (count.get(div) ?? 0) + 1);
     }
@@ -115,7 +117,6 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     const rows: DivisionProfitabilityRow[] = DIVISIONS.map((division) => {
       const r = rev.get(division) ?? 0;
       const c = cost.get(division) ?? 0;
-      // dealDivision() calls the paid-content bucket "Content Delivery" too.
       const n = count.get(division) ?? 0;
       return {
         division,

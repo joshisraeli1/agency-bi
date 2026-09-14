@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { dealDivision, foldUpsells, isOneOff } from "./upsells";
+import { foldUpsells, isOneOff, resolveDealDivisions } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 
 export interface DivisionClient {
@@ -52,17 +52,21 @@ export async function getDivisionDashboard(
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: DOWNSELL_DEAL_SELECT,
+      select: { ...DOWNSELL_DEAL_SELECT, companyName: true },
     }),
     getDownsellResolution(),
   ]);
 
-  // Scope first, once. Everything below works on this division's deals only.
+  // Resolve divisions across the whole book first, so a deal with an unspecified
+  // package type can inherit the division of the client it belongs to.
+  const divisionByDeal = resolveDealDivisions(allDeals);
+
+  // Scope once. Everything below works on this division's deals only.
   const deals = allDeals.filter((d) => {
     if (d.clientId && excludedIds.has(d.clientId)) return false;
     if (downsells.heldOutIds.has(d.id)) return false;
     if (isOneOff(d) || /ad[\s-]?hoc/i.test(d.name)) return false;
-    return dealDivision(d.contentPackageType) === division;
+    return divisionByDeal.get(d.id) === division;
   });
 
   const now = new Date();
