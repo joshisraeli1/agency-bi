@@ -50,6 +50,11 @@ interface Client {
   endDate: Date | string | null;
   ltv?: number | null;
   division: string;
+  /** Share of total live revenue across the whole book. */
+  percentOfRevenue?: number;
+  /** No HubSpot deal behind this row — a Monday/manual client whose figure
+   *  comes from its stored record rather than from deals. */
+  unlinked?: boolean;
   _count: { aliases: number };
 }
 
@@ -99,9 +104,11 @@ type StatusFilter = "active" | "churned" | "all";
 export function ClientsActions({
   clients,
   divisionRevenue = {},
+  totalRevenue = 0,
 }: {
   clients: Client[];
   divisionRevenue?: Record<string, number>;
+  totalRevenue?: number;
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
@@ -132,8 +139,11 @@ export function ClientsActions({
   // Headline divisional revenue comes from the same source as the Overview
   // (deal-based, upsells folded), so it ties out exactly — independent of the
   // per-client rows below.
+  // "All Services" shows the whole live book; a service filter shows that
+  // division's total. Both come from the deal-derived book, so they tie to the
+  // divisional dashboards exactly.
   const divisionTotal = serviceFilter === "all"
-    ? 0
+    ? totalRevenue
     : (divisionRevenue[SERVICE_LABELS[serviceFilter]] ?? 0);
   const sortArrow = (key: "amount" | "ltv") => (sortKey === key ? (sortDir === "desc" ? " ↓" : " ↑") : "");
 
@@ -246,10 +256,10 @@ export function ClientsActions({
                 ? `${statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Churned"} Clients`
                 : SERVICE_LABELS[serviceFilter]}
             </CardTitle>
-            {serviceFilter !== "all" && (
+            {divisionTotal > 0 && (
               <div className="text-right">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Divisional Revenue
+                  {serviceFilter === "all" ? "Total Live Revenue" : "Divisional Revenue"}
                 </div>
                 <div className="text-2xl font-bold tabular-nums">
                   {formatCurrency(divisionTotal)}
@@ -276,6 +286,7 @@ export function ClientsActions({
                   >
                     {serviceFilter === "all" ? "Deal Size" : "Amount"}{sortArrow("amount")}
                   </TableHead>
+                  <TableHead className="text-right">Share</TableHead>
                   <TableHead
                     className="text-right cursor-pointer select-none hover:text-foreground"
                     onClick={() => toggleSort("ltv")}
@@ -302,6 +313,14 @@ export function ClientsActions({
                             (+{client._count.aliases} aliases)
                           </span>
                         )}
+                        {client.unlinked && (
+                          <span
+                            className="text-xs text-muted-foreground ml-1"
+                            title="No HubSpot deal — figure comes from the stored client record"
+                          >
+                            (no deal linked)
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -317,6 +336,11 @@ export function ClientsActions({
                         const amt = serviceAmount(client, serviceFilter);
                         return amt > 0 ? formatCurrency(amt) : "\u2014";
                       })()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {serviceFilter === "all" && client.status === "active" && (client.percentOfRevenue ?? 0) > 0
+                        ? `${client.percentOfRevenue}%`
+                        : "\u2014"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {client.ltv ? formatCurrency(client.ltv) : "\u2014"}
