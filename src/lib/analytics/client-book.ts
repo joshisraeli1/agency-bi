@@ -41,6 +41,35 @@ const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
 export const UNASSIGNED_DIVISION = "Unassigned";
 
 /**
+ * Industry comes from the DEAL's "Industry Type", not the company record.
+ *
+ * Client.industry is synced from the HubSpot company object and is unusable:
+ * 52 records carry "Content Delivery" and 21 "Social Management" — divisions,
+ * not industries — alongside raw enum values (RESTAURANTS, LEISURE_TRAVEL_TOURISM)
+ * duplicating properly-cased entries, and 422 nulls. The deal field is the one
+ * the team actually maintains.
+ */
+const DIVISION_WORDS = ["content delivery", "social management", "social media management", "ads management", "ad creative"];
+
+function cleanIndustry(value: string | null | undefined): string | null {
+  const v = (value ?? "").trim();
+  if (!v) return null;
+  // A division name in the industry field is a mis-set value, not an industry.
+  if (DIVISION_WORDS.includes(v.toLowerCase())) return null;
+  // Raw HubSpot enums (LEISURE_TRAVEL_TOURISM) duplicate the readable entries.
+  // Requires an underscore: without it this mangles legitimate acronyms, and
+  // "B2B" came back as "B2b".
+  if (/^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(v)) {
+    return v
+      .toLowerCase()
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
+  return v;
+}
+
+/**
  * The client list, derived from deals rather than from Client.status.
  *
  * Client.status and Client.retainerValue are written once and never revised, so
@@ -63,7 +92,7 @@ export async function getClientBook(): Promise<ClientBook> {
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { ...DOWNSELL_DEAL_SELECT, companyName: true },
+      select: { ...DOWNSELL_DEAL_SELECT, companyName: true, industry: true },
     }),
     getDownsellResolution(),
     db.client.findMany({
@@ -162,7 +191,12 @@ export async function getClientBook(): Promise<ClientBook> {
       dealCount: folded.length,
       startDate,
       endDate,
-      industry: record?.industry ?? null,
+      // Largest live deal's industry first; any deal's as a fallback; the
+      // company record only as a last resort, cleaned.
+      industry:
+        cleanIndustry(primary?.industry) ??
+        cleanIndustry(groupDeals.find((d) => d.industry)?.industry) ??
+        cleanIndustry(record?.industry),
       website: record?.website ?? null,
       source: record?.source ?? "hubspot",
       notes: record?.notes ?? null,
@@ -198,7 +232,7 @@ export async function getClientBook(): Promise<ClientBook> {
       dealCount: 0,
       startDate: c.startDate,
       endDate: null,
-      industry: c.industry,
+      industry: cleanIndustry(c.industry),
       website: c.website,
       source: c.source,
       notes: c.notes,
