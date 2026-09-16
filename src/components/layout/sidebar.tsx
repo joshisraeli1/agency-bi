@@ -24,6 +24,10 @@ const navItems = [
   { href: "/client-data", label: "Client Data", icon: FileSpreadsheet },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/michael", label: "Michael", icon: TrendingUp },
+  // Leadership-only: an index of every division, for seeing what a lead sees.
+  // Absent from divisionNavItems below, so the nav swap keeps it away from leads;
+  // /divisions does its own check, because a hidden link is not a boundary.
+  { href: "/divisions", label: "Divisions", icon: PieChart },
   // Reconciliation moved to a dedicated tool. The page and its data are intact
   // and still reachable at /reconciliation for looking back — only the nav entry
   // is hidden, so the figures here can't be mistaken for the current source of
