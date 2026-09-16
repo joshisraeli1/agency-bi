@@ -52,6 +52,10 @@ interface Client {
   division: string;
   /** Share of total live revenue across the whole book. */
   percentOfRevenue?: number;
+  /** Live revenue split by the division each deal belongs to. A company can
+   *  span divisions, so `division` above is only its largest — this is what a
+   *  filtered view must read, never the company-wide total. */
+  revenueByDivision?: Record<string, number>;
   /** No HubSpot deal behind this row — a Monday/manual client whose figure
    *  comes from its stored record rather than from deals. */
   unlinked?: boolean;
@@ -66,11 +70,16 @@ const SERVICE_LABELS: Record<Exclude<ServiceFilter, "all">, string> = {
   ads: "Ads Management",
 };
 
-// Deal-based: a client belongs to one division; its amount is the full
-// (deal-derived) retainer. Matches the Revenue by Package Type grouping.
+// Deal-based and division-scoped. A company can span divisions — Blue Light Card
+// runs Content and Ads — so a filtered view shows only that division's share of
+// the retainer, never the company-wide total. Reading the full retainer off the
+// primary-division label both inflated every split client's row and hid clients
+// whose largest division was elsewhere (City Swoon's Content work sat under Ads).
+// Scoping here makes the rows sum to the divisional figure in the header, which
+// has always been computed this way.
 function serviceAmount(client: Client, filter: ServiceFilter): number {
   if (filter === "all") return client.retainerValue ?? 0;
-  return client.division === SERVICE_LABELS[filter] ? (client.retainerValue ?? 0) : 0;
+  return client.revenueByDivision?.[SERVICE_LABELS[filter]] ?? 0;
 }
 
 function formatTenure(startDate: Date | string | null, endDate: Date | string | null, status: string): string {

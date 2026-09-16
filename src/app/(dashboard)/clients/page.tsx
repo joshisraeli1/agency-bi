@@ -34,6 +34,7 @@ export default async function ClientsPage() {
     endDate: c.endDate,
     ltv: c.ltv,
     division: c.division,
+    revenueByDivision: c.revenueByDivision,
     unlinked: c.unlinked,
     _count: { aliases: c.aliasCount },
   }));
