@@ -3,7 +3,9 @@ import { getSession, isDivisionLead, hasRole } from "@/lib/auth";
 import { getDivisionDashboard } from "@/lib/analytics/division-dashboard";
 import { DivisionDashboardView } from "@/components/dashboard/division-dashboard-view";
 import { computeGoalProgress, getDivisionBonusPlan } from "@/lib/analytics/division-goals";
-import { isScopeKey, resolveScope, DIVISION_KEYS } from "@/lib/divisions";
+import { isScopeKey, resolveScope, findDivisionView, DIVISION_KEYS } from "@/lib/divisions";
+import { getClientSuccessDashboard } from "@/lib/analytics/client-success";
+import { ClientSuccessView } from "@/components/dashboard/client-success-view";
 
 export const dynamic = "force-dynamic";
 
@@ -52,12 +54,17 @@ export default async function DivisionPage({
 
   // 18 months so the bonus period (12 from its start) is fully covered even
   // once the FY is well under way.
-  // A view has no bonus plan of its own — the plan belongs to the division it
-  // cuts, and paying a cut's lead against the whole division's tiers would be
-  // wrong in both directions.
+  // A client-servicing lead is measured on what they KEEP, a division lead on
+  // what they grow. Same data, different question — so a view gets its own
+  // dashboard rather than the divisional one with a filter over it.
+  const view = findDivisionView(scopeKey);
+  if (view) {
+    return <ClientSuccessView data={await getClientSuccessDashboard(view)} />;
+  }
+
   const [data, plan] = await Promise.all([
-    getDivisionDashboard(scope.division, 18, { clientManager: scope.clientManager }),
-    scope.isView ? Promise.resolve(null) : getDivisionBonusPlan(scope.division),
+    getDivisionDashboard(scope.division, 18),
+    getDivisionBonusPlan(scope.division),
   ]);
 
   const goals = plan ? computeGoalProgress(plan, data.months) : null;
