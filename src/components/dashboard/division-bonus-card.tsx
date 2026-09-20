@@ -11,13 +11,22 @@ const BEHIND = "#94a3b8";
 
 export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
   const {
-    tiers, cumulative, projected, monthsElapsed, monthsInPeriod,
-    fyStartLabel, latestMonthly, currentBonus, projectedBonus,
+    tiers, cumulative, projected, monthsElapsed, monthsInPeriod, basis,
+    fyStartLabel, endLabel, latestMonthly, measured, currentBonus, projectedBonus,
   } = data;
+
+  // A final-month plan measures a LEVEL that can fall as well as rise, so the
+  // card's accumulation vocabulary — "banked", "so far", a projection running
+  // ahead of the bar — would misdescribe it. Nothing is banked until the period
+  // settles, and the run-rate projection is just the current month restated.
+  const isLevel = basis === "final-month";
 
   const topTarget = tiers[tiers.length - 1]?.target ?? 0;
   const pct = (v: number) => (topTarget > 0 ? Math.min(100, (v / topTarget) * 100) : 0);
   const nextTier = tiers.find((t) => !t.projectedToHit);
+  // The copy below used to name "Tier 1" whatever the next tier actually was.
+  const nextTierNo = nextTier ? tiers.indexOf(nextTier) + 1 : 0;
+  const monthsLeft = Math.max(0, monthsInPeriod - monthsElapsed);
 
   return (
     <Card>
@@ -27,16 +36,27 @@ export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
           Bonus Progress
         </CardTitle>
         <p className="text-muted-foreground text-sm mt-1">
-          Cumulative division revenue (ex-GST) from {fyStartLabel}. Month {monthsElapsed} of{" "}
-          {monthsInPeriod}.
+          {isLevel ? (
+            <>
+              Monthly division revenue (ex-GST). Settles on where it lands in {endLabel} — month{" "}
+              {monthsElapsed} of {monthsInPeriod}.
+            </>
+          ) : (
+            <>
+              Cumulative division revenue (ex-GST) from {fyStartLabel}. Month {monthsElapsed} of{" "}
+              {monthsInPeriod}.
+            </>
+          )}
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm">
           <span>
-            <span className="text-2xl font-semibold tabular-nums">{formatCurrency(cumulative)}</span>
-            <span className="text-muted-foreground ml-2">so far</span>
+            <span className="text-2xl font-semibold tabular-nums">{formatCurrency(measured)}</span>
+            <span className="text-muted-foreground ml-2">{isLevel ? "this month" : "so far"}</span>
           </span>
           <span className="self-end text-muted-foreground">
-            tracking to {formatCurrency(projected)} at {formatCurrency(latestMonthly)}/mo
+            {isLevel
+              ? `${monthsLeft} month${monthsLeft === 1 ? "" : "s"} left to settle`
+              : `tracking to ${formatCurrency(projected)} at ${formatCurrency(latestMonthly)}/mo`}
           </span>
         </div>
       </CardHeader>
@@ -46,8 +66,16 @@ export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
             than each tier having its own full-width bar. */}
         <div className="space-y-1">
           <div className="relative h-3 rounded-full bg-muted overflow-hidden">
-            <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct(projected)}%`, background: PACE, opacity: 0.35 }} />
-            <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct(cumulative)}%`, background: HIT }} />
+            {/* The pace fill is the gap between banked and projected. On a level
+                basis the two are the same number, so drawing it would just
+                double-paint the bar. */}
+            {!isLevel && (
+              <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct(projected)}%`, background: PACE, opacity: 0.35 }} />
+            )}
+            <div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ width: `${pct(measured)}%`, background: isLevel && currentBonus === 0 ? PACE : HIT }}
+            />
             {tiers.map((t) => (
               <div
                 key={t.target}
@@ -58,8 +86,17 @@ export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
             ))}
           </div>
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Banked {formatCurrency(cumulative)}</span>
-            <span>Projected {formatCurrency(projected)}</span>
+            {isLevel ? (
+              <>
+                <span>Currently {formatCurrency(measured)}/mo</span>
+                <span>Top tier {formatCurrency(topTarget)}/mo</span>
+              </>
+            ) : (
+              <>
+                <span>Banked {formatCurrency(cumulative)}</span>
+                <span>Projected {formatCurrency(projected)}</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -68,10 +105,14 @@ export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
             <thead>
               <tr className="border-b text-muted-foreground">
                 <th className="text-left font-medium py-2 px-3">Tier</th>
-                <th className="text-right font-medium py-2 px-3">Revenue target</th>
+                <th className="text-right font-medium py-2 px-3">
+                  {isLevel ? "Monthly target" : "Revenue target"}
+                </th>
                 <th className="text-right font-medium py-2 px-3">Bonus</th>
                 <th className="text-right font-medium py-2 px-3">Progress</th>
-                <th className="text-right font-medium py-2 px-3">On current pace</th>
+                <th className="text-right font-medium py-2 px-3">
+                  {isLevel ? "Where it stands" : "On current pace"}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -89,12 +130,13 @@ export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
                   >
                     {t.attained ? (
                       <span className="inline-flex items-center gap-1">
-                        <Check className="h-3.5 w-3.5" /> Achieved
+                        <Check className="h-3.5 w-3.5" />
+                        {isLevel ? "Currently above" : "Achieved"}
                       </span>
                     ) : t.projectedToHit ? (
                       "On track"
                     ) : (
-                      `${formatCurrency(t.shortfall)} short`
+                      `${formatCurrency(t.shortfall)} ${isLevel ? "/mo short" : "short"}`
                     )}
                   </td>
                 </tr>
@@ -104,16 +146,29 @@ export function DivisionBonusCard({ data }: { data: DivisionGoalProgress }) {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          {currentBonus > 0
-            ? `${formatCurrency(currentBonus)} earned if the year ended today. `
-            : "No tier reached yet. "}
-          {projectedBonus > 0
-            ? `On the current run rate the year finishes at ${formatCurrency(projectedBonus)}.`
-            : nextTier
-              ? `Tier 1 needs another ${formatCurrency(nextTier.shortfall)} above the current run rate — about ${formatCurrency(
-                  Math.ceil(nextTier.shortfall / Math.max(1, monthsInPeriod - monthsElapsed)),
-                )} more per month for the rest of the year.`
-              : ""}
+          {isLevel ? (
+            <>
+              {currentBonus > 0
+                ? `${formatCurrency(currentBonus)} if the division holds this level to ${endLabel}. `
+                : `Below tier 1 — nothing payable at this level. `}
+              {nextTier
+                ? `Tier ${nextTierNo} needs another ${formatCurrency(nextTier.shortfall)} a month.`
+                : `Top tier reached — ${formatCurrency(projectedBonus)} at this level.`}
+            </>
+          ) : (
+            <>
+              {currentBonus > 0
+                ? `${formatCurrency(currentBonus)} earned if the year ended today. `
+                : "No tier reached yet. "}
+              {projectedBonus > 0
+                ? `On the current run rate the year finishes at ${formatCurrency(projectedBonus)}.`
+                : nextTier
+                  ? `Tier ${nextTierNo} needs another ${formatCurrency(nextTier.shortfall)} above the current run rate — about ${formatCurrency(
+                      Math.ceil(nextTier.shortfall / Math.max(1, monthsInPeriod - monthsElapsed)),
+                    )} more per month for the rest of the year.`
+                  : ""}
+            </>
+          )}
         </p>
       </CardContent>
     </Card>

@@ -3,8 +3,22 @@ import { formatMonth } from "@/lib/utils";
 
 export const DIVISION_GOALS_PROVIDER = "division_goals";
 
+/**
+ * What a tier's target is measured against.
+ *
+ * "cumulative" — division revenue added up across the period. Money banked:
+ * it only ever rises, and a tier once reached stays reached.
+ *
+ * "final-month" — the division's monthly revenue where it LANDS at the end of
+ * the period. A level, not a total: it can fall as well as rise, and nothing is
+ * settled until the last month. Francesca's plan reads this way.
+ */
+export type BonusBasis = "cumulative" | "final-month";
+
 export interface BonusTier {
-  target: number; // cumulative division revenue, ex-GST
+  /** Ex-GST division revenue — a running total under "cumulative", a monthly
+   *  rate under "final-month". */
+  target: number;
   bonus: number;
   note?: string; // how the target was derived, shown on hover
 }
@@ -12,6 +26,9 @@ export interface BonusTier {
 export interface DivisionBonusPlan {
   /** First month of the measurement period, "YYYY-MM". */
   fyStart: string;
+  /** Defaults to "cumulative" — an existing plan carries no basis and must keep
+   *  behaving exactly as it did. */
+  basis?: BonusBasis;
   tiers: BonusTier[];
 }
 
@@ -25,11 +42,18 @@ export interface TierProgress extends BonusTier {
 export interface DivisionGoalProgress {
   fyStart: string;
   fyStartLabel: string;
+  /** Last month of the period — when a "final-month" plan settles. */
+  endLabel: string;
+  basis: BonusBasis;
   monthsElapsed: number;
   monthsInPeriod: number;
   cumulative: number;
   latestMonthly: number;
   projected: number;
+  /** The figure the tiers are actually judged against: `cumulative` under a
+   *  cumulative plan, `latestMonthly` under a final-month one. The card reads
+   *  this rather than re-deciding which number applies. */
+  measured: number;
   /** Cumulative revenue needed by now to be on track for the top tier reached. */
   tiers: TierProgress[];
   currentBonus: number; // earned if the period ended today
@@ -56,6 +80,18 @@ export const DEFAULT_DIVISION_GOALS: Record<string, DivisionBonusPlan> = {
       { target: 5_800_000, bonus: 35_000, note: "50% above the Apr–Jun average (~32% above June's run rate)" },
     ],
   },
+  // Francesca's plan is written the other way round: a monthly revenue LEVEL,
+  // settled on where the division lands at the end of the 12 months, not a
+  // total accumulated along the way. Read as cumulative these targets would
+  // clear in the first month.
+  "Social Media Management": {
+    fyStart: "2026-07",
+    basis: "final-month",
+    tiers: [
+      { target: 100_000, bonus: 5_000, note: "Monthly revenue in the final month of the period" },
+      { target: 120_000, bonus: 10_000, note: "Monthly revenue in the final month of the period" },
+    ],
+  },
 };
 
 export async function getDivisionBonusPlan(division: string): Promise<DivisionBonusPlan | null> {
@@ -72,6 +108,13 @@ export async function getDivisionBonusPlan(division: string): Promise<DivisionBo
   return DEFAULT_DIVISION_GOALS[division] ?? null;
 }
 
+/** Last month of the period, "YYYY-MM" — `fyStart` plus eleven months. */
+function periodEnd(fyStart: string): string {
+  const [y, m] = fyStart.split("-").map(Number);
+  const d = new Date(y, m - 1 + (MONTHS_IN_PERIOD - 1), 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 /**
  * Progress against a division's bonus tiers.
  *
@@ -79,6 +122,12 @@ export async function getDivisionBonusPlan(division: string): Promise<DivisionBo
  * projection extends the latest month across the rest of the period — a simple
  * run-rate, which is what the tiers were themselves derived from, rather than a
  * trend fit that would imply more precision than exists three months in.
+ *
+ * Which figure the tiers are judged against depends on the plan's basis. A
+ * cumulative plan measures the running total; a final-month plan measures the
+ * latest month's revenue, because that is the number the bonus settles on. Under
+ * a final-month plan the run-rate projection IS the latest month, so `measured`
+ * and `projected` coincide and `attained` means "currently above", not "banked".
  */
 export function computeGoalProgress(
   plan: DivisionBonusPlan,
@@ -89,19 +138,24 @@ export function computeGoalProgress(
     .sort((a, b) => a.month.localeCompare(b.month))
     .slice(0, MONTHS_IN_PERIOD);
 
+  const basis: BonusBasis = plan.basis ?? "cumulative";
   const cumulative = inPeriod.reduce((s, m) => s + m.revenue, 0);
   const monthsElapsed = inPeriod.length;
   const latestMonthly = inPeriod[inPeriod.length - 1]?.revenue ?? 0;
-  const projected = cumulative + latestMonthly * Math.max(0, MONTHS_IN_PERIOD - monthsElapsed);
+  const projected =
+    basis === "final-month"
+      ? latestMonthly
+      : cumulative + latestMonthly * Math.max(0, MONTHS_IN_PERIOD - monthsElapsed);
+  const measured = basis === "final-month" ? latestMonthly : cumulative;
 
   const tiers: TierProgress[] = plan.tiers
     .slice()
     .sort((a, b) => a.target - b.target)
     .map((t) => ({
       ...t,
-      attained: cumulative >= t.target,
+      attained: measured >= t.target,
       projectedToHit: projected >= t.target,
-      percentOfTarget: t.target > 0 ? Number(((cumulative / t.target) * 100).toFixed(1)) : 0,
+      percentOfTarget: t.target > 0 ? Number(((measured / t.target) * 100).toFixed(1)) : 0,
       shortfall: Math.max(0, t.target - projected),
     }));
 
@@ -112,11 +166,14 @@ export function computeGoalProgress(
   return {
     fyStart: plan.fyStart,
     fyStartLabel: formatMonth(plan.fyStart),
+    endLabel: formatMonth(periodEnd(plan.fyStart)),
+    basis,
     monthsElapsed,
     monthsInPeriod: MONTHS_IN_PERIOD,
     cumulative,
     latestMonthly,
     projected,
+    measured,
     tiers,
     currentBonus: highest((t) => t.attained),
     projectedBonus: highest((t) => t.projectedToHit),
