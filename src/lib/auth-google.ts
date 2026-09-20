@@ -22,6 +22,10 @@ export const ACCESS_LIST: Record<string, { role: string; division?: string }> = 
   "vitor@swan.studio": { role: "division_lead", division: "Content Delivery" },
   "francesca@swan.studio": { role: "division_lead", division: "Social Media Management" },
   "vatsal@swan.studio": { role: "division_lead", division: "Ads Management" },
+  // Client Success is a CUT of Ad Creative, not a division of its own — see
+  // DIVISION_VIEWS. Emily is scoped exactly as a divisional lead is, so she sees
+  // her own clients and nothing else.
+  "emily@swan.studio": { role: "division_lead", division: "Client Success" },
 };
 
 export const ALLOWED_EMAILS = Object.keys(ACCESS_LIST);

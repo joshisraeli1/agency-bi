@@ -196,6 +196,7 @@ model HubspotDeal {
   contentPackageType String?
   outreachSource     String? // HubSpot "Outreach Source" — Sales Outreach|Network|WOM|Upsell|... (can be ;-separated)
   companyName        String? // HubSpot deal property "Company name" — the client identity for this account (associations are unreliable)
+  clientManager      String? // HubSpot "Client Manager" — who owns the relationship. NOT account_manager, which HubSpot labels "Executor" and means the delivery owner.
   packageDescription String? // HubSpot "Package Description" — Legacy|One-off|Combo|Other|Upsell
   commissionType     String? // HubSpot "Commission Type" — Support|Owned (Owned → 9% commission)
   industry           String?

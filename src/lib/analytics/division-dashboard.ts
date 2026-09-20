@@ -46,13 +46,14 @@ const monthKeyOf = (d: Date | null | undefined): string | null =>
  */
 export async function getDivisionDashboard(
   division: string,
-  months = 12
+  months = 12,
+  opts: { clientManager?: string } = {}
 ): Promise<DivisionDashboard> {
   const [excludedIds, allDeals, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { ...DOWNSELL_DEAL_SELECT, companyName: true },
+      select: { ...DOWNSELL_DEAL_SELECT, companyName: true, clientManager: true },
     }),
     getDownsellResolution(),
   ]);
@@ -62,11 +63,19 @@ export async function getDivisionDashboard(
   const divisionByDeal = resolveDealDivisions(allDeals);
 
   // Scope once. Everything below works on this division's deals only.
+  //
+  // A clientManager narrows that to one manager's clients — a CUT of the
+  // division, not a division of its own. Division resolution still runs over the
+  // whole book above, so a cut inherits exactly the division its deals already
+  // had rather than re-deciding it.
+  const manager = opts.clientManager?.trim().toLowerCase();
   const deals = allDeals.filter((d) => {
     if (d.clientId && excludedIds.has(d.clientId)) return false;
     if (downsells.heldOutIds.has(d.id)) return false;
     if (isOneOff(d) || /ad[\s-]?hoc/i.test(d.name)) return false;
-    return divisionByDeal.get(d.id) === division;
+    if (divisionByDeal.get(d.id) !== division) return false;
+    if (manager && (d.clientManager ?? "").trim().toLowerCase() !== manager) return false;
+    return true;
   });
 
   const now = new Date();

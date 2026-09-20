@@ -3,7 +3,7 @@ import { getSession, isDivisionLead, hasRole } from "@/lib/auth";
 import { getDivisionDashboard } from "@/lib/analytics/division-dashboard";
 import { DivisionDashboardView } from "@/components/dashboard/division-dashboard-view";
 import { computeGoalProgress, getDivisionBonusPlan } from "@/lib/analytics/division-goals";
-import { divisionDisplayName, isDivisionKey, DIVISION_KEYS } from "@/lib/divisions";
+import { isScopeKey, resolveScope, DIVISION_KEYS } from "@/lib/divisions";
 
 export const dynamic = "force-dynamic";
 
@@ -26,16 +26,18 @@ export default async function DivisionPage({
   const session = await getSession();
   if (!session) redirect("/login");
 
-  let division: string | null = null;
+  let scopeKey: string | null = null;
 
   if (isDivisionLead(session)) {
-    division = isDivisionKey(session.division) ? session.division : null;
+    scopeKey = isScopeKey(session.division) ? session.division! : null;
   } else if (hasRole(session, "viewer")) {
     const { d } = await searchParams;
-    division = isDivisionKey(d) ? d : DIVISION_KEYS[0];
+    scopeKey = isScopeKey(d) ? d! : DIVISION_KEYS[0];
   }
 
-  if (!division) {
+  const scope = scopeKey ? resolveScope(scopeKey) : null;
+
+  if (!scope) {
     return (
       <div className="max-w-xl space-y-3">
         <h1 className="text-2xl font-bold">No division assigned</h1>
@@ -50,18 +52,15 @@ export default async function DivisionPage({
 
   // 18 months so the bonus period (12 from its start) is fully covered even
   // once the FY is well under way.
+  // A view has no bonus plan of its own — the plan belongs to the division it
+  // cuts, and paying a cut's lead against the whole division's tiers would be
+  // wrong in both directions.
   const [data, plan] = await Promise.all([
-    getDivisionDashboard(division, 18),
-    getDivisionBonusPlan(division),
+    getDivisionDashboard(scope.division, 18, { clientManager: scope.clientManager }),
+    scope.isView ? Promise.resolve(null) : getDivisionBonusPlan(scope.division),
   ]);
 
   const goals = plan ? computeGoalProgress(plan, data.months) : null;
 
-  return (
-    <DivisionDashboardView
-      data={data}
-      displayName={divisionDisplayName(division)}
-      goals={goals}
-    />
-  );
+  return <DivisionDashboardView data={data} displayName={scope.label} goals={goals} />;
 }
