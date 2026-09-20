@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -16,7 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Receipt, PieChart, Repeat, TrendingUp, Clock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import type { ClientSuccessDashboard } from "@/lib/analytics/client-success";
+import type { ClientSuccessDashboard, PortfolioMonth } from "@/lib/analytics/client-success";
 
 // Validated against the chart surface in both modes: orange↔teal separate at
 // ΔE 13.8 under protanopia and both clear 3:1 contrast, so the two revenue
@@ -57,9 +58,67 @@ function Tile({
   );
 }
 
+/** Who sits behind a point on a chart. Named clients, not just a number. */
+function Detail({
+  month,
+  kind,
+  onClose,
+}: {
+  month: PortfolioMonth;
+  kind: "churn" | "upsell";
+  onClose: () => void;
+}) {
+  const rows = kind === "churn" ? month.churnedClients : month.upsells;
+  const total = kind === "churn" ? month.churnedRevenue : month.upsellRevenue;
+  return (
+    <div className="rounded-lg border p-4 mt-4">
+      <div className="flex items-center justify-between gap-4">
+        <p className="font-medium text-sm">
+          {kind === "churn" ? "Churned" : "Upsells"} — {month.label}
+          {kind === "churn" && month.clientsAtStart > 0 && (
+            <span className="text-muted-foreground font-normal">
+              {" "}
+              · {month.clientsRetained} of {month.clientsAtStart} kept
+            </span>
+          )}
+        </p>
+        <button onClick={onClose} className="text-sm text-muted-foreground hover:underline shrink-0">
+          Close
+        </button>
+      </div>
+      <ul className="mt-3 space-y-1 text-sm">
+        {rows.map((c, i) => (
+          <li key={`${c.id}-${i}`} className="flex justify-between gap-4">
+            <span>{c.name}</span>
+            <span className="tabular-nums">{formatCurrency(c.revenue)}</span>
+          </li>
+        ))}
+        {rows.length === 0 && (
+          <li className="text-muted-foreground">
+            {kind === "churn" ? "Nobody left this month." : "No upsells this month."}
+          </li>
+        )}
+      </ul>
+      {rows.length > 1 && (
+        <p className="mt-3 pt-2 border-t text-sm flex justify-between gap-4 font-medium">
+          <span>Total</span>
+          <span className="tabular-nums">{formatCurrency(total)}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
   const { months, clients } = data;
   const latest = months[months.length - 1];
+  const [selected, setSelected] = useState<{ month: PortfolioMonth; kind: "churn" | "upsell" } | null>(
+    null
+  );
+  const [selectedMovement, setSelectedMovement] = useState<{
+    month: PortfolioMonth;
+    kind: "churn" | "upsell";
+  } | null>(null);
 
   // A zero month must still be labelled, or a gap reads as missing data rather
   // than as nothing having happened — and a month with no churn is a result.
@@ -76,6 +135,7 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
   const retentionData = months
     .filter((m) => m.retentionPct !== null)
     .map((m) => ({
+      month: m.month,
       label: m.label,
       Retention: m.retentionPct,
       kept: m.clientsRetained,
@@ -83,6 +143,7 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
     }));
 
   const movementData = months.map((m) => ({
+    month: m.month,
     label: m.label,
     Upsells: m.upsellRevenue,
     "Churned Revenue": m.churnedRevenue,
@@ -152,13 +213,23 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           <CardTitle className="text-base">Portfolio retained each month</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
             Of the clients carried into a month, the share still here at the end of it. A client won
-            during the month counts in neither half, so winning work never flatters the rate.
+            during the month counts in neither half, so winning work never flatters the rate. Click a
+            month to see who left.
           </p>
         </CardHeader>
         <CardContent>
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={retentionData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <LineChart
+                data={retentionData}
+                margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                onClick={(state) => {
+                  const label = (state as { activeLabel?: string })?.activeLabel;
+                  const m = months.find((x) => x.label === label);
+                  if (m) setSelected({ month: m, kind: "churn" });
+                }}
+                style={{ cursor: "pointer" }}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.35} />
                 <XAxis dataKey="label" ticks={ticks} tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis
@@ -181,11 +252,14 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
                   stroke={DIVISION}
                   strokeWidth={2}
                   dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
+                  activeDot={{ r: 7 }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
+          {selected && (
+            <Detail month={selected.month} kind={selected.kind} onClose={() => setSelected(null)} />
+          )}
         </CardContent>
       </Card>
 
@@ -195,7 +269,8 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           <p className="text-muted-foreground text-sm mt-1">
             Expansion you won against revenue lost when a client left altogether. New business is
             excluded — it isn&apos;t your work. A client dropping one deal while keeping others is a
-            contraction, not a churn, so it isn&apos;t counted here either.
+            contraction, not a churn, so it isn&apos;t counted here either. Click a bar for the
+            clients behind it.
           </p>
         </CardHeader>
         <CardContent>
@@ -207,15 +282,46 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
                 <YAxis tickFormatter={fmtAxis} tickLine={false} axisLine={false} fontSize={12} width={54} />
                 <Tooltip formatter={(v) => formatCurrency(Number(v ?? 0))} />
                 <Legend />
-                <Bar dataKey="Upsells" fill={UPSELL} radius={[4, 4, 0, 0]}>
+                <Bar
+                  dataKey="Upsells"
+                  fill={UPSELL}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={34}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) => {
+                    const key = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
+                    const m = months.find((x) => x.month === key);
+                    if (m) setSelectedMovement({ month: m, kind: "upsell" });
+                  }}
+                >
                   <LabelList dataKey="Upsells" position="top" fontSize={11} formatter={money} />
                 </Bar>
-                <Bar dataKey="Churned Revenue" fill={CHURN} radius={[4, 4, 0, 0]}>
+                <Bar
+                  dataKey="Churned Revenue"
+                  fill={CHURN}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={34}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) => {
+                    const key = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
+                    const m = months.find((x) => x.month === key);
+                    if (m) setSelectedMovement({ month: m, kind: "churn" });
+                  }}
+                >
                   <LabelList dataKey="Churned Revenue" position="top" fontSize={11} formatter={money} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {selectedMovement && (
+            <Detail
+              month={selectedMovement.month}
+              kind={selectedMovement.kind}
+              onClose={() => setSelectedMovement(null)}
+            />
+          )}
         </CardContent>
       </Card>
 
