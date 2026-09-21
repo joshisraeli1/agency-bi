@@ -76,6 +76,8 @@ export interface TermConversion {
   conversionPct: number;
   /** Started too recently to have reached the decision point. */
   tooEarly: number;
+  /** Who those are — named, so the card can show them rather than a bare count. */
+  pending: PortfolioMovement[];
   lapsed: PortfolioMovement[];
   survived: PortfolioMovement[];
 }
@@ -354,23 +356,23 @@ export async function getClientSuccessDashboard(
     .map(([term, termLength]) => {
       const lapsed: PortfolioMovement[] = [];
       const survived: PortfolioMovement[] = [];
-      let tooEarly = 0;
+      const pending: PortfolioMovement[] = [];
 
       for (const [key, first] of firstDealByCompany) {
         if ((first.contractTerms ?? "") !== term) continue;
         const start = (first.startDate ?? first.closeDate)!;
         const decisionPoint = new Date(start);
         decisionPoint.setMonth(decisionPoint.getMonth() + termLength);
-        if (decisionPoint > now) {
-          tooEarly++;
-          continue;
-        }
-        const ended = endedAt.get(key) ?? null;
         const movement: PortfolioMovement = {
           id: key,
           name: first.name.trim(),
           revenue: Math.round(first.amountExGst ?? 0),
         };
+        if (decisionPoint > now) {
+          pending.push(movement);
+          continue;
+        }
+        const ended = endedAt.get(key) ?? null;
         // Still live, or ran past the minimum before leaving.
         if (!ended || ended > decisionPoint) survived.push(movement);
         else lapsed.push(movement);
@@ -383,7 +385,8 @@ export async function getClientSuccessDashboard(
         eligible,
         converted: survived.length,
         conversionPct: eligible > 0 ? Number(((survived.length / eligible) * 100).toFixed(1)) : 0,
-        tooEarly,
+        tooEarly: pending.length,
+        pending: pending.sort((a, b) => b.revenue - a.revenue),
         lapsed: lapsed.sort((a, b) => b.revenue - a.revenue),
         survived: survived.sort((a, b) => b.revenue - a.revenue),
       };

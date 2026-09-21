@@ -17,7 +17,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Receipt, PieChart, Repeat, TrendingUp, Clock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import type { ClientSuccessDashboard, PortfolioMonth, PortfolioQuarter } from "@/lib/analytics/client-success";
+import type {
+  ClientSuccessDashboard,
+  PortfolioMonth,
+  PortfolioQuarter,
+  TermConversion,
+} from "@/lib/analytics/client-success";
 
 // Validated against the chart surface in both modes: orange↔teal separate at
 // ΔE 13.8 under protanopia and both clear 3:1 contrast, so the two revenue
@@ -109,6 +114,37 @@ function Detail({
   );
 }
 
+function TermGroup({
+  title,
+  rows,
+  empty,
+  note,
+}: {
+  title: string;
+  rows: TermConversion["survived"];
+  empty: string;
+  note?: string;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-medium">
+        {title}
+        <span className="text-muted-foreground font-normal"> · {rows.length}</span>
+      </p>
+      {note && <p className="text-muted-foreground text-xs mt-0.5">{note}</p>}
+      <ul className="mt-2 space-y-1 text-sm">
+        {rows.map((c, i) => (
+          <li key={`${c.id}-${i}`} className="flex justify-between gap-4">
+            <span>{c.name}</span>
+            <span className="tabular-nums">{formatCurrency(c.revenue)}</span>
+          </li>
+        ))}
+        {rows.length === 0 && <li className="text-muted-foreground text-sm">{empty}</li>}
+      </ul>
+    </div>
+  );
+}
+
 export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
   // 18 months are fetched so the quarterly view has depth; the monthly charts
   // stay at 12 so they don't get unreadably dense.
@@ -123,6 +159,7 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
     kind: "churn" | "upsell";
   } | null>(null);
   const [selectedQuarter, setSelectedQuarter] = useState<PortfolioQuarter | null>(null);
+  const [openTerm, setOpenTerm] = useState<string | null>(null);
 
   // A zero month must still be labelled, or a gap reads as missing data rather
   // than as nothing having happened — and a month with no churn is a result.
@@ -152,6 +189,10 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
     Upsells: m.upsellRevenue,
     "Churned Revenue": m.churnedRevenue,
   }));
+
+  // Only the 3-month minimum is shown. The 6-month had a single client behind it,
+  // which is a percentage that says nothing.
+  const terms = termConversions.filter((t) => t.months === 3);
 
   const quarterData = quarters.map((q) => ({
     quarter: q.quarter,
@@ -434,7 +475,7 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
         </CardContent>
       </Card>
 
-      {termConversions.length > 0 && (
+      {terms.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Past the minimum term</CardTitle>
@@ -445,38 +486,57 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
             </p>
           </CardHeader>
           <CardContent className="space-y-5">
-            {termConversions.map((t) => (
+            {terms.map((t) => (
               <div key={t.term}>
-                <div className="flex items-baseline justify-between gap-4">
-                  <p className="text-sm font-medium">{t.term.replace(" - ", "-")} minimum</p>
-                  <p className="text-sm tabular-nums">
-                    <span className="text-2xl font-semibold">{t.conversionPct}%</span>
-                    <span className="text-muted-foreground ml-2">
-                      {t.converted} of {t.eligible} carried on
-                    </span>
+                <button
+                  type="button"
+                  onClick={() => setOpenTerm(openTerm === t.term ? null : t.term)}
+                  aria-expanded={openTerm === t.term}
+                  className="w-full text-left group"
+                >
+                  <div className="flex items-baseline justify-between gap-4">
+                    <p className="text-sm font-medium group-hover:underline">
+                      {t.term.replace(" - ", "-")} minimum
+                    </p>
+                    <p className="text-sm tabular-nums">
+                      <span className="text-2xl font-semibold">{t.conversionPct}%</span>
+                      <span className="text-muted-foreground ml-2">
+                        {t.converted} of {t.eligible} carried on
+                      </span>
+                    </p>
+                  </div>
+                  <div className="relative h-3 rounded-full bg-muted overflow-hidden mt-2">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full"
+                      style={{ width: `${t.conversionPct}%`, background: UPSELL }}
+                    />
+                  </div>
+                  <p className="text-muted-foreground text-xs mt-2">
+                    {t.tooEarly > 0 ? `${t.tooEarly} still inside the minimum · ` : ""}
+                    {openTerm === t.term ? "Hide the clients" : "Show the clients"}
                   </p>
-                </div>
-                <div className="relative h-3 rounded-full bg-muted overflow-hidden mt-2">
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full"
-                    style={{ width: `${t.conversionPct}%`, background: UPSELL }}
-                  />
-                </div>
-                <p className="text-muted-foreground text-xs mt-2">
-                  {t.tooEarly > 0 && (
-                    <>
-                      {t.tooEarly} still inside the minimum
-                      {t.lapsed.length > 0 && " · "}
-                    </>
-                  )}
-                  {t.lapsed.length > 0 && (
-                    <>
-                      stopped at the minimum:{" "}
-                      {t.lapsed.map((c) => `${c.name} (${formatCurrency(c.revenue)})`).join(", ")}
-                    </>
-                  )}
-                  {t.tooEarly === 0 && t.lapsed.length === 0 && "Everyone carried on."}
-                </p>
+                </button>
+
+                {openTerm === t.term && (
+                  <div className="rounded-lg border p-4 mt-3 space-y-4">
+                    <TermGroup
+                      title={`Carried on past ${t.months} months`}
+                      rows={t.survived}
+                      empty="Nobody has carried on yet."
+                    />
+                    <TermGroup
+                      title="Stopped at the minimum"
+                      rows={t.lapsed}
+                      empty="Nobody stopped at the minimum."
+                    />
+                    <TermGroup
+                      title="Still inside the minimum"
+                      rows={t.pending}
+                      empty="Nobody is still inside their minimum."
+                      note="Not counted either way — they haven't reached the decision point."
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>
