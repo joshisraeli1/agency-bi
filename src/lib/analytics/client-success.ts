@@ -43,6 +43,8 @@ export interface PortfolioMonth {
   /** Revenue lost to companies that left entirely this month. */
   churnedRevenue: number;
   churnedClients: PortfolioMovement[];
+  /** Mean months the clients live THIS month had been with us by then. */
+  avgTenureMonths: number;
 }
 
 export interface ClientSuccessDashboard {
@@ -150,6 +152,24 @@ export async function getClientSuccessDashboard(
   const monthKeyOf = (d: Date | null | undefined): string | null =>
     d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : null;
 
+  // When each company first started with us, across every deal it ever ran —
+  // so a client that renewed onto a new deal keeps its original tenure rather
+  // than resetting to zero.
+  const startedAt = new Map<string, Date>();
+  for (const d of deals) {
+    const start = d.startDate ?? d.closeDate;
+    if (!start) continue;
+    const key = companyKeyOf(d);
+    const existing = startedAt.get(key);
+    if (!existing || start < existing) startedAt.set(key, start);
+  }
+
+  /** Whole months from a start date to the first of `month`, never negative. */
+  const tenureAt = (start: Date, month: string): number => {
+    const [y, m] = month.split("-").map(Number);
+    return Math.max(0, (y - start.getFullYear()) * 12 + (m - 1 - start.getMonth()));
+  };
+
   const monthRows: PortfolioMonth[] = keys.map((month, i) => {
     const here = companiesByMonth.get(month)!;
     const prev = i > 0 ? companiesByMonth.get(keys[i - 1])! : null;
@@ -202,6 +222,16 @@ export async function getClientSuccessDashboard(
       upsells: upsells.sort((a, b) => b.revenue - a.revenue),
       churnedRevenue: Math.round(churnedClients.reduce((s, c) => s + c.revenue, 0)),
       churnedClients: churnedClients.sort((a, b) => b.revenue - a.revenue),
+      // Tenure AS AT this month, not as at today — otherwise every month would
+      // report the same figure shifted, and the line would say nothing about
+      // how the book aged.
+      avgTenureMonths: (() => {
+        const ts = [...here.keys()]
+          .map((k) => startedAt.get(k))
+          .filter((d): d is Date => !!d)
+          .map((d) => tenureAt(d, month));
+        return ts.length ? Number((ts.reduce((a, b) => a + b, 0) / ts.length).toFixed(1)) : 0;
+      })(),
     };
   });
 

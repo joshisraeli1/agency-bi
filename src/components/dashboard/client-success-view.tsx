@@ -149,6 +149,12 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
     "Churned Revenue": m.churnedRevenue,
   }));
 
+  const tenureData = months.map((m) => ({
+    label: m.label,
+    "Average tenure": m.avgTenureMonths,
+    clients: m.clientsAtStart || m.clientsRetained,
+  }));
+
   const revenueData = months.map((m) => ({
     label: m.label,
     Portfolio: m.revenue,
@@ -322,6 +328,43 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
               onClose={() => setSelectedMovement(null)}
             />
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Average tenure over time</CardTitle>
+          <p className="text-muted-foreground text-sm mt-1">
+            How long the clients live in each month had been with us by then, in months. Measured as
+            at that month rather than today, so the line shows the book ageing: it climbs as clients
+            are kept, and falls when a long-standing one leaves or several new ones arrive.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={tenureData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.35} />
+                <XAxis dataKey="label" ticks={ticks} tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis
+                  tickFormatter={(v) => `${v} mo`}
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                  width={54}
+                />
+                <Tooltip formatter={(v) => [`${v ?? 0} months`, "Average tenure"]} />
+                <Line
+                  type="monotone"
+                  dataKey="Average tenure"
+                  stroke={PORTFOLIO}
+                  strokeWidth={2}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 7 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </CardContent>
       </Card>
 
