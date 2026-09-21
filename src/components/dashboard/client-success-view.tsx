@@ -200,7 +200,7 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           icon={<Clock className="h-4 w-4" />}
           label="Average tenure"
           value={`${data.avgTenureMonths} mo`}
-          note="across the live portfolio"
+          note="across the live portfolio, as at today"
         />
         <Tile
           icon={<Users className="h-4 w-4" />}
@@ -337,7 +337,9 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           <p className="text-muted-foreground text-sm mt-1">
             How long the clients live in each month had been with us by then, in months. Measured as
             at that month rather than today, so the line shows the book ageing: it climbs as clients
-            are kept, and falls when a long-standing one leaves or several new ones arrive.
+            are kept, and falls when a long-standing one leaves or several new ones arrive. The final
+            point therefore sits just below the tile above, which counts to today rather than to the
+            first of the month.
           </p>
         </CardHeader>
         <CardContent>
