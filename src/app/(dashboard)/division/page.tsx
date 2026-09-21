@@ -59,7 +59,9 @@ export default async function DivisionPage({
   // dashboard rather than the divisional one with a filter over it.
   const view = findDivisionView(scopeKey);
   if (view) {
-    return <ClientSuccessView data={await getClientSuccessDashboard(view)} />;
+    // 18 months so the quarterly churn view has depth behind it; the monthly
+    // charts slice back to 12 themselves.
+    return <ClientSuccessView data={await getClientSuccessDashboard(view, 18)} />;
   }
 
   const [data, plan] = await Promise.all([

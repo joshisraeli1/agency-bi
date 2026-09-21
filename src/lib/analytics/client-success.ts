@@ -47,6 +47,39 @@ export interface PortfolioMonth {
   avgTenureMonths: number;
 }
 
+export interface PortfolioQuarter {
+  quarter: string; // "2026-Q3"
+  label: string; // "Q3 2026"
+  /** Companies carried INTO the quarter — the denominator. */
+  clientsAtStart: number;
+  clientsLost: number;
+  /** Lost ÷ carried. Normalised within the quarter, so a growing book cannot
+   *  flatter it the way a monthly rate does. */
+  churnRatePct: number;
+  revenueLost: number;
+  churnedClients: PortfolioMovement[];
+}
+
+/**
+ * Whether clients who signed a minimum term stayed past it.
+ *
+ * Only companies that have HAD the chance are counted: one that started six
+ * weeks ago cannot have converted off a three-month minimum yet, and including
+ * it would report a failure that has not happened.
+ */
+export interface TermConversion {
+  term: string; // "3 - month"
+  months: number; // the minimum, in months
+  /** Companies that reached the decision point. */
+  eligible: number;
+  converted: number;
+  conversionPct: number;
+  /** Started too recently to have reached the decision point. */
+  tooEarly: number;
+  lapsed: PortfolioMovement[];
+  survived: PortfolioMovement[];
+}
+
 export interface ClientSuccessDashboard {
   label: string;
   baseLabel: string;
@@ -62,6 +95,8 @@ export interface ClientSuccessDashboard {
   /** Retention across the last 12 months: companies kept ÷ companies carried. */
   retentionPct: number | null;
   months: PortfolioMonth[];
+  quarters: PortfolioQuarter[];
+  termConversions: TermConversion[];
   clients: PortfolioClient[];
 }
 
@@ -100,7 +135,12 @@ export async function getClientSuccessDashboard(
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { ...DOWNSELL_DEAL_SELECT, companyName: true, clientManager: true },
+      select: {
+        ...DOWNSELL_DEAL_SELECT,
+        companyName: true,
+        clientManager: true,
+        contractTerms: true,
+      },
     }),
     getDownsellResolution(),
   ]);
@@ -235,6 +275,122 @@ export async function getClientSuccessDashboard(
     };
   });
 
+  // Quarterly churn, normalised within each quarter.
+  //
+  // A MONTHLY retention rate rises as the book grows even when nothing improves
+  // — one client leaving out of 22 reads better than the same client leaving out
+  // of 5. Measuring lost-over-carried inside each quarter removes that, which is
+  // what makes this the view that can actually show a change in performance.
+  const quarterOf = (month: string) =>
+    `${month.slice(0, 4)}-Q${Math.floor((Number(month.slice(5, 7)) - 1) / 3) + 1}`;
+
+  const quarterKeys: string[] = [];
+  for (const k of keys) {
+    const q = quarterOf(k);
+    if (!quarterKeys.includes(q)) quarterKeys.push(q);
+  }
+
+  const quarters: PortfolioQuarter[] = [];
+  for (const q of quarterKeys) {
+    const inQuarter = keys.filter((k) => quarterOf(k) === q);
+    const firstIdx = keys.indexOf(inQuarter[0]);
+    // Without a preceding month there is nothing to have carried in, so the
+    // quarter is reported as having no rate rather than a fabricated 100%.
+    if (firstIdx === 0) continue;
+    const carried = companiesByMonth.get(keys[firstIdx - 1])!;
+    const atEnd = companiesByMonth.get(inQuarter[inQuarter.length - 1])!;
+
+    const lost: PortfolioMovement[] = [];
+    for (const [key, c] of carried) {
+      if (!atEnd.has(key)) lost.push({ id: key, name: c.name, revenue: Math.round(c.revenue) });
+    }
+    const [y, qn] = q.split("-Q");
+    quarters.push({
+      quarter: q,
+      label: `Q${qn} ${y}`,
+      clientsAtStart: carried.size,
+      clientsLost: lost.length,
+      churnRatePct: carried.size > 0 ? Number(((lost.length / carried.size) * 100).toFixed(1)) : 0,
+      revenueLost: lost.reduce((s2, c) => s2 + c.revenue, 0),
+      churnedClients: lost.sort((a, b) => b.revenue - a.revenue),
+    });
+  }
+
+  // Did clients who signed a minimum term stay past it?
+  //
+  // Grouped by company: the term comes from the company's earliest deal, and
+  // survival means the company still had live work after the minimum elapsed.
+  // A company that signed three months and is still here at month four
+  // converted, whatever it renewed onto.
+  const TERM_MONTHS: Record<string, number> = {
+    "3 - month": 3,
+    "6 - month": 6,
+    "1 month trial": 1,
+  };
+
+  const firstDealByCompany = new Map<string, (typeof deals)[number]>();
+  for (const d of deals) {
+    const start = d.startDate ?? d.closeDate;
+    if (!start) continue;
+    const key = companyKeyOf(d);
+    const cur = firstDealByCompany.get(key);
+    const curStart = cur ? (cur.startDate ?? cur.closeDate)! : null;
+    if (!cur || (curStart && start < curStart)) firstDealByCompany.set(key, d);
+  }
+
+  /** The month a company's last live work ends, or null while it is still live. */
+  const endedAt = new Map<string, Date | null>();
+  for (const [key] of firstDealByCompany) {
+    const companyDeals = deals.filter((d) => companyKeyOf(d) === key);
+    const anyLive = companyDeals.some((d) => !d.churnDate);
+    if (anyLive) endedAt.set(key, null);
+    else {
+      const churns = companyDeals.map((d) => d.churnDate).filter((d): d is Date => !!d);
+      endedAt.set(key, churns.length ? new Date(Math.max(...churns.map((c) => c.getTime()))) : null);
+    }
+  }
+
+  const termConversions: TermConversion[] = Object.entries(TERM_MONTHS)
+    .map(([term, termLength]) => {
+      const lapsed: PortfolioMovement[] = [];
+      const survived: PortfolioMovement[] = [];
+      let tooEarly = 0;
+
+      for (const [key, first] of firstDealByCompany) {
+        if ((first.contractTerms ?? "") !== term) continue;
+        const start = (first.startDate ?? first.closeDate)!;
+        const decisionPoint = new Date(start);
+        decisionPoint.setMonth(decisionPoint.getMonth() + termLength);
+        if (decisionPoint > now) {
+          tooEarly++;
+          continue;
+        }
+        const ended = endedAt.get(key) ?? null;
+        const movement: PortfolioMovement = {
+          id: key,
+          name: first.name.trim(),
+          revenue: Math.round(first.amountExGst ?? 0),
+        };
+        // Still live, or ran past the minimum before leaving.
+        if (!ended || ended > decisionPoint) survived.push(movement);
+        else lapsed.push(movement);
+      }
+
+      const eligible = survived.length + lapsed.length;
+      return {
+        term,
+        months: termLength,
+        eligible,
+        converted: survived.length,
+        conversionPct: eligible > 0 ? Number(((survived.length / eligible) * 100).toFixed(1)) : 0,
+        tooEarly,
+        lapsed: lapsed.sort((a, b) => b.revenue - a.revenue),
+        survived: survived.sort((a, b) => b.revenue - a.revenue),
+      };
+    })
+    .filter((t) => t.eligible > 0 || t.tooEarly > 0)
+    .sort((a, b) => a.months - b.months);
+
   // Current book, upsells folded so an expansion is not a separate client.
   const currentMonth = keys[keys.length - 1];
   const liveDeals = deals.filter((d) => liveIn(d, currentMonth));
@@ -296,6 +452,8 @@ export async function getClientSuccessDashboard(
       : 0,
     retentionPct: carried > 0 ? Number(((kept / carried) * 100).toFixed(1)) : null,
     months: monthRows,
+    quarters,
+    termConversions,
     clients,
   };
 }

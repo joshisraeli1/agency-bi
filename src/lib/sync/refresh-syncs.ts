@@ -98,7 +98,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
     "dealname", "amount", "amount__excl_gst_", "dealstage", "pipeline",
     "createdate", "closedate", "start_date", "churn_date", "hubspot_owner_id",
     "content_package_type", "package_description", "commission_type", "industry_type",
-    "reasons_for_churn", "company_name", "outreach_source", "client_manager",
+    "reasons_for_churn", "company_name", "outreach_source", "client_manager", "contract_terms",
   ];
   const relevant: HubSpotResult[] = [];
   let after: string | undefined;
@@ -165,6 +165,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
       outreachSource: p.outreach_source ?? null,
       packageDescription: p.package_description ?? null,
       clientManager: p.client_manager ?? null,
+      contractTerms: p.contract_terms ?? null,
       commissionType: p.commission_type ?? null,
       industry: p.industry_type ?? null,
       lastSyncedAt: now,

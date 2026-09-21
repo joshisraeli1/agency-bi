@@ -17,7 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Receipt, PieChart, Repeat, TrendingUp, Clock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import type { ClientSuccessDashboard, PortfolioMonth } from "@/lib/analytics/client-success";
+import type { ClientSuccessDashboard, PortfolioMonth, PortfolioQuarter } from "@/lib/analytics/client-success";
 
 // Validated against the chart surface in both modes: orange↔teal separate at
 // ΔE 13.8 under protanopia and both clear 3:1 contrast, so the two revenue
@@ -110,7 +110,10 @@ function Detail({
 }
 
 export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
-  const { months, clients } = data;
+  // 18 months are fetched so the quarterly view has depth; the monthly charts
+  // stay at 12 so they don't get unreadably dense.
+  const months = data.months.slice(-12);
+  const { clients, quarters, termConversions } = data;
   const latest = months[months.length - 1];
   const [selected, setSelected] = useState<{ month: PortfolioMonth; kind: "churn" | "upsell" } | null>(
     null
@@ -119,6 +122,7 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
     month: PortfolioMonth;
     kind: "churn" | "upsell";
   } | null>(null);
+  const [selectedQuarter, setSelectedQuarter] = useState<PortfolioQuarter | null>(null);
 
   // A zero month must still be labelled, or a gap reads as missing data rather
   // than as nothing having happened — and a month with no churn is a result.
@@ -147,6 +151,15 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
     label: m.label,
     Upsells: m.upsellRevenue,
     "Churned Revenue": m.churnedRevenue,
+  }));
+
+  const quarterData = quarters.map((q) => ({
+    quarter: q.quarter,
+    label: q.label,
+    "Churn rate": q.churnRatePct,
+    lost: q.clientsLost,
+    carried: q.clientsAtStart,
+    revenueLost: q.revenueLost,
   }));
 
   const tenureData = months.map((m) => ({
@@ -330,6 +343,145 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Churn rate by quarter</CardTitle>
+          <p className="text-muted-foreground text-sm mt-1">
+            The share of the clients carried into each quarter that left during it. A monthly
+            retention rate rises on its own as a book grows — one client leaving out of 22 reads
+            better than the same client leaving out of 5 — so this measures inside each quarter,
+            where growth can&apos;t flatter it. Click a bar to see who left.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={quarterData} margin={{ top: 22, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.35} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis
+                  tickFormatter={(v) => `${v}%`}
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                  width={44}
+                />
+                <Tooltip
+                  formatter={(v, _n, p) => [
+                    `${v ?? 0}% — ${p?.payload?.lost ?? 0} of ${p?.payload?.carried ?? 0} clients, ${formatCurrency(
+                      Number(p?.payload?.revenueLost ?? 0)
+                    )}`,
+                    "Churn rate",
+                  ]}
+                />
+                <Bar
+                  dataKey="Churn rate"
+                  fill={CHURN}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={48}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) => {
+                    const key = (bar as unknown as { payload?: { quarter?: string } })?.payload?.quarter;
+                    const q = quarters.find((x) => x.quarter === key);
+                    if (q) setSelectedQuarter(q);
+                  }}
+                >
+                  {/* The rate is the axis; the absolutes ride on the label rather
+                      than a second scale, which would be a dual axis. */}
+                  <LabelList
+                    dataKey="lost"
+                    position="top"
+                    fontSize={11}
+                    formatter={(v: unknown) => `${Number(v)} lost`}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {selectedQuarter && (
+            <div className="rounded-lg border p-4 mt-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="font-medium text-sm">
+                  Left during {selectedQuarter.label}
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    · {selectedQuarter.clientsLost} of {selectedQuarter.clientsAtStart} carried in ·{" "}
+                    {formatCurrency(selectedQuarter.revenueLost)}
+                  </span>
+                </p>
+                <button
+                  onClick={() => setSelectedQuarter(null)}
+                  className="text-sm text-muted-foreground hover:underline shrink-0"
+                >
+                  Close
+                </button>
+              </div>
+              <ul className="mt-3 space-y-1 text-sm">
+                {selectedQuarter.churnedClients.map((c, i) => (
+                  <li key={`${c.id}-${i}`} className="flex justify-between gap-4">
+                    <span>{c.name}</span>
+                    <span className="tabular-nums">{formatCurrency(c.revenue)}</span>
+                  </li>
+                ))}
+                {selectedQuarter.churnedClients.length === 0 && (
+                  <li className="text-muted-foreground">Nobody left this quarter.</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {termConversions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Past the minimum term</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">
+              Of the clients who signed a minimum term and have since reached the end of it, how many
+              carried on. Clients still inside their minimum are counted separately — they
+              haven&apos;t had the chance yet, and scoring them as failures would understate this.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {termConversions.map((t) => (
+              <div key={t.term}>
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="text-sm font-medium">{t.term.replace(" - ", "-")} minimum</p>
+                  <p className="text-sm tabular-nums">
+                    <span className="text-2xl font-semibold">{t.conversionPct}%</span>
+                    <span className="text-muted-foreground ml-2">
+                      {t.converted} of {t.eligible} carried on
+                    </span>
+                  </p>
+                </div>
+                <div className="relative h-3 rounded-full bg-muted overflow-hidden mt-2">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full"
+                    style={{ width: `${t.conversionPct}%`, background: UPSELL }}
+                  />
+                </div>
+                <p className="text-muted-foreground text-xs mt-2">
+                  {t.tooEarly > 0 && (
+                    <>
+                      {t.tooEarly} still inside the minimum
+                      {t.lapsed.length > 0 && " · "}
+                    </>
+                  )}
+                  {t.lapsed.length > 0 && (
+                    <>
+                      stopped at the minimum:{" "}
+                      {t.lapsed.map((c) => `${c.name} (${formatCurrency(c.revenue)})`).join(", ")}
+                    </>
+                  )}
+                  {t.tooEarly === 0 && t.lapsed.length === 0 && "Everyone carried on."}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
