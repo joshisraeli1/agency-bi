@@ -92,6 +92,16 @@ export const DEFAULT_DIVISION_GOALS: Record<string, DivisionBonusPlan> = {
       { target: 120_000, bonus: 10_000, note: "Monthly revenue in the final month of the period" },
     ],
   },
+  // Vatsal's plan reads the same way as Francesca's — a monthly LEVEL settled on
+  // where the division lands, not a total accumulated along the way.
+  "Ads Management": {
+    fyStart: "2026-07",
+    basis: "final-month",
+    tiers: [
+      { target: 100_000, bonus: 15_000, note: "Monthly revenue in the final month of the period" },
+      { target: 150_000, bonus: 30_000, note: "Monthly revenue in the final month of the period" },
+    ],
+  },
 };
 
 export async function getDivisionBonusPlan(division: string): Promise<DivisionBonusPlan | null> {
