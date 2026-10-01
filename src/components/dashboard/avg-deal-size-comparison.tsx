@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   BarChart,
   Bar,
@@ -26,8 +28,41 @@ import type { AvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-compar
 const PREV_COLOR = "#94a3b8"; // slate — prior year
 const CURR_COLOR = "#ea580c"; // orange — current year
 
+const monthsBack = (m: string, n: number) => {
+  const [y, mo] = m.split("-").map(Number);
+  const d = new Date(y, mo - 1 - n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const labelOf = (m: string) => {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(y, mo - 1, 1).toLocaleString("en-AU", { month: "short", year: "numeric" });
+};
+
 export function AvgDealSizeComparisonCard({ data }: { data: AvgDealSizeComparison }) {
-  const { prevLabel, currLabel, rows } = data;
+  const { selectableMonths, byMonth } = data;
+  // Default to the newest month the picker offers, so the card follows the data
+  // rather than staying pinned to the month it was first built against.
+  const [curr, setCurr] = useState(
+    selectableMonths.length > 0 ? selectableMonths[selectableMonths.length - 1].month : data.currMonth
+  );
+  const prev = monthsBack(curr, 12);
+  const prevLabel = labelOf(prev);
+  const currLabel = labelOf(curr);
+
+  // Recompute the rows for the chosen month from the shipped per-month stats.
+  const rows = data.rows.map((r) => {
+    const p = byMonth[prev]?.[r.division] ?? { avg: 0, count: 0 };
+    const c = byMonth[curr]?.[r.division] ?? { avg: 0, count: 0 };
+    return {
+      division: r.division,
+      prevAvg: p.avg,
+      currAvg: c.avg,
+      prevCount: p.count,
+      currCount: c.count,
+      growthPct: p.avg > 0 ? ((c.avg - p.avg) / p.avg) * 100 : null,
+    };
+  });
 
   const fmtAxis = (v: number) => (v >= 1000 ? `$${Math.round(v / 1000)}K` : `$${v}`);
   const fmtPct = (p: number | null) =>
@@ -44,7 +79,7 @@ export function AvgDealSizeComparisonCard({ data }: { data: AvgDealSizeCompariso
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="relative">
         <CardTitle className="flex items-center gap-2 text-base">
           <TrendingUp className="h-4 w-4" />
           Avg. Deal Size Improvements
@@ -52,6 +87,25 @@ export function AvgDealSizeComparisonCard({ data }: { data: AvgDealSizeCompariso
         <p className="text-muted-foreground text-sm mt-1">
           Average deal size per package type (ex-GST) — {prevLabel} vs {currLabel}.
         </p>
+        {selectableMonths.length > 1 && (
+          <div className="absolute right-6 top-6 flex items-center gap-2">
+            <label htmlFor="adsc-month" className="text-xs text-muted-foreground">
+              Compare
+            </label>
+            <select
+              id="adsc-month"
+              value={curr}
+              onChange={(e) => setCurr(e.target.value)}
+              className="h-8 rounded-md border bg-background px-2 text-sm"
+            >
+              {selectableMonths.map((m) => (
+                <option key={m.month} value={m.month}>
+                  {m.label} vs {labelOf(monthsBack(m.month, 12))}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-6">
         <ResponsiveContainer width="100%" height={300}>

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
 import { DIVISIONS, mapAccountToDivisions } from "./cost-allocation";
 import { getExcludedClientIds } from "./excluded-clients";
-import { foldUpsells } from "./upsells";
+import { foldUpsells, isOneOff } from "./upsells";
 import { resolveDealDivisions } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { DivisionProfitabilityRow } from "./types";
@@ -89,19 +89,32 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     const active = deals.filter((d) => {
       if (d.clientId && excludedIds.has(d.clientId)) return false;
       if (downsells.heldOutIds.has(d.id)) return false;
+      // One-off and ad-hoc work is not a retainer, and the divisional
+      // dashboards exclude it. Counting it here made the same division report
+      // two different average deal sizes depending on which page you opened.
+      if (isOneOff(d) || /ad[\s-]?hoc/i.test(d.name)) return false;
       const { startKey, churnKey } = windowKeys(d, downsells);
       if (!startKey) return false;
       return month >= startKey && (!churnKey || month < churnKey);
     });
-    const { deals: folded } = foldUpsells(active);
     const sum = new Map<string, number>();
     const count = new Map<string, number>();
-    for (const d of folded) {
-      const ex = d.amountExGst ?? d.amount ?? 0;
-      if (ex <= 0) continue;
-      const div = divisionByDeal.get(d.id) ?? "Content Delivery";
-      sum.set(div, (sum.get(div) ?? 0) + ex);
-      count.set(div, (count.get(div) ?? 0) + 1);
+    // Fold WITHIN each division, never across the whole book. Folding globally
+    // and then reading the base deal's division carried a cross-division
+    // upsell's revenue into the wrong division — the same trap client-book.ts
+    // documents — and left this reporting a different average from the
+    // divisional dashboards.
+    for (const division of DIVISIONS) {
+      const mine = active.filter((d) => (divisionByDeal.get(d.id) ?? "Content Delivery") === division);
+      const { deals: folded } = foldUpsells(mine);
+      for (const d of folded) {
+        // `amount` is INC-GST. Falling back to it when amountExGst was missing
+        // mixed the two bases into one average and inflated it by up to 10%.
+        const ex = d.amountExGst ?? 0;
+        if (ex <= 0) continue;
+        sum.set(division, (sum.get(division) ?? 0) + ex);
+        count.set(division, (count.get(division) ?? 0) + 1);
+      }
     }
     return { sum, count };
   };

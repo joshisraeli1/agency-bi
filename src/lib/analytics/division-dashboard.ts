@@ -175,7 +175,14 @@ export async function getDivisionDashboard(
     months: monthRows,
     currentRevenue,
     currentClientCount: clients.length,
-    avgDealSize: folded.length > 0 ? Math.round(currentRevenue / folded.length) : 0,
+    // Deals carrying no value are not deals for this purpose — leaving them in
+    // the denominator divided real revenue by a count padded with zeros, and
+    // was why this read differently from the Division Summary.
+    avgDealSize: (() => {
+      const priced = folded.filter((d) => (d.amountExGst ?? 0) > 0);
+      if (priced.length === 0) return 0;
+      return Math.round(priced.reduce((s, d) => s + Math.round(d.amountExGst ?? 0), 0) / priced.length);
+    })(),
     clients,
   };
 }

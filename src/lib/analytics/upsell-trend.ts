@@ -4,6 +4,12 @@ import { getExcludedClientIds } from "./excluded-clients";
 import { isOneOff, isUpsell } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 
+export interface UpsellDeal {
+  id: string;
+  name: string;
+  revenue: number;
+}
+
 export interface UpsellMonth {
   month: string;
   label: string;
@@ -11,6 +17,8 @@ export interface UpsellMonth {
   totalRevenue: number; // ex-GST MRR from all live recurring deals
   upsellPercent: number;
   upsellCount: number;
+  /** The deals behind the bar, so a month can be opened rather than guessed at. */
+  upsells: UpsellDeal[];
 }
 
 /**
@@ -47,6 +55,7 @@ export async function getUpsellTrend(months = 12): Promise<UpsellMonth[]> {
     let upsellRevenue = 0;
     let totalRevenue = 0;
     let upsellCount = 0;
+    const upsells: UpsellDeal[] = [];
 
     for (const d of recurring) {
       const { startKey, churnKey } = windowKeys(d, downsells);
@@ -59,6 +68,7 @@ export async function getUpsellTrend(months = 12): Promise<UpsellMonth[]> {
       if (isUpsell(d)) {
         upsellRevenue += ex;
         upsellCount++;
+        upsells.push({ id: d.id, name: d.name.trim(), revenue: Math.round(ex) });
       }
     }
 
@@ -69,6 +79,7 @@ export async function getUpsellTrend(months = 12): Promise<UpsellMonth[]> {
       totalRevenue: Math.round(totalRevenue),
       upsellPercent: totalRevenue > 0 ? Number(((upsellRevenue / totalRevenue) * 100).toFixed(1)) : 0,
       upsellCount,
+      upsells: upsells.sort((a, b) => b.revenue - a.revenue),
     };
   });
 }

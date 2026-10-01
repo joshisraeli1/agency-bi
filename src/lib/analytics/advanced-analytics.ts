@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getClientBook } from "./client-book";
 import { getMonthRange, toMonthKey } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
 import { isOneOff, isUpsell } from "./upsells";
@@ -432,37 +433,23 @@ export interface IndustryBreakdown {
 }
 
 export async function getIndustryBreakdown(): Promise<IndustryBreakdown> {
-  const [allClients, financials, settings, excludedIds] = await Promise.all([
-    db.client.findMany({
-      where: { status: { not: "prospect" }, hubspotDealId: { not: null } },
-      select: { id: true, industry: true, status: true },
-    }),
-    db.financialRecord.findMany({
-      where: { type: { in: ["retainer", "project"] }, source: "hubspot" },
-      select: { clientId: true, amount: true },
-    }),
-    db.appSettings.findFirst(),
-    getExcludedClientIds(),
-  ]);
+  // Derived from the client book, not from Client.industry/Client.status.
+  //
+  // That stored pair drifts badly: the industry comes from the HubSpot COMPANY
+  // sync and is mostly raw enums ("RESTAURANTS", "FOOD_BEVERAGES") duplicating
+  // the readable values the team actually maintains on the deal, and the status
+  // carried 408 long-dead prospect records into a churn count. The book resolves
+  // both from the deals, so this now shows the same industries as the Clients
+  // page and the same idea of who is live.
+  const book = await getClientBook();
 
-  const clients = allClients.filter((c) => !excludedIds.has(c.id));
-
-  const gstDivisor = 1 + (settings?.gstRate ?? 10) / 100;
-
-  // Revenue per client
-  const revenueMap = new Map<string, number>();
-  for (const f of financials) {
-    revenueMap.set(f.clientId, (revenueMap.get(f.clientId) || 0) + f.amount);
-  }
-
-  // Group by industry
   const industryMap = new Map<string, { active: number; churned: number; revenue: number }>();
-  for (const c of clients) {
+  for (const c of book.clients) {
     const industry = c.industry || "Unknown";
     const existing = industryMap.get(industry) || { active: 0, churned: 0, revenue: 0 };
     if (c.status === "active") existing.active++;
     else existing.churned++;
-    existing.revenue += revenueMap.get(c.id) || 0;
+    existing.revenue += c.ltv ?? 0;
     industryMap.set(industry, existing);
   }
 

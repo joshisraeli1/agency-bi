@@ -23,6 +23,13 @@ export interface AvgDealSizeComparison {
   prevLabel: string;
   currLabel: string;
   rows: AvgDealSizeRow[];
+  /** Every month the picker may offer, newest last. A month is selectable only
+   *  when the month 12 before it also has deals, since the card compares a
+   *  month against its own year-ago counterpart. */
+  selectableMonths: { month: string; label: string }[];
+  /** Per-month, per-division stats so the picker recomputes in the browser
+   *  rather than round-tripping to the server for a figure already derived. */
+  byMonth: Record<string, Record<string, { avg: number; count: number }>>;
 }
 
 /**
@@ -66,6 +73,38 @@ export async function getAvgDealSizeComparison(
     return agg;
   };
 
+  // Two years of months, so a 12-month-back comparison is available for every
+  // month in the most recent year.
+  const window: string[] = [];
+  {
+    const now = new Date();
+    for (let i = 23; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      window.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+  }
+  const byMonth: Record<string, Record<string, { avg: number; count: number }>> = {};
+  for (const m of [...new Set([...window, prevMonth, currMonth])]) {
+    const agg = statsFor(m);
+    byMonth[m] = Object.fromEntries(
+      DIVISIONS.map((d) => {
+        const a = agg[d];
+        return [d, { avg: a && a.n > 0 ? Math.round(a.sum / a.n) : 0, count: a?.n ?? 0 }];
+      })
+    );
+  }
+
+  const monthsBack = (m: string, n: number) => {
+    const [y, mo] = m.split("-").map(Number);
+    const d = new Date(y, mo - 1 - n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const hasDeals = (m: string) =>
+    Object.values(byMonth[m] ?? {}).some((v) => v.count > 0);
+  const selectableMonths = window
+    .filter((m) => hasDeals(m) && hasDeals(monthsBack(m, 12)))
+    .map((m) => ({ month: m, label: formatMonth(m) }));
+
   const prev = statsFor(prevMonth);
   const curr = statsFor(currMonth);
 
@@ -90,5 +129,7 @@ export async function getAvgDealSizeComparison(
     prevLabel: formatMonth(prevMonth),
     currLabel: formatMonth(currMonth),
     rows,
+    selectableMonths,
+    byMonth,
   };
 }

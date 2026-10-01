@@ -74,9 +74,10 @@ export function AdvancedCharts({
   }));
 
   // LTV by industry
+  // Every industry, not a top-12 slice: the cut-off hid whole categories with
+  // no indication they existed. The chart grows instead.
   const industryLtvData = ltv.byIndustry
     .filter((d) => d.avgLTV > 0)
-    .slice(0, 12)
     .map((d) => ({
       name: d.industry,
       avgLTV: d.avgLTV,
@@ -99,6 +100,26 @@ export function AdvancedCharts({
   // Drill-downs for the cohort + industry bar charts, derived from ltv.clients.
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null);
   const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
+  // Churned clients outnumber live ones several times over in most categories,
+  // so showing both at once buries the live book. Default to what is live.
+  const [industryView, setIndustryView] = useState<"active" | "churned" | "all">("active");
+
+  // A category with nothing in the selected view is noise, not information.
+  const visibleIndustryData = industryBreakdownData
+    .filter((d) =>
+      industryView === "active"
+        ? d.activeClients > 0
+        : industryView === "churned"
+          ? d.churnedClients > 0
+          : d.activeClients + d.churnedClients > 0
+    )
+    .sort((a, b) =>
+      industryView === "churned"
+        ? b.churnedClients - a.churnedClients
+        : industryView === "active"
+          ? b.activeClients - a.activeClients
+          : b.activeClients + b.churnedClients - (a.activeClients + a.churnedClients)
+    );
   const cohortClients = new Map<string, { name: string; amount: number }[]>();
   const industryClients = new Map<string, { name: string; amount: number }[]>();
   for (const c of ltv.clients) {
@@ -176,6 +197,7 @@ export function AdvancedCharts({
             yLabels={["Avg LTV"]}
             horizontal
             formatY={fmtCurrency}
+            height={Math.max(300, industryLtvData.length * 32)}
             onBarClick={(i) => setSelectedIndustry((p) => (p === i ? null : i))}
           />
         )}
@@ -188,24 +210,51 @@ export function AdvancedCharts({
       )}
 
       {/* Clients by Industry Type */}
-      <div>
-        <h2 className="text-xl font-semibold">Clients by Industry Type</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Active and churned client distribution by HubSpot industry type
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-xl font-semibold">Clients by Industry Type</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            Client distribution by industry, taken from the deal&apos;s Industry Type
+          </p>
+        </div>
+        <div className="flex items-center rounded-md border shrink-0">
+          {(["active", "churned", "all"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setIndustryView(v)}
+              className={`px-3 py-1.5 text-sm capitalize first:rounded-l-md last:rounded-r-md ${
+                industryView === v ? "bg-foreground text-background" : "hover:bg-muted"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {industryBreakdownData.length > 0 && (
+      {visibleIndustryData.length > 0 && (
         <BarChartCard
-          title="Clients by Industry"
-          data={industryBreakdownData}
+          title={
+            industryView === "active"
+              ? "Live clients by industry"
+              : industryView === "churned"
+                ? "Churned clients by industry"
+                : "Clients by industry"
+          }
+          data={visibleIndustryData}
           xKey="name"
-          yKeys={["activeClients", "churnedClients"]}
-          yLabels={["Active", "Churned"]}
+          yKeys={
+            industryView === "all"
+              ? ["activeClients", "churnedClients"]
+              : industryView === "active"
+                ? ["activeClients"]
+                : ["churnedClients"]
+          }
+          yLabels={industryView === "all" ? ["Active", "Churned"] : industryView === "active" ? ["Active"] : ["Churned"]}
           horizontal
-          stacked
+          stacked={industryView === "all"}
           onBarClick={(i) => setSelectedIndustry((p) => (p === i ? null : i))}
-          height={Math.max(300, industryBreakdownData.length * 35)}
+          height={Math.max(300, visibleIndustryData.length * 35)}
         />
       )}
 

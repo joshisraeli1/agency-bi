@@ -157,11 +157,6 @@ export default async function AnalyticsPage({ searchParams }: Props) {
         />
       </div>
 
-      {/* Revenue by Division vs Goal (editable monthly targets) */}
-      <DivisionGoals byPackageType={activeSnapshot.byPackageType} goals={divisionGoals} />
-
-      <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} goals={divisionGoals} />
-
       {/* 2. Profitability Section — HubSpot + Xero division tables & Xero margin trend */}
       <ProfitabilitySection divisionSummary={divisionSummary} />
 
@@ -197,6 +192,13 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* Revenue Composition — moved to the bottom, month-selectable */}
       <RevenueCompositionChart byMonth={revenueComposition.byMonth} />
+
+      {/* Divisional goal tracking. Kept at the foot of the page: it is a
+          target-setting view rather than a reading of what happened, and it
+          crowded the trend charts above when it sat at the top. */}
+      <DivisionGoals byPackageType={activeSnapshot.byPackageType} goals={divisionGoals} />
+
+      <CumulativeDivisionRevenueChart data={cumulativeDivisionFY} goals={divisionGoals} />
 
     </div>
   );

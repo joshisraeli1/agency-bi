@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -21,6 +22,7 @@ const UPSELL_COLOR = "#0d9488";
 const fmtAxis = (v: number) => (Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}K` : `$${v}`);
 
 export function UpsellTrendCharts({ data }: { data: UpsellMonth[] }) {
+  const [selected, setSelected] = useState<UpsellMonth | null>(null);
   if (data.length === 0) return null;
 
   const latest = data[data.length - 1];
@@ -38,7 +40,8 @@ export function UpsellTrendCharts({ data }: { data: UpsellMonth[] }) {
             Upsell Revenue by Month
           </CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            Monthly recurring revenue (ex-GST) from live upsell deals.
+            Monthly recurring revenue (ex-GST) from live upsell deals. Click a bar to see which
+            deals make it up.
           </p>
           <p className="text-sm mt-2">
             <span className="text-2xl font-semibold tabular-nums">{formatCurrency(latest.upsellRevenue)}</span>
@@ -61,9 +64,51 @@ export function UpsellTrendCharts({ data }: { data: UpsellMonth[] }) {
                 ]}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
               />
-              <Bar dataKey="upsellRevenue" fill={UPSELL_COLOR} radius={[4, 4, 0, 0]} maxBarSize={44} />
+              <Bar
+                dataKey="upsellRevenue"
+                fill={UPSELL_COLOR}
+                radius={[4, 4, 0, 0]}
+                maxBarSize={44}
+                cursor="pointer"
+                onClick={(bar) => {
+                  const key = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
+                  const m = data.find((x) => x.month === key);
+                  if (m) setSelected(m);
+                }}
+              />
             </BarChart>
           </ResponsiveContainer>
+          {selected && (
+            <div className="rounded-lg border p-4 mt-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="font-medium text-sm">
+                  Upsells live in {selected.label}
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    · {selected.upsells.length} deal{selected.upsells.length === 1 ? "" : "s"} ·{" "}
+                    {formatCurrency(selected.upsellRevenue)}
+                  </span>
+                </p>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="text-sm text-muted-foreground hover:underline shrink-0"
+                >
+                  Close
+                </button>
+              </div>
+              <ul className="mt-3 space-y-1 text-sm max-h-64 overflow-y-auto">
+                {selected.upsells.map((u) => (
+                  <li key={u.id} className="flex justify-between gap-4">
+                    <span>{u.name}</span>
+                    <span className="tabular-nums">{formatCurrency(u.revenue)}</span>
+                  </li>
+                ))}
+                {selected.upsells.length === 0 && (
+                  <li className="text-muted-foreground">No upsells live this month.</li>
+                )}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 
