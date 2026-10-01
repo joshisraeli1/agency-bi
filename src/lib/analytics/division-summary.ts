@@ -6,6 +6,7 @@ import { foldUpsells, isOneOff } from "./upsells";
 import { resolveDealDivisions } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { DivisionProfitabilityRow } from "./types";
+import { applyReallocations, getResolvedReallocations } from "./cost-reallocation";
 
 export interface DivisionSummaryMonth {
   month: string; // YYYY-MM
@@ -29,7 +30,7 @@ export interface DivisionSummary {
  * showing today's book against a historical P&L.
  */
 export async function getDivisionSummaryByMonth(monthCount = 12): Promise<DivisionSummary> {
-  const [incomeLines, costRecords, allocRow, excludedIds, deals, downsells] = await Promise.all([
+  const [incomeLines, costRecords, allocRow, excludedIds, deals, downsells, reallocations] = await Promise.all([
     db.xeroPnlIncomeLine.findMany({ select: { month: true, account: true, amount: true } }),
     db.financialRecord.findMany({
       where: { source: "xero", type: "cost" },
@@ -42,6 +43,7 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
       select: { ...DOWNSELL_DEAL_SELECT, companyName: true },
     }),
     getDownsellResolution(),
+    getResolvedReallocations(),
   ]);
 
   // Manual overrides from Settings → Cost Allocation win over the auto-map.
@@ -124,7 +126,12 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
 
   const months: DivisionSummaryMonth[] = monthKeys.map((month) => {
     const rev = revenueBy.get(month) ?? new Map<string, number>();
-    const cost = costBy.get(month) ?? new Map<string, number>();
+    // Copied before reallocating so the stored map is never mutated across
+    // months, and so a re-read of costBy still reflects the raw P&L.
+    const cost = new Map(costBy.get(month) ?? []);
+    // Divisional staff paid out of a shared salary account are moved to their
+    // own division. Totals are unchanged — see cost-reallocation.ts.
+    applyReallocations(cost, reallocations, allocate);
     const { sum, count } = dealStatsFor(month);
 
     const rows: DivisionProfitabilityRow[] = DIVISIONS.map((division) => {

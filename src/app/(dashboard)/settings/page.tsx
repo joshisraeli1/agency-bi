@@ -186,6 +186,17 @@ export default function SettingsPage() {
         </div>
       </Link>
 
+      <Link
+        href="/settings/cost-reallocation"
+        className="block rounded-lg border p-4 hover:bg-muted/50 transition-colors max-w-2xl"
+      >
+        <div className="font-medium">Salary Reallocation →</div>
+        <div className="text-sm text-muted-foreground">
+          Move individual salaries out of a shared account and onto their own division, for when
+          the chart of accounts doesn&apos;t split cleanly. Reporting only — Xero is untouched.
+        </div>
+      </Link>
+
       <div className="max-w-2xl space-y-6">
         <Card>
           <CardHeader>

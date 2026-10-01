@@ -48,11 +48,20 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
   const meetings = days.reduce((s, d) => s + d.counts["Meeting booked"], 0);
   const connected = days.reduce((s, d) => s + d.counts.Connected + d.counts["Meeting booked"], 0);
   const activeDays = days.filter((d) => d.calls > 0).length;
+  const dialled = days.reduce((s, d) => s + d.diallerCalls, 0);
+  const manual = days.reduce((s, d) => s + d.manualCalls, 0);
 
   const step = Math.ceil(days.length / 15);
   const ticks = days.filter((_, i) => i % step === 0).map((d) => d.label);
 
-  const chartData = days.map((d) => ({ label: d.label, ...d.counts, calls: d.calls, talkMinutes: d.talkMinutes }));
+  const chartData = days.map((d) => ({
+    label: d.label,
+    ...d.counts,
+    calls: d.calls,
+    diallerCalls: d.diallerCalls,
+    manualCalls: d.manualCalls,
+    talkMinutes: d.talkMinutes,
+  }));
 
   return (
     <Card>
@@ -76,13 +85,17 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
           </select>
         </div>
         <p className="text-muted-foreground text-sm mt-1">
-          Calls placed through the dialler, stacked by outcome. Hand-logged calls are excluded —
-          they carry no number, duration or outcome.
+          Every call, stacked by outcome — dialler and hand-logged alike. A hand-logged call
+          carries no duration and usually no outcome, so it lands in &ldquo;Not logged&rdquo; and
+          adds nothing to talk time; it is still a call made.
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm">
           <span>
             <span className="text-2xl font-semibold tabular-nums">{calls}</span>
             <span className="text-muted-foreground ml-2">calls</span>
+          </span>
+          <span className="self-end text-muted-foreground">
+            {dialled} dialled · {manual} logged by hand
           </span>
           <span className="self-end text-muted-foreground">
             {connected} connected · {meetings} meeting{meetings === 1 ? "" : "s"} booked · {talk} min talk time
@@ -101,7 +114,11 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
               formatter={(value, name) => [String(value ?? 0), String(name)]}
               labelFormatter={(label, items) => {
                 const p = items?.[0]?.payload;
-                return `${label}${p ? ` — ${p.calls} call${p.calls === 1 ? "" : "s"}, ${p.talkMinutes} min` : ""}`;
+                return `${label}${
+                  p
+                    ? ` — ${p.calls} call${p.calls === 1 ? "" : "s"} (${p.diallerCalls} dialled, ${p.manualCalls} by hand), ${p.talkMinutes} min`
+                    : ""
+                }`;
               }}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
             />

@@ -21,6 +21,11 @@ export interface CallDay {
   date: string; // YYYY-MM-DD
   label: string; // "9 Sep"
   calls: number;
+  /** Placed through the dialler — these carry a number, duration and outcome. */
+  diallerCalls: number;
+  /** Logged by hand in HubSpot afterwards. Real calls; they just arrive with
+   *  no duration and usually no outcome. */
+  manualCalls: number;
   talkMinutes: number;
   counts: Record<OutcomeBucket, number>;
 }
@@ -28,6 +33,8 @@ export interface CallDay {
 export interface CallActivity {
   days: CallDay[];
   totalCalls: number;
+  totalDiallerCalls: number;
+  totalManualCalls: number;
   totalTalkMinutes: number;
   connected: number; // Connected + Meeting booked
   meetingsBooked: number;
@@ -40,12 +47,18 @@ const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /**
- * Daily dialler output and call outcomes.
+ * Daily call output and outcomes.
  *
- * Only calls placed through the dialler count — they're the ones carrying a
- * from-number, a duration and an outcome. The ~650 hand-logged calls in the
- * history have none of those, so including them would inflate the volume while
- * contributing nothing to the outcome mix.
+ * Counts BOTH dialler calls and the ones Michael logs by hand afterwards. The
+ * hand-logged ones carry no from-number, no duration and usually no outcome,
+ * which is why they were originally excluded — but they are three quarters of
+ * his calls, and leaving them out reported a fraction of the work as the whole
+ * of it.
+ *
+ * They are kept separable rather than merged: talk time still comes only from
+ * dialler calls, since a hand-logged call has no duration to contribute, and
+ * the split is reported so a day of manual logging is never mistaken for a day
+ * on the dialler.
  */
 export async function getCallActivity(
   days = 30,
@@ -56,7 +69,7 @@ export async function getCallActivity(
   start.setDate(start.getDate() - (days - 1));
 
   const rows = await db.hubspotActivity.findMany({
-    where: { ownerId, type: "call", fromNumber: { not: null }, timestamp: { gte: start } },
+    where: { ownerId, type: "call", timestamp: { gte: start } },
     select: { timestamp: true, durationMs: true, outcome: true, fromNumber: true },
     orderBy: { timestamp: "asc" },
   });
@@ -70,6 +83,8 @@ export async function getCallActivity(
       date: dayKey(d),
       label: `${d.getDate()} ${MONTHS[d.getMonth()]}`,
       calls: 0,
+      diallerCalls: 0,
+      manualCalls: 0,
       talkMinutes: 0,
       counts: { "Meeting booked": 0, Connected: 0, "No answer": 0, "Other outcome": 0, "Not logged": 0 },
     });
@@ -87,7 +102,14 @@ export async function getCallActivity(
     day.talkMinutes += ms / 60000;
     totalTalkMs += ms;
 
-    const num = r.fromNumber!;
+    // No from-number means it was logged by hand, not dialled.
+    if (!r.fromNumber) {
+      day.manualCalls++;
+      continue;
+    }
+    day.diallerCalls++;
+
+    const num = r.fromNumber;
     const seen = numbers.get(num);
     const key = dayKey(r.timestamp);
     if (!seen) numbers.set(num, { calls: 1, firstSeen: key });
@@ -103,6 +125,8 @@ export async function getCallActivity(
   return {
     days: days_,
     totalCalls: days_.reduce((s, d) => s + d.calls, 0),
+    totalDiallerCalls: days_.reduce((s, d) => s + d.diallerCalls, 0),
+    totalManualCalls: days_.reduce((s, d) => s + d.manualCalls, 0),
     totalTalkMinutes: Math.round(totalTalkMs / 60000),
     connected: sum("Connected") + sum("Meeting booked"),
     meetingsBooked: sum("Meeting booked"),
