@@ -388,13 +388,20 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
 
       // A downsell replacement is never new business, and the deal it replaces
       // never churns in full — the pair contributes its net contraction below.
+      // entryKey is the DEAL id; id stays the client id so the drill-down link
+      // still resolves to the client page. Without a per-deal key, every deal a
+      // client moved in one month rendered under the same React key — three
+      // Blue Light Card deals starting in October shared one — and React reused
+      // the DOM nodes instead of replacing them, so rows from the New panel
+      // survived into the Churned panel. The totals stayed right because they
+      // are summed from the data, which is what made it look like a data bug.
       if (monthKeyOf(d.startDate ?? d.closeDate) === month && !downsells.successorIds.has(d.id)) {
         newRevenue += amt;
-        newClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
+        newClients.push({ id: d.clientId ?? d.id, entryKey: d.id, name: d.name, retainerValue: Math.round(amt) });
       }
       if (monthKeyOf(d.churnDate) === month && !downsells.predecessorIds.has(d.id)) {
         churnedRevenue += amt;
-        churnedClients.push({ id: d.clientId ?? d.id, name: d.name, retainerValue: Math.round(amt) });
+        churnedClients.push({ id: d.clientId ?? d.id, entryKey: d.id, name: d.name, retainerValue: Math.round(amt) });
       }
     }
 
