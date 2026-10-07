@@ -47,6 +47,17 @@ const DIVISION_LEAD_ALLOWED_PATHS = [
   "/logout",
 ];
 
+// A salesperson may reach only the sales dashboard and the auth flow. Same
+// shape as the divisional rule above, and likewise a UX gate — the page's own
+// check is the boundary.
+const SALES_LEAD_ALLOWED_PATHS = [
+  "/michael",
+  "/api/michael",
+  "/setup-2fa",
+  "/api/auth",
+  "/logout",
+];
+
 // Paths that users without 2FA may access (setup flow + auth API routes)
 const SETUP_2FA_ALLOWED_PATHS = [
   "/setup-2fa",
@@ -104,6 +115,18 @@ export function middleware(request: NextRequest) {
         });
       }
       return NextResponse.redirect(new URL("/division", request.url));
+    }
+  }
+
+  if (payload.role === "sales_lead") {
+    if (!SALES_LEAD_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
+      if (pathname.startsWith("/api")) {
+        return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return NextResponse.redirect(new URL("/michael", request.url));
     }
   }
 

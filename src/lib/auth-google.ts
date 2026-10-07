@@ -26,6 +26,9 @@ export const ACCESS_LIST: Record<string, { role: string; division?: string }> = 
   // DIVISION_VIEWS. Emily is scoped exactly as a divisional lead is, so she sees
   // her own clients and nothing else.
   "emily@swan.studio": { role: "division_lead", division: "Client Success" },
+  // Sales: read-only, confined to the sales dashboard. Add another salesperson
+  // here with the same role and they get the same single view.
+  "michael@swan.studio": { role: "sales_lead" },
 };
 
 export const ALLOWED_EMAILS = Object.keys(ACCESS_LIST);

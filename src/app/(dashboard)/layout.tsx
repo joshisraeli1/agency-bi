@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
-import { getSession, isDivisionLead } from "@/lib/auth";
+import { getSession, isDivisionLead, isSalesLead } from "@/lib/auth";
+import type { SidebarMode } from "@/components/layout/sidebar";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,17 @@ export default async function DashboardLayout({
   // A divisional leader sees only their own nav entry. This is presentation —
   // the middleware and each page's own check are what actually deny access.
   const session = await getSession();
-  const divisionOnly = !!session && isDivisionLead(session);
+  const mode: SidebarMode = !session
+    ? "admin"
+    : isDivisionLead(session)
+      ? "division"
+      : isSalesLead(session)
+        ? "sales"
+        : "admin";
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar divisionOnly={divisionOnly} />
+      <Sidebar mode={mode} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto p-6">{children}</main>

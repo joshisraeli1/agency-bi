@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getSession, isDivisionLead, isSalesLead, hasRole } from "@/lib/auth";
 import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { getSalesActivity } from "@/lib/analytics/sales-activity";
 import { getCallActivity } from "@/lib/analytics/call-activity";
@@ -10,7 +12,20 @@ import { MichaelCommissionSection } from "@/components/dashboard/michael-commiss
 import { SalesActivityCharts } from "@/components/dashboard/sales-activity-charts";
 import { CallActivityChart } from "@/components/dashboard/call-activity-chart";
 
+/**
+ * The sales dashboard.
+ *
+ * Read-only for a sales_lead, who can reach this page and nothing else; the
+ * middleware redirects them away from everything, and this check is the
+ * boundary behind it. A divisional lead has no business here and is sent to
+ * their own dashboard; everyone else needs viewer or above.
+ */
 export default async function MichaelPage() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  if (isDivisionLead(session)) redirect("/division");
+  if (!isSalesLead(session) && !hasRole(session, "viewer")) redirect("/");
+
   // 52 weeks fetched once; the card's range selector slices client-side.
   const [data, activity, callActivity] = await Promise.all([
     getMichaelSalesData(),

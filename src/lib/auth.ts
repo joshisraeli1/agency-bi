@@ -243,6 +243,25 @@ export function isDivisionLead(session: { role: string }): boolean {
   return session.role === DIVISION_LEAD_ROLE;
 }
 
+export const SALES_LEAD_ROLE = "sales_lead";
+
+/**
+ * Read-only access to the sales dashboard and nothing else.
+ *
+ * Like division_lead, this is deliberately ABSENT from the role hierarchy, so
+ * hasRole() scores it 0 and it can never satisfy a minimum-role check anywhere.
+ * Adding it to the hierarchy to put it "just above viewer" would hand the whole
+ * agency book to a salesperson.
+ */
+export function isSalesLead(session: { role: string }): boolean {
+  return session.role === SALES_LEAD_ROLE;
+}
+
+/** Roles confined to a single dashboard — no write access anywhere. */
+export function isScopedRole(session: { role: string }): boolean {
+  return isDivisionLead(session) || isSalesLead(session);
+}
+
 /**
  * Require authentication. Returns session or a 401 Response.
  */

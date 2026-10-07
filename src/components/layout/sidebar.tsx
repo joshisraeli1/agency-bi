@@ -41,10 +41,16 @@ const navItems = [
 
 // The only entry a divisional leader sees.
 const divisionNavItems = [{ href: "/division", label: "My Division", icon: PieChart }];
+// ...and the only one a salesperson sees.
+const salesNavItems = [{ href: "/michael", label: "My Sales", icon: TrendingUp }];
 
-export function Sidebar({ divisionOnly = false }: { divisionOnly?: boolean }) {
+// A mode rather than two booleans, which would permit a meaningless both-true
+// state. "admin" here means the full nav, not the admin role.
+export type SidebarMode = "admin" | "division" | "sales";
+
+export function Sidebar({ mode = "admin" }: { mode?: SidebarMode }) {
   const pathname = usePathname();
-  const items = divisionOnly ? divisionNavItems : navItems;
+  const items = mode === "division" ? divisionNavItems : mode === "sales" ? salesNavItems : navItems;
 
   return (
     <aside className="w-64 border-r bg-card flex flex-col h-full">
