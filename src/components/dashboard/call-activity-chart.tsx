@@ -37,6 +37,11 @@ const OUTCOME_COLORS: Record<string, string> = {
   "Not logged": "#94a3b8",
 };
 
+// Its own chart and its own single series, so this only has to carry against
+// the surface, not separate from the outcome hues above. Deliberately neutral:
+// a hand-logged call is a call made, not an outcome.
+const MANUAL_COLOR = "#64748b";
+
 const RANGES = [14, 30, 90] as const;
 
 export function CallActivityChart({ data }: { data: CallActivity }) {
@@ -54,13 +59,19 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
   const step = Math.ceil(days.length / 15);
   const ticks = days.filter((_, i) => i % step === 0).map((d) => d.label);
 
-  const chartData = days.map((d) => ({
+  // Dialler calls carry a disposition and a duration, so the outcome mix means
+  // something. Hand-logged calls mostly do not, so they get their own chart
+  // rather than being stacked into an outcome breakdown they cannot support.
+  const diallerData = days.map((d) => ({
     label: d.label,
-    ...d.counts,
-    calls: d.calls,
-    diallerCalls: d.diallerCalls,
-    manualCalls: d.manualCalls,
+    ...d.diallerCounts,
+    calls: d.diallerCalls,
     talkMinutes: d.talkMinutes,
+  }));
+  const manualData = days.map((d) => ({
+    label: d.label,
+    "Logged by hand": d.manualCalls,
+    calls: d.manualCalls,
   }));
 
   return (
@@ -104,8 +115,12 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }} barCategoryGap="16%">
+        <p className="text-sm font-medium">
+          Dialler calls
+          <span className="text-muted-foreground font-normal"> · {dialled} in this window</span>
+        </p>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={diallerData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }} barCategoryGap="16%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
             <XAxis dataKey="label" ticks={ticks} tick={{ fontSize: 11 }} tickLine={false} interval={0} />
             <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={32} />
@@ -115,9 +130,7 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
               labelFormatter={(label, items) => {
                 const p = items?.[0]?.payload;
                 return `${label}${
-                  p
-                    ? ` — ${p.calls} call${p.calls === 1 ? "" : "s"} (${p.diallerCalls} dialled, ${p.manualCalls} by hand), ${p.talkMinutes} min`
-                    : ""
+                  p ? ` — ${p.calls} dialled, ${p.talkMinutes} min talk` : ""
                 }`;
               }}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
@@ -133,6 +146,30 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
                 radius={i === OUTCOME_BUCKETS.length - 1 ? [3, 3, 0, 0] : undefined}
               />
             ))}
+          </BarChart>
+        </ResponsiveContainer>
+
+        <div className="pt-2">
+          <p className="text-sm font-medium">
+            Logged by hand
+            <span className="text-muted-foreground font-normal"> · {manual} in this window</span>
+          </p>
+          <p className="text-muted-foreground text-xs mt-0.5">
+            Entered in HubSpot after the call. No duration is recorded, and most carry no
+            disposition, so these are counted but have no outcome mix of their own.
+          </p>
+        </div>
+        <ResponsiveContainer width="100%" height={170}>
+          <BarChart data={manualData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }} barCategoryGap="16%">
+            <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
+            <XAxis dataKey="label" ticks={ticks} tick={{ fontSize: 11 }} tickLine={false} interval={0} />
+            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={32} />
+            <Tooltip
+              cursor={{ fill: "currentColor", fillOpacity: 0.06 }}
+              formatter={(value) => [String(value ?? 0), "Logged by hand"]}
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+            />
+            <Bar dataKey="Logged by hand" fill={MANUAL_COLOR} maxBarSize={34} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
 

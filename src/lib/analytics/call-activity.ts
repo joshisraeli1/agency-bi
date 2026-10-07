@@ -27,7 +27,11 @@ export interface CallDay {
    *  no duration and usually no outcome. */
   manualCalls: number;
   talkMinutes: number;
+  /** Outcome mix across every call that day. */
   counts: Record<OutcomeBucket, number>;
+  /** The same, for dialler calls only — where duration and disposition are
+   *  reliably populated, so the mix actually means something. */
+  diallerCounts: Record<OutcomeBucket, number>;
 }
 
 export interface CallActivity {
@@ -87,6 +91,7 @@ export async function getCallActivity(
       manualCalls: 0,
       talkMinutes: 0,
       counts: { "Meeting booked": 0, Connected: 0, "No answer": 0, "Other outcome": 0, "Not logged": 0 },
+      diallerCounts: { "Meeting booked": 0, Connected: 0, "No answer": 0, "Other outcome": 0, "Not logged": 0 },
     });
   }
 
@@ -108,6 +113,7 @@ export async function getCallActivity(
       continue;
     }
     day.diallerCalls++;
+    day.diallerCounts[bucketFor(r.outcome)]++;
 
     const num = r.fromNumber;
     const seen = numbers.get(num);
