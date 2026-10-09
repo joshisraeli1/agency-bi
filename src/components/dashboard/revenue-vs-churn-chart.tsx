@@ -25,13 +25,21 @@ type ExpandedState = { month: string; type: "new" | "churn" } | null;
 
 export function RevenueVsChurnChart({ data }: Props) {
   const [expanded, setExpanded] = useState<ExpandedState>(null);
+  // Recurring-only by default: a one-off starting is not new recurring revenue
+  // and a one-off ending is not churn, so project work makes a busy month look
+  // like a wave of wins followed by a wave of losses.
+  const [recurringOnly, setRecurringOnly] = useState(true);
+
+  // Both series ship with the page, so the switch is instant and the two views
+  // can never disagree about the month they describe.
+  const view = (d: Props["data"][number]) => (recurringOnly ? d.recurring : d);
 
   const chartData = data.map((d) => ({
     month: formatMonth(d.month),
     rawMonth: d.month,
-    "New Revenue": d.newRevenue,
-    "Churned Revenue": d.churnedRevenue,
-    net: d.net,
+    "New Revenue": view(d).newRevenue,
+    "Churned Revenue": view(d).churnedRevenue,
+    net: view(d).net,
   }));
 
   // "$0" rather than a blank: an unlabelled zero leaves a gap where a bar should
@@ -57,15 +65,43 @@ export function RevenueVsChurnChart({ data }: Props) {
     ? data.find((d) => d.month === expanded.month)
     : null;
 
-  const expandedClients =
-    expanded?.type === "new"
-      ? expandedRow?.newClients
-      : expandedRow?.churnedClients;
+  const expandedClients = !expandedRow
+    ? undefined
+    : expanded?.type === "new"
+      ? view(expandedRow).newClients
+      : view(expandedRow).churnedClients;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>New Revenue vs Churn</CardTitle>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle>New Revenue vs Churn</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">
+              {recurringOnly
+                ? "Recurring work only — one-off projects and ad-hoc jobs excluded from both sides."
+                : "All work, including one-off projects and ad-hoc jobs."}
+            </p>
+          </div>
+          <div className="flex items-center rounded-md border shrink-0">
+            <button
+              onClick={() => setRecurringOnly(true)}
+              className={`px-3 py-1.5 text-sm rounded-l-md ${
+                recurringOnly ? "bg-foreground text-background" : "hover:bg-muted"
+              }`}
+            >
+              Recurring only
+            </button>
+            <button
+              onClick={() => setRecurringOnly(false)}
+              className={`px-3 py-1.5 text-sm rounded-r-md ${
+                !recurringOnly ? "bg-foreground text-background" : "hover:bg-muted"
+              }`}
+            >
+              All revenue
+            </button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={350}>

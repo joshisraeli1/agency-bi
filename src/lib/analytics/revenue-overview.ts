@@ -3,6 +3,7 @@ import { getMonthRange, toMonthKey, formatMonth, getLoadedMonthlyCost } from "@/
 import { getExcludedClientIds } from "./excluded-clients";
 import { dealDivisionSplit } from "./division-fy";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
+import { isOneOff } from "./upsells";
 import type { RevenueOverview } from "./types";
 
 export async function getRevenueOverview(
@@ -342,6 +343,22 @@ export interface RevenueVsChurnRow {
   net: number;
   newClients: RevenueVsChurnClient[];
   churnedClients: RevenueVsChurnClient[];
+  /**
+   * The same month counting recurring work only — one-off projects and ad-hoc
+   * jobs removed from both sides.
+   *
+   * A one-off starting is not new recurring revenue and a one-off ending is not
+   * churn: the job simply finished as sold. Leaving them in makes a busy month
+   * of project work look like a wave of wins followed by a wave of losses, and
+   * it is why a shoot or a website build shows up in the churned list.
+   */
+  recurring: {
+    newRevenue: number;
+    churnedRevenue: number;
+    net: number;
+    newClients: RevenueVsChurnClient[];
+    churnedClients: RevenueVsChurnClient[];
+  };
 }
 
 
@@ -373,11 +390,20 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
 
+  // Project work: sold as a job, not a retainer. Same test the divisional
+  // surfaces use, so "recurring" means the same thing across the tool.
+  const isProjectWork = (d: (typeof deals)[number]) =>
+    isOneOff(d) || /ad[\s-]?hoc/i.test(d.name);
+
   return monthRange.map((month) => {
     let newRevenue = 0;
     let churnedRevenue = 0;
     const newClients: RevenueVsChurnClient[] = [];
     const churnedClients: RevenueVsChurnClient[] = [];
+    let recNewRevenue = 0;
+    let recChurnedRevenue = 0;
+    const recNewClients: RevenueVsChurnClient[] = [];
+    const recChurnedClients: RevenueVsChurnClient[] = [];
 
     for (const d of deals) {
       if (d.clientId && excludedIds.has(d.clientId)) continue;
@@ -395,13 +421,23 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       // the DOM nodes instead of replacing them, so rows from the New panel
       // survived into the Churned panel. The totals stayed right because they
       // are summed from the data, which is what made it look like a data bug.
+      const entry = { id: d.clientId ?? d.id, entryKey: d.id, name: d.name, retainerValue: Math.round(amt) };
+      const recurringDeal = !isProjectWork(d);
       if (monthKeyOf(d.startDate ?? d.closeDate) === month && !downsells.successorIds.has(d.id)) {
         newRevenue += amt;
-        newClients.push({ id: d.clientId ?? d.id, entryKey: d.id, name: d.name, retainerValue: Math.round(amt) });
+        newClients.push(entry);
+        if (recurringDeal) {
+          recNewRevenue += amt;
+          recNewClients.push(entry);
+        }
       }
       if (monthKeyOf(d.churnDate) === month && !downsells.predecessorIds.has(d.id)) {
         churnedRevenue += amt;
-        churnedClients.push({ id: d.clientId ?? d.id, entryKey: d.id, name: d.name, retainerValue: Math.round(amt) });
+        churnedClients.push(entry);
+        if (recurringDeal) {
+          recChurnedRevenue += amt;
+          recChurnedClients.push(entry);
+        }
       }
     }
 
@@ -410,9 +446,10 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
     // revenue, so no chart ever renders a negative bar.
     for (const p of downsells.contractionsByMonth.get(month) ?? []) {
       if (p.clientId && excludedIds.has(p.clientId)) continue;
+      // A downsell is a retainer moving to a smaller retainer, so the
+      // contraction belongs in both views.
       if (p.contractionExGst > 0) {
-        churnedRevenue += p.contractionExGst;
-        churnedClients.push({
+        const entry = {
           // Client id keeps the drill-down link resolving to the actual
           // client; entryKey (the successor's deal id) keeps the list key
           // unique when a client has BOTH a downsell and a separately-churned
@@ -421,16 +458,23 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
           entryKey: p.successorId,
           name: `${p.predecessorName} (downsell)`,
           retainerValue: p.contractionExGst,
-        });
+        };
+        churnedRevenue += p.contractionExGst;
+        churnedClients.push(entry);
+        recChurnedRevenue += p.contractionExGst;
+        recChurnedClients.push(entry);
       } else if (p.contractionExGst < 0) {
         const gain = -p.contractionExGst;
-        newRevenue += gain;
-        newClients.push({
+        const entry = {
           id: p.clientId ?? p.successorId,
           entryKey: p.successorId,
           name: `${p.predecessorName} (upgrade)`,
           retainerValue: gain,
-        });
+        };
+        newRevenue += gain;
+        newClients.push(entry);
+        recNewRevenue += gain;
+        recNewClients.push(entry);
       }
     }
 
@@ -441,6 +485,13 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       net: Math.round(newRevenue - churnedRevenue),
       newClients,
       churnedClients,
+      recurring: {
+        newRevenue: Math.round(recNewRevenue),
+        churnedRevenue: Math.round(recChurnedRevenue),
+        net: Math.round(recNewRevenue - recChurnedRevenue),
+        newClients: recNewClients,
+        churnedClients: recChurnedClients,
+      },
     };
   });
 }
