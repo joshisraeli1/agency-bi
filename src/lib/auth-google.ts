@@ -29,6 +29,7 @@ export const ACCESS_LIST: Record<string, { role: string; division?: string }> = 
   // Sales: read-only, confined to the sales dashboard. Add another salesperson
   // here with the same role and they get the same single view.
   "michael@swan.studio": { role: "sales_lead" },
+  "xavier@swan.studio": { role: "sales_lead" },
 };
 
 export const ALLOWED_EMAILS = Object.keys(ACCESS_LIST);

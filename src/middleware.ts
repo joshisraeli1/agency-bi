@@ -51,7 +51,8 @@ const DIVISION_LEAD_ALLOWED_PATHS = [
 // shape as the divisional rule above, and likewise a UX gate — the page's own
 // check is the boundary.
 const SALES_LEAD_ALLOWED_PATHS = [
-  "/michael",
+  "/sales",
+  "/michael", // legacy link; the page redirects to /sales/michael
   "/api/michael",
   "/setup-2fa",
   "/api/auth",
@@ -126,7 +127,7 @@ export function middleware(request: NextRequest) {
           headers: { "content-type": "application/json" },
         });
       }
-      return NextResponse.redirect(new URL("/michael", request.url));
+      return NextResponse.redirect(new URL("/sales", request.url));
     }
   }
 

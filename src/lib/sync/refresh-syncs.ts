@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { decryptJson, encryptJson } from "@/lib/encryption";
 import { fetchPeriodPnl, fetchPnlByMonth, fetchRepeatingInvoices, recentCompleteQuarters, refreshToken } from "@/lib/integrations/xero";
 import { buildClientIndex, isLinkableStage, resolveDealClient } from "./deal-client-link";
-import { MICHAEL_OWNER_ID } from "@/lib/analytics/michael-sales";
+import { SALES_OWNER_IDS } from "@/lib/analytics/salespeople";
 
 // ---------------------------------------------------------------------------
 // HubSpot deals
@@ -240,7 +240,7 @@ async function promoteWonProspects(): Promise<number> {
  * Owners whose activity we track. Michael is the only rep on a dashboard today;
  * add ids here to widen it without touching the sync itself.
  */
-const TRACKED_ACTIVITY_OWNERS = [MICHAEL_OWNER_ID];
+const TRACKED_ACTIVITY_OWNERS = SALES_OWNER_IDS;
 
 /**
  * Counts only. We request the timestamp, owner and direction and nothing else —

@@ -140,7 +140,10 @@ function toMonthKey(d: Date | null | undefined): string | null {
   return `${y}-${m}`;
 }
 
-export async function getMichaelSalesData(): Promise<MichaelSalesData> {
+export async function getMichaelSalesData(
+  ownerId: string = MICHAEL_OWNER_ID,
+  ownerName: string = MICHAEL_NAME
+): Promise<MichaelSalesData> {
   const months24 = getMonthRange(24);
   const currentMonth = months24[months24.length - 1];
   const twelveMonthsAgoKey = months24[months24.length - 12];
@@ -151,7 +154,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   // -----------------------------------------------------------------------
   const [deals, downsells] = await Promise.all([
     db.hubspotDeal.findMany({
-      where: { ownerId: MICHAEL_OWNER_ID },
+      where: { ownerId },
       select: {
         id: true, name: true, stage: true, stageLabel: true, amountExGst: true, amount: true,
         startDate: true, createDate: true, closeDate: true, churnDate: true, commissionType: true,
@@ -361,7 +364,7 @@ export async function getMichaelSalesData(): Promise<MichaelSalesData> {
   };
 
   return {
-    ownerName: MICHAEL_NAME,
+    ownerName,
     goals,
     progress,
     pipeline,

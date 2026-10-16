@@ -23,7 +23,7 @@ const navItems = [
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/client-data", label: "Client Data", icon: FileSpreadsheet },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/michael", label: "Michael", icon: TrendingUp },
+  { href: "/sales", label: "Sales", icon: TrendingUp },
   // Leadership-only: an index of every division, for seeing what a lead sees.
   // Absent from divisionNavItems below, so the nav swap keeps it away from leads;
   // /divisions does its own check, because a hidden link is not a boundary.
@@ -42,7 +42,7 @@ const navItems = [
 // The only entry a divisional leader sees.
 const divisionNavItems = [{ href: "/division", label: "My Division", icon: PieChart }];
 // ...and the only one a salesperson sees.
-const salesNavItems = [{ href: "/michael", label: "My Sales", icon: TrendingUp }];
+const salesNavItems = [{ href: "/sales", label: "My Sales", icon: TrendingUp }];
 
 // A mode rather than two booleans, which would permit a meaningless both-true
 // state. "admin" here means the full nav, not the admin role.
