@@ -19,6 +19,18 @@ export interface UpsellMonth {
   upsellCount: number;
   /** The deals behind the bar, so a month can be opened rather than guessed at. */
   upsells: UpsellDeal[];
+  /**
+   * Upsells WON in this month, and upsells that ended in it.
+   *
+   * The figures above are a stock — every upsell live that month — so they only
+   * ever climb and say nothing about whether the team sold anything recently.
+   * These two are the flow, and they answer a different question: what did we
+   * win, and what did we lose.
+   */
+  newUpsellRevenue: number;
+  newUpsells: UpsellDeal[];
+  churnedUpsellRevenue: number;
+  churnedUpsells: UpsellDeal[];
 }
 
 /**
@@ -56,19 +68,37 @@ export async function getUpsellTrend(months = 12): Promise<UpsellMonth[]> {
     let totalRevenue = 0;
     let upsellCount = 0;
     const upsells: UpsellDeal[] = [];
+    let newUpsellRevenue = 0;
+    let churnedUpsellRevenue = 0;
+    const newUpsells: UpsellDeal[] = [];
+    const churnedUpsells: UpsellDeal[] = [];
 
     for (const d of recurring) {
       const { startKey, churnKey } = windowKeys(d, downsells);
       if (!startKey) continue;
-      const live = month >= startKey && (!churnKey || month < churnKey);
-      if (!live) continue;
       const ex = d.amountExGst ?? 0;
       if (ex <= 0) continue;
+      const upsell = isUpsell(d);
+      const entry = { id: d.id, name: d.name.trim(), revenue: Math.round(ex) };
+
+      // Won and lost are independent of whether the deal is live NOW, so they
+      // are counted before the live check rather than inside it.
+      if (upsell && startKey === month) {
+        newUpsellRevenue += ex;
+        newUpsells.push(entry);
+      }
+      if (upsell && churnKey === month) {
+        churnedUpsellRevenue += ex;
+        churnedUpsells.push(entry);
+      }
+
+      const live = month >= startKey && (!churnKey || month < churnKey);
+      if (!live) continue;
       totalRevenue += ex;
-      if (isUpsell(d)) {
+      if (upsell) {
         upsellRevenue += ex;
         upsellCount++;
-        upsells.push({ id: d.id, name: d.name.trim(), revenue: Math.round(ex) });
+        upsells.push(entry);
       }
     }
 
@@ -80,6 +110,10 @@ export async function getUpsellTrend(months = 12): Promise<UpsellMonth[]> {
       upsellPercent: totalRevenue > 0 ? Number(((upsellRevenue / totalRevenue) * 100).toFixed(1)) : 0,
       upsellCount,
       upsells: upsells.sort((a, b) => b.revenue - a.revenue),
+      newUpsellRevenue: Math.round(newUpsellRevenue),
+      newUpsells: newUpsells.sort((a, b) => b.revenue - a.revenue),
+      churnedUpsellRevenue: Math.round(churnedUpsellRevenue),
+      churnedUpsells: churnedUpsells.sort((a, b) => b.revenue - a.revenue),
     };
   });
 }
