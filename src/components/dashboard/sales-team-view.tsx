@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import {
   BarChart,
@@ -31,14 +30,14 @@ export interface SalesPersonSummary {
   dealsCreatedPerMonth: { month: string; value: number }[];
   signed: number | null;
   signingTarget: number | null;
+  activityWeeks: { label: string; calls: number; emails: number }[];
 }
 
 // One hue per person, fixed by position so a filter never repaints the others.
 const SERIES = ["#ea580c", "#0d9488", "#7c3aed", "#b45309"];
 
 export function SalesTeamView({ people }: { people: SalesPersonSummary[] }) {
-  const [selected, setSelected] = useState<string>("all");
-  const shown = selected === "all" ? people : people.filter((p) => p.slug === selected);
+  const shown = people;
   const colourOf = (slug: string) => SERIES[people.findIndex((p) => p.slug === slug) % SERIES.length];
 
   // One row per month, one column per person, so the bars sit side by side and
@@ -56,34 +55,41 @@ export function SalesTeamView({ people }: { people: SalesPersonSummary[] }) {
   const revenueData = monthsOf("newRevenuePerMonth");
   const dealsData = monthsOf("dealsCreatedPerMonth");
 
+  // Weeks are keyed by label rather than date: both people are bucketed by the
+  // same weekStart, so the labels line up across the team.
+  const activityData = (key: "calls" | "emails") => {
+    const labels = [...new Set(people.flatMap((p) => p.activityWeeks.map((w) => w.label)))];
+    return labels.map((label) => {
+      const row: Record<string, string | number> = { label };
+      for (const p of shown) {
+        row[p.name] = p.activityWeeks.find((w) => w.label === label)?.[key] ?? 0;
+      }
+      return row;
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">Sales</h1>
           <p className="text-muted-foreground mt-1">
-            The team side by side. Open anyone&apos;s board for their own targets and commission.
+            The team side by side. Pick a name for that person&apos;s full board — goals, pipeline,
+            activity log, call outcomes and commission.
           </p>
         </div>
         <div className="flex items-center rounded-md border shrink-0">
-          <button
-            onClick={() => setSelected("all")}
-            className={`px-3 py-1.5 text-sm rounded-l-md ${
-              selected === "all" ? "bg-foreground text-background" : "hover:bg-muted"
-            }`}
-          >
-            All
-          </button>
+          <span className="px-3 py-1.5 text-sm bg-foreground text-background rounded-l-md">All</span>
           {people.map((p, i) => (
-            <button
+            <Link
               key={p.slug}
-              onClick={() => setSelected(p.slug)}
-              className={`px-3 py-1.5 text-sm ${i === people.length - 1 ? "rounded-r-md" : ""} ${
-                selected === p.slug ? "bg-foreground text-background" : "hover:bg-muted"
+              href={`/sales/${p.slug}`}
+              className={`px-3 py-1.5 text-sm hover:bg-muted ${
+                i === people.length - 1 ? "rounded-r-md" : ""
               }`}
             >
               {p.name.split(" ")[0]}
-            </button>
+            </Link>
           ))}
         </div>
       </div>
@@ -139,6 +145,22 @@ export function SalesTeamView({ people }: { people: SalesPersonSummary[] }) {
         title="Deals created"
         note="Deals entered in the CRM each month."
         data={dealsData}
+        people={shown}
+        colourOf={colourOf}
+      />
+
+      <TeamChart
+        title="Calls logged"
+        note="Weekly, last 12 weeks — dialler and hand-logged together. Each person's own board splits the two and carries the outcome mix."
+        data={activityData("calls")}
+        people={shown}
+        colourOf={colourOf}
+      />
+
+      <TeamChart
+        title="Emails sent"
+        note="Weekly outbound email, last 12 weeks."
+        data={activityData("emails")}
         people={shown}
         colourOf={colourOf}
       />

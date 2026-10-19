@@ -51,6 +51,13 @@ export default async function SalesPage() {
         emails: recentWeeks.reduce((s, w) => s + (w.emails ?? 0), 0),
         newRevenuePerMonth: sales.newRevenuePerMonth,
         dealsCreatedPerMonth: sales.dealsCreatedPerMonth,
+        // Last 12 weeks only: outreach is compared week to week, and a year of
+        // weekly bars for two people is unreadable.
+        activityWeeks: recentWeeks.map((w) => ({
+          label: w.label,
+          calls: w.calls ?? 0,
+          emails: w.emails ?? 0,
+        })),
         signed: commission?.signed ?? null,
         signingTarget: commission?.target ?? null,
       };
