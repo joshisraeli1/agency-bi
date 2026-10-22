@@ -22,6 +22,8 @@ export interface FoldableDeal {
   stage?: string | null;
   contentPackageType?: string | null;
   packageDescription?: string | null;
+  /** HubSpot "Contract Terms" — "3 - month" | "6 - month" | "One-off" | … */
+  contractTerms?: string | null;
   amount?: number | null;
   amountExGst?: number | null;
 }
@@ -38,12 +40,28 @@ export function isUpsell(d: FoldableDeal): boolean {
 }
 
 /**
- * One-off deals are tagged with "Package Description" = "one-off" — non-recurring
- * revenue (e.g. a single photoshoot or project fee). They count toward revenue
- * but are EXCLUDED from LTV and average-deal-size, which model the recurring book.
+ * Non-recurring revenue — a photoshoot, a set of statics, a project fee. It
+ * counts toward revenue but is excluded from MRR, LTV and average deal size,
+ * which model the recurring book.
+ *
+ * Two signals, because the team records it in two places and both are right:
+ *
+ * "Package Description" can carry several ;-separated values, so it is read as
+ * a tag set. Comparing the whole string missed "One-off;Upsell" — a deal that
+ * is both, and whose one-off half is the part that matters here.
+ *
+ * "Contract Terms" = "One-off" is the other, and is often the ONLY one set:
+ * fifteen deals carried it while Package Description said "Upsell" or nothing,
+ * which is why a $500 set of raw assets was sitting in new recurring revenue.
+ * Nothing in the book contradicts it in the other direction.
  */
 export function isOneOff(d: FoldableDeal): boolean {
-  return (d.packageDescription ?? "").toLowerCase().replace(/[^a-z]/g, "") === "oneoff";
+  const tags = (d.packageDescription ?? "")
+    .toLowerCase()
+    .split(/[;,/]/)
+    .map((t) => t.replace(/[^a-z]/g, ""));
+  if (tags.includes("oneoff")) return true;
+  return (d.contractTerms ?? "").toLowerCase().replace(/[^a-z]/g, "") === "oneoff";
 }
 
 /**

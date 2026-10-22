@@ -87,7 +87,7 @@ export async function getLTVData(): Promise<LTVData> {
     }),
     db.hubspotDeal.findMany({
       where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
-      select: { id: true, clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true },
+      select: { id: true, clientId: true, amount: true, amountExGst: true, name: true, packageDescription: true, contractTerms: true },
     }),
     db.appSettings.findFirst(),
     getExcludedClientIds(),
@@ -651,6 +651,7 @@ export async function getNewClientDealSize(
         // it here, one-off exclusion silently never matched and upsell
         // detection fell back to name-only matching.
         packageDescription: true,
+        contractTerms: true,
       },
     }),
     getDownsellResolution(),

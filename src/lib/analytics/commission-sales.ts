@@ -98,6 +98,7 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
         id: true, name: true, stage: true, amountExGst: true, amount: true,
         startDate: true, closeDate: true, createDate: true, churnDate: true,
         packageDescription: true,
+        contractTerms: true,
       },
     }),
     db.hubspotDeal.count({

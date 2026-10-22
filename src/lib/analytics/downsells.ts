@@ -308,7 +308,10 @@ export function windowKeys(
 export const DOWNSELL_DEAL_SELECT = {
   id: true, clientId: true, name: true, stage: true, amount: true, amountExGst: true,
   startDate: true, closeDate: true, churnDate: true, churnReason: true,
-  contentPackageType: true, packageDescription: true,
+  // contractTerms is read by isOneOff — without it here, every caller using this
+  // select would see it undefined and silently miss the one-off deals that are
+  // tagged only on the contract.
+  contentPackageType: true, packageDescription: true, contractTerms: true,
 } as const;
 
 /**

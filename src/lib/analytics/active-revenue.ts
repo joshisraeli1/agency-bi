@@ -76,7 +76,7 @@ export async function getRevenueComposition(): Promise<{ byMonth: RevenueComposi
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
       where: { stage: "closed_won" },
-      select: { id: true, clientId: true, name: true, contentPackageType: true, packageDescription: true, amount: true, amountExGst: true, startDate: true, closeDate: true },
+      select: { id: true, clientId: true, name: true, contentPackageType: true, packageDescription: true, contractTerms: true, amount: true, amountExGst: true, startDate: true, closeDate: true },
     }),
     getDownsellResolution(),
   ]);
