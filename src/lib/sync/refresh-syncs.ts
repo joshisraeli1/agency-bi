@@ -249,6 +249,11 @@ const TRACKED_ACTIVITY_OWNERS = SALES_OWNER_IDS;
 const ACTIVITY_SOURCES = [
   { type: "call", object: "calls", properties: ["hs_timestamp", "hubspot_owner_id", "hs_call_direction", "hs_call_status", "hs_call_duration", "hs_call_from_number", "hs_call_source", "hs_call_disposition"] },
   { type: "email", object: "emails", properties: ["hs_timestamp", "hubspot_owner_id", "hs_email_direction", "hs_email_status"] },
+  // Meetings carry two dates that mean different things: hs_timestamp is when
+  // the meeting is SCHEDULED (often months out) and hs_createdate is when it
+  // was BOOKED. The board measures booking activity, so the row is stamped with
+  // the latter and the scheduled time is kept alongside it.
+  { type: "meeting", object: "meetings", properties: ["hs_timestamp", "hubspot_owner_id", "hs_meeting_outcome", "hs_createdate"] },
 ] as const;
 
 /**
@@ -266,7 +271,7 @@ async function loadCallOutcomes(token: string): Promise<Map<string, string>> {
   }
 }
 
-export async function syncHubspotActivity(): Promise<{ calls: number; emails: number }> {
+export async function syncHubspotActivity(): Promise<{ calls: number; emails: number; meetings: number }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
 
@@ -274,7 +279,7 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
     loadOwnerNames(token),
     loadCallOutcomes(token),
   ]);
-  const counts: Record<string, number> = { call: 0, email: 0 };
+  const counts: Record<string, number> = { call: 0, email: 0, meeting: 0 };
   const now = new Date();
   const allRows: {
     id: string; type: string; ownerId: string | null; ownerName: string | null;
@@ -302,7 +307,12 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
     const rows = results
       .map((r) => {
         const p = r.properties;
-        const ts = parseDate(p.hs_timestamp);
+        // A meeting is dated by when it was booked, not when it happens — a
+        // meeting set today for March belongs in today's column.
+        const ts =
+          source.type === "meeting"
+            ? parseDate(p.hs_createdate) ?? parseDate(p.hs_timestamp)
+            : parseDate(p.hs_timestamp);
         if (!ts) return null; // no timestamp -> can't sit in a week bucket
         const ownerId = p.hubspot_owner_id ?? null;
         const durationRaw = p.hs_call_duration ? Number(p.hs_call_duration) : NaN;
@@ -313,11 +323,18 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
           ownerName: ownerId ? ownerNameById.get(ownerId) ?? null : null,
           timestamp: ts,
           direction: p.hs_call_direction ?? p.hs_email_direction ?? null,
-          status: p.hs_call_status ?? p.hs_email_status ?? null,
+          // For a meeting, status carries the scheduled date so the board can
+          // distinguish "booked in October" from "happening in October".
+          status:
+            source.type === "meeting"
+              ? p.hs_timestamp ?? null
+              : p.hs_call_status ?? p.hs_email_status ?? null,
           durationMs: Number.isFinite(durationRaw) ? durationRaw : null,
           fromNumber: p.hs_call_from_number ?? null,
           source: p.hs_call_source ?? null,
-          outcome: p.hs_call_disposition ? outcomeLabels.get(p.hs_call_disposition) ?? null : null,
+          outcome: p.hs_call_disposition
+            ? outcomeLabels.get(p.hs_call_disposition) ?? null
+            : p.hs_meeting_outcome ?? null,
           lastSyncedAt: now,
         };
       })
@@ -338,7 +355,7 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
     ]);
   }
 
-  return { calls: counts.call ?? 0, emails: counts.email ?? 0 };
+  return { calls: counts.call ?? 0, emails: counts.email ?? 0, meetings: counts.meeting ?? 0 };
 }
 
 // ---------------------------------------------------------------------------

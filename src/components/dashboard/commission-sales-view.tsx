@@ -17,9 +17,11 @@ import { Check, Target, Handshake, CalendarClock, Wallet, TrendingUp } from "luc
 import { formatCurrency } from "@/lib/utils";
 import { SalesActivityCharts } from "@/components/dashboard/sales-activity-charts";
 import { CallActivityChart } from "@/components/dashboard/call-activity-chart";
+import { MeetingsBookedChart } from "@/components/dashboard/meetings-booked-chart";
 import type { CommissionSales } from "@/lib/analytics/commission-sales";
 import type { SalesActivity } from "@/lib/analytics/sales-activity";
 import type { CallActivity } from "@/lib/analytics/call-activity";
+import type { MeetingsBooked } from "@/lib/analytics/meetings-booked";
 
 const SIGNED = "#ea580c";
 const PACE = "#0d9488";
@@ -56,10 +58,12 @@ export function CommissionSalesView({
   data,
   activity,
   callActivity,
+  meetings,
 }: {
   data: CommissionSales;
   activity: SalesActivity;
   callActivity: CallActivity;
+  meetings: MeetingsBooked;
 }) {
   const { months, clients, milestones } = data;
 
@@ -229,6 +233,8 @@ export function CommissionSalesView({
       <SalesActivityCharts weeks={activity.weeks} />
 
       <CallActivityChart data={callActivity} />
+
+      <MeetingsBookedChart data={meetings} />
 
       <Card>
         <CardHeader>

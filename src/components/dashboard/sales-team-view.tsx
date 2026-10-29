@@ -31,6 +31,8 @@ export interface SalesPersonSummary {
   signed: number | null;
   signingTarget: number | null;
   activityWeeks: { label: string; calls: number; emails: number }[];
+  meetingsBooked: number;
+  meetingDays: { label: string; booked: number }[];
 }
 
 // One hue per person, fixed by position so a filter never repaints the others.
@@ -54,6 +56,18 @@ export function SalesTeamView({ people }: { people: SalesPersonSummary[] }) {
   };
   const revenueData = monthsOf("newRevenuePerMonth");
   const dealsData = monthsOf("dealsCreatedPerMonth");
+
+  // Both people are bucketed over the same window, so the day labels line up.
+  const meetingData = () => {
+    const labels = [...new Set(people.flatMap((p) => p.meetingDays.map((d) => d.label)))];
+    return labels.map((label) => {
+      const row: Record<string, string | number> = { label };
+      for (const p of shown) {
+        row[p.name] = p.meetingDays.find((d) => d.label === label)?.booked ?? 0;
+      }
+      return row;
+    });
+  };
 
   // Weeks are keyed by label rather than date: both people are bucketed by the
   // same weekStart, so the labels line up across the team.
@@ -117,6 +131,7 @@ export function SalesTeamView({ people }: { people: SalesPersonSummary[] }) {
                 <Stat label="Pipeline" value={formatCurrency(p.pipelineValue)} />
                 <Stat label="Deals created · 12mo" value={String(p.dealsCreatedLast12mo)} />
                 <Stat label="Active deals" value={String(p.activeDealCount)} />
+                <Stat label="Meetings · 30d" value={String(p.meetingsBooked)} />
                 <Stat label="Calls · 12wk" value={String(p.calls)} />
                 <Stat label="Emails · 12wk" value={String(p.emails)} />
                 {p.signed !== null && (
@@ -145,6 +160,14 @@ export function SalesTeamView({ people }: { people: SalesPersonSummary[] }) {
         title="Deals created"
         note="Deals entered in the CRM each month."
         data={dealsData}
+        people={shown}
+        colourOf={colourOf}
+      />
+
+      <TeamChart
+        title="Meetings booked"
+        note="Daily, last 30 days — counted on the day the meeting was booked, not the day it happens."
+        data={meetingData()}
         people={shown}
         colourOf={colourOf}
       />

@@ -4,6 +4,7 @@ import { SALESPEOPLE, salespersonByEmail } from "@/lib/analytics/salespeople";
 import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { getCommissionSales } from "@/lib/analytics/commission-sales";
 import { getSalesActivity } from "@/lib/analytics/sales-activity";
+import { getMeetingsBooked } from "@/lib/analytics/meetings-booked";
 import { SalesTeamView } from "@/components/dashboard/sales-team-view";
 
 export const dynamic = "force-dynamic";
@@ -30,9 +31,10 @@ export default async function SalesPage() {
   // mean comparing a revenue target against a signing count.
   const people = await Promise.all(
     SALESPEOPLE.map(async (p) => {
-      const [sales, activity] = await Promise.all([
+      const [sales, activity, meetings] = await Promise.all([
         getMichaelSalesData(p.ownerId, p.name),
         getSalesActivity(52, p.ownerId),
+        getMeetingsBooked(30, p.ownerId),
       ]);
       const commission = p.goalModel === "commission" ? await getCommissionSales(p) : null;
       const recentWeeks = activity.weeks.slice(-12);
@@ -60,6 +62,8 @@ export default async function SalesPage() {
         })),
         signed: commission?.signed ?? null,
         signingTarget: commission?.target ?? null,
+        meetingsBooked: meetings.total,
+        meetingDays: meetings.days.map((d) => ({ label: d.label, booked: d.booked })),
       };
     })
   );

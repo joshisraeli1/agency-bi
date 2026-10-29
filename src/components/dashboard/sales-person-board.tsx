@@ -6,9 +6,11 @@ import { MichaelPipelineChart } from "@/components/dashboard/michael-pipeline-ch
 import { MichaelCommissionSection } from "@/components/dashboard/michael-commission";
 import { SalesActivityCharts } from "@/components/dashboard/sales-activity-charts";
 import { CallActivityChart } from "@/components/dashboard/call-activity-chart";
+import { MeetingsBookedChart } from "@/components/dashboard/meetings-booked-chart";
 import type { MichaelSalesData } from "@/lib/analytics/michael-sales";
 import type { SalesActivity } from "@/lib/analytics/sales-activity";
 import type { CallActivity } from "@/lib/analytics/call-activity";
+import type { MeetingsBooked } from "@/lib/analytics/meetings-booked";
 
 /**
  * A revenue-targeted salesperson's board.
@@ -20,10 +22,12 @@ export function SalesPersonBoard({
   data,
   activity,
   callActivity,
+  meetings,
 }: {
   data: MichaelSalesData;
   activity: SalesActivity;
   callActivity: CallActivity;
+  meetings: MeetingsBooked;
 }) {
   const revenueChartData = data.monthlyRevenue.map((m) => ({
     month: formatMonth(m.month),
@@ -78,6 +82,8 @@ export function SalesPersonBoard({
 
       {/* Daily dialler output and call outcomes */}
       <CallActivityChart data={callActivity} />
+
+      <MeetingsBookedChart data={meetings} />
 
       <MichaelCommissionSection data={data.commission} />
     </div>

@@ -4,6 +4,7 @@ import { salespersonBySlug, salespersonByEmail } from "@/lib/analytics/salespeop
 import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { getSalesActivity } from "@/lib/analytics/sales-activity";
 import { getCallActivity } from "@/lib/analytics/call-activity";
+import { getMeetingsBooked } from "@/lib/analytics/meetings-booked";
 import { getCommissionSales } from "@/lib/analytics/commission-sales";
 import { CommissionSalesView } from "@/components/dashboard/commission-sales-view";
 import { SalesPersonBoard } from "@/components/dashboard/sales-person-board";
@@ -40,20 +41,34 @@ export default async function SalesPersonPage({
   const person = requested;
 
   if (person.goalModel === "commission") {
-    const [commission, activity, calls] = await Promise.all([
+    const [commission, activity, calls, meetings] = await Promise.all([
       getCommissionSales(person),
       getSalesActivity(52, person.ownerId),
       getCallActivity(90, person.ownerId),
+      getMeetingsBooked(90, person.ownerId),
     ]);
     return (
-      <CommissionSalesView data={commission} activity={activity} callActivity={calls} />
+      <CommissionSalesView
+        data={commission}
+        activity={activity}
+        callActivity={calls}
+        meetings={meetings}
+      />
     );
   }
 
-  const [data, activity, callActivity] = await Promise.all([
+  const [data, activity, callActivity, meetings] = await Promise.all([
     getMichaelSalesData(person.ownerId, person.name),
     getSalesActivity(52, person.ownerId),
     getCallActivity(90, person.ownerId),
+    getMeetingsBooked(90, person.ownerId),
   ]);
-  return <SalesPersonBoard data={data} activity={activity} callActivity={callActivity} />;
+  return (
+    <SalesPersonBoard
+      data={data}
+      activity={activity}
+      callActivity={callActivity}
+      meetings={meetings}
+    />
+  );
 }
