@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   BarChart,
@@ -216,13 +217,16 @@ function TeamChart({
   colourOf: (slug: string) => string;
   money?: boolean;
 }) {
+  // Clicking a bar opens that period for everyone, so the comparison stays the
+  // point — the per-person boards are where a single person's detail lives.
+  const [period, setPeriod] = useState<Record<string, string | number> | null>(null);
   const fmt = (v: number) =>
     money ? (Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}K` : `$${v}`) : String(v);
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
-        <p className="text-muted-foreground text-sm mt-1">{note}</p>
+        <p className="text-muted-foreground text-sm mt-1">{note} Click a bar to compare that period.</p>
       </CardHeader>
       <CardContent>
         <div className="h-[280px]">
@@ -240,11 +244,52 @@ function TeamChart({
                   fill={colourOf(p.slug)}
                   radius={[4, 4, 0, 0]}
                   maxBarSize={34}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) => {
+                    const label = (bar as unknown as { payload?: { label?: string } })?.payload?.label;
+                    const row = data.find((d) => d.label === label);
+                    if (row) setPeriod(row);
+                  }}
                 />
               ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {period && (
+          <div className="rounded-lg border p-4 mt-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-medium text-sm">
+                {title} · {String(period.label)}
+              </p>
+              <button
+                onClick={() => setPeriod(null)}
+                className="text-sm text-muted-foreground hover:underline shrink-0"
+              >
+                Close
+              </button>
+            </div>
+            <ul className="mt-3 space-y-1 text-sm">
+              {people.map((p) => (
+                <li key={p.slug} className="flex justify-between gap-4">
+                  <Link href={`/sales/${p.slug}`} className="inline-flex items-center gap-2 hover:underline">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ background: colourOf(p.slug) }}
+                      aria-hidden
+                    />
+                    {p.name}
+                  </Link>
+                  <span className="tabular-nums">
+                    {money
+                      ? formatCurrency(Number(period[p.name] ?? 0))
+                      : Number(period[p.name] ?? 0).toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

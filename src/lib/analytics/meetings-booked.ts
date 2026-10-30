@@ -1,9 +1,20 @@
 import { db } from "@/lib/db";
 
+export interface BookedMeeting {
+  id: string;
+  /** When it is scheduled to happen, null if HubSpot held no start time. */
+  scheduledFor: string | null;
+  outcome: string | null;
+  upcoming: boolean;
+}
+
 export interface MeetingDay {
   date: string; // YYYY-MM-DD
   label: string; // "9 Sep"
   booked: number;
+  /** The meetings behind the bar. Counts only — the sync carries no title,
+   *  attendee or note, so this says when each one lands, not who it is with. */
+  meetings: BookedMeeting[];
 }
 
 export interface MeetingsBooked {
@@ -36,7 +47,7 @@ export async function getMeetingsBooked(
 
   const rows = await db.hubspotActivity.findMany({
     where: { type: "meeting", timestamp: { gte: start }, ...(ownerId ? { ownerId } : {}) },
-    select: { timestamp: true, status: true },
+    select: { id: true, timestamp: true, status: true, outcome: true },
     orderBy: { timestamp: "asc" },
   });
 
@@ -49,6 +60,7 @@ export async function getMeetingsBooked(
       date: dayKey(d),
       label: `${d.getDate()} ${MONTHS[d.getMonth()]}`,
       booked: 0,
+      meetings: [],
     });
   }
 
@@ -59,7 +71,18 @@ export async function getMeetingsBooked(
     if (!bucket) continue;
     bucket.booked++;
     const scheduled = r.status ? new Date(r.status) : null;
-    if (scheduled && !Number.isNaN(scheduled.getTime()) && scheduled > now) upcoming++;
+    const valid = scheduled && !Number.isNaN(scheduled.getTime());
+    const ahead = !!valid && scheduled! > now;
+    if (ahead) upcoming++;
+    bucket.meetings.push({
+      id: r.id,
+      scheduledFor: valid ? scheduled!.toISOString() : null,
+      outcome: r.outcome,
+      upcoming: ahead,
+    });
+  }
+  for (const b of buckets.values()) {
+    b.meetings.sort((a, c) => (a.scheduledFor ?? "").localeCompare(c.scheduledFor ?? ""));
   }
 
   const out = [...buckets.values()];

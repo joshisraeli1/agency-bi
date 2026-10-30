@@ -42,6 +42,7 @@ interface ChartProps {
 function ActivityChart({
   title, icon, description, weeks, dataKey, color, seriesLabel, footnote, range, onRangeChange,
 }: ChartProps) {
+  const [week, setWeek] = useState<ChartProps["weeks"][number] | null>(null);
   const total = weeks.reduce((s, w) => s + w[dataKey], 0);
   const perWeek = weeks.length > 0 ? total / weeks.length : 0;
 
@@ -90,9 +91,43 @@ function ActivityChart({
               labelFormatter={(label) => `Week of ${String(label)}`}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
             />
-            <Bar dataKey={dataKey} fill={color} radius={[4, 4, 0, 0]} maxBarSize={28} />
+            <Bar
+              dataKey={dataKey}
+              fill={color}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={28}
+              minPointSize={2}
+              cursor="pointer"
+              onClick={(bar) => {
+                const label = (bar as unknown as { payload?: { label?: string } })?.payload?.label;
+                const w = weeks.find((x) => x.label === label);
+                if (w) setWeek(w ?? null);
+              }}
+            />
           </BarChart>
         </ResponsiveContainer>
+        {week && (
+          <div className="rounded-lg border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-medium text-sm">
+                Week of {week.label}
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  · {Number(week.emails ?? 0).toLocaleString()} emails ·{" "}
+                  {Number(week.calls ?? 0).toLocaleString()} calls
+                  {typeof week.callsWithDuration === "number" &&
+                    ` (${week.callsWithDuration} with a recorded duration)`}
+                </span>
+              </p>
+              <button
+                onClick={() => setWeek(null)}
+                className="text-sm text-muted-foreground hover:underline shrink-0"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
         {footnote && <p className="text-xs text-muted-foreground">{footnote}</p>}
       </CardContent>
     </Card>

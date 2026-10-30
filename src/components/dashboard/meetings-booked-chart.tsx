@@ -12,13 +12,21 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarCheck } from "lucide-react";
-import type { MeetingsBooked } from "@/lib/analytics/meetings-booked";
+import type { MeetingsBooked, MeetingDay } from "@/lib/analytics/meetings-booked";
 
 const BOOKED = "#0d9488";
 const RANGES = [14, 30, 90] as const;
 
+const when = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleString("en-AU", {
+        day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+      })
+    : "no start time set";
+
 export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
   const [range, setRange] = useState<number>(30);
+  const [selected, setSelected] = useState<MeetingDay | null>(null);
   const days = data.days.slice(-range);
 
   const total = days.reduce((s, d) => s + d.booked, 0);
@@ -48,7 +56,7 @@ export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
         </div>
         <p className="text-muted-foreground text-sm mt-1">
           Counted on the day the meeting was booked, not the day it happens — a meeting set today
-          for next month is today&apos;s work.
+          for next month is today&apos;s work. Click a day to see when those meetings land.
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm">
           <span>
@@ -72,9 +80,57 @@ export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
               formatter={(v) => [`${v ?? 0} booked`, ""]}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
             />
-            <Bar dataKey="booked" fill={BOOKED} maxBarSize={34} radius={[3, 3, 0, 0]} />
+            <Bar
+              dataKey="booked"
+              fill={BOOKED}
+              maxBarSize={34}
+              radius={[3, 3, 0, 0]}
+              minPointSize={2}
+              cursor="pointer"
+              onClick={(bar) => {
+                const key = (bar as unknown as { payload?: { date?: string } })?.payload?.date;
+                const d = data.days.find((x) => x.date === key);
+                if (d) setSelected(d);
+              }}
+            />
           </BarChart>
         </ResponsiveContainer>
+        {selected && (
+          <div className="rounded-lg border p-4 mt-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-medium text-sm">
+                Booked on {selected.label}
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  · {selected.booked} meeting{selected.booked === 1 ? "" : "s"}
+                </span>
+              </p>
+              <button
+                onClick={() => setSelected(null)}
+                className="text-sm text-muted-foreground hover:underline shrink-0"
+              >
+                Close
+              </button>
+            </div>
+            <ul className="mt-3 space-y-1 text-sm">
+              {selected.meetings.map((m) => (
+                <li key={m.id} className="flex justify-between gap-4">
+                  <span>{when(m.scheduledFor)}</span>
+                  <span className="text-muted-foreground">
+                    {m.outcome ?? (m.upcoming ? "upcoming" : "held")}
+                  </span>
+                </li>
+              ))}
+              {selected.meetings.length === 0 && (
+                <li className="text-muted-foreground">No meetings booked this day.</li>
+              )}
+            </ul>
+            <p className="text-muted-foreground text-xs mt-3 pt-2 border-t">
+              Times only — the activity sync carries no meeting title or attendee, so who each one
+              is with stays in HubSpot.
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

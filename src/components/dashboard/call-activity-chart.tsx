@@ -46,6 +46,7 @@ const RANGES = [14, 30, 90] as const;
 
 export function CallActivityChart({ data }: { data: CallActivity }) {
   const [range, setRange] = useState<number>(30);
+  const [day, setDay] = useState<CallActivity["days"][number] | null>(null);
   const days = data.days.slice(-range);
 
   const calls = days.reduce((s, d) => s + d.calls, 0);
@@ -96,7 +97,7 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
           </select>
         </div>
         <p className="text-muted-foreground text-sm mt-1">
-          Every call, stacked by outcome — dialler and hand-logged alike. A hand-logged call
+          Click a day for its breakdown. Every call, stacked by outcome — dialler and hand-logged alike. A hand-logged call
           carries no duration and usually no outcome, so it lands in &ldquo;Not logged&rdquo; and
           adds nothing to talk time; it is still a call made.
         </p>
@@ -144,6 +145,12 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
                 fill={OUTCOME_COLORS[b]}
                 maxBarSize={34}
                 radius={i === OUTCOME_BUCKETS.length - 1 ? [3, 3, 0, 0] : undefined}
+                cursor="pointer"
+                onClick={(bar) => {
+                  const label = (bar as unknown as { payload?: { label?: string } })?.payload?.label;
+                  const d = days.find((x) => x.label === label);
+                  if (d) setDay(d);
+                }}
               />
             ))}
           </BarChart>
@@ -172,6 +179,43 @@ export function CallActivityChart({ data }: { data: CallActivity }) {
             <Bar dataKey="Logged by hand" fill={MANUAL_COLOR} maxBarSize={34} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+
+        {day && (
+          <div className="rounded-lg border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-medium text-sm">
+                {day.label}
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  · {day.calls} call{day.calls === 1 ? "" : "s"} · {day.diallerCalls} dialled,{" "}
+                  {day.manualCalls} by hand · {day.talkMinutes} min talk
+                </span>
+              </p>
+              <button
+                onClick={() => setDay(null)}
+                className="text-sm text-muted-foreground hover:underline shrink-0"
+              >
+                Close
+              </button>
+            </div>
+            <ul className="mt-3 space-y-1 text-sm">
+              {OUTCOME_BUCKETS.filter((b) => day.counts[b] > 0).map((b) => (
+                <li key={b} className="flex justify-between gap-4">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ background: OUTCOME_COLORS[b] }}
+                      aria-hidden
+                    />
+                    {b}
+                  </span>
+                  <span className="tabular-nums">{day.counts[b]}</span>
+                </li>
+              ))}
+              {day.calls === 0 && <li className="text-muted-foreground">No calls this day.</li>}
+            </ul>
+          </div>
+        )}
 
         {data.numbers.length > 0 && (
           <p className="text-xs text-muted-foreground">
