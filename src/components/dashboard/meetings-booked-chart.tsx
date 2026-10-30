@@ -56,7 +56,7 @@ export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
         </div>
         <p className="text-muted-foreground text-sm mt-1">
           Counted on the day the meeting was booked, not the day it happens — a meeting set today
-          for next month is today&apos;s work. Click a day to see when those meetings land.
+          for next month is today&apos;s work. Click a day to see who was booked in.
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm">
           <span>
@@ -115,9 +115,9 @@ export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
             <ul className="mt-3 space-y-1 text-sm">
               {selected.meetings.map((m) => (
                 <li key={m.id} className="flex justify-between gap-4">
-                  <span>{when(m.scheduledFor)}</span>
-                  <span className="text-muted-foreground">
-                    {m.outcome ?? (m.upcoming ? "upcoming" : "held")}
+                  <span className="font-medium">{m.client ?? "No client attached"}</span>
+                  <span className="text-muted-foreground shrink-0">
+                    {when(m.scheduledFor)} · {m.outcome ?? (m.upcoming ? "upcoming" : "held")}
                   </span>
                 </li>
               ))}
@@ -126,8 +126,8 @@ export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
               )}
             </ul>
             <p className="text-muted-foreground text-xs mt-3 pt-2 border-t">
-              Times only — the activity sync carries no meeting title or attendee, so who each one
-              is with stays in HubSpot.
+              The company the meeting is attached to in HubSpot. Titles, attendees and notes are
+              not synced.
             </p>
           </div>
         )}

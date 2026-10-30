@@ -243,8 +243,13 @@ async function promoteWonProspects(): Promise<number> {
 const TRACKED_ACTIVITY_OWNERS = SALES_OWNER_IDS;
 
 /**
- * Counts only. We request the timestamp, owner and direction and nothing else —
- * no subject, body or recipient ever leaves HubSpot.
+ * Calls and emails are counts only: timestamp, owner and direction, nothing
+ * else — no subject, body or recipient ever leaves HubSpot.
+ *
+ * Meetings are the one exception, and a deliberate one. A meetings-booked chart
+ * that cannot say which client was booked is a dead end, so the ASSOCIATED
+ * COMPANY is carried across — structured data naming the client, not the
+ * meeting's free-text title, which also holds attendee names and agendas.
  */
 const ACTIVITY_SOURCES = [
   { type: "call", object: "calls", properties: ["hs_timestamp", "hubspot_owner_id", "hs_call_direction", "hs_call_status", "hs_call_duration", "hs_call_from_number", "hs_call_source", "hs_call_disposition"] },
@@ -271,6 +276,59 @@ async function loadCallOutcomes(token: string): Promise<Map<string, string>> {
   }
 }
 
+/**
+ * The company each meeting is attached to, resolved in batches of 100.
+ *
+ * Two hops — meeting to company id, then company id to name — but both are
+ * batched, so a year of meetings costs a handful of calls rather than one per
+ * meeting. A meeting with no association simply has no client, which is a real
+ * state (an internal or personal calendar entry) and not an error.
+ */
+async function loadMeetingCompanies(
+  meetingIds: string[],
+  token: string
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (meetingIds.length === 0) return out;
+  try {
+    const companyIdByMeeting = new Map<string, string>();
+    for (let i = 0; i < meetingIds.length; i += 100) {
+      const batch = meetingIds.slice(i, i + 100);
+      const res = await hubspotPost<{ results?: { from: { id: string }; to?: { toObjectId: string }[] }[] }>(
+        "/crm/v4/associations/meetings/companies/batch/read",
+        { inputs: batch.map((id) => ({ id })) },
+        token
+      );
+      for (const r of res.results ?? []) {
+        const first = r.to?.[0]?.toObjectId;
+        if (first) companyIdByMeeting.set(r.from.id, String(first));
+      }
+    }
+
+    const companyIds = [...new Set(companyIdByMeeting.values())];
+    const nameById = new Map<string, string>();
+    for (let i = 0; i < companyIds.length; i += 100) {
+      const batch = companyIds.slice(i, i + 100);
+      const res = await hubspotPost<{ results?: { id: string; properties: Record<string, string> }[] }>(
+        "/crm/v3/objects/companies/batch/read",
+        { inputs: batch.map((id) => ({ id })), properties: ["name"] },
+        token
+      );
+      for (const r of res.results ?? []) {
+        if (r.properties?.name) nameById.set(r.id, r.properties.name);
+      }
+    }
+
+    for (const [meetingId, companyId] of companyIdByMeeting) {
+      const name = nameById.get(companyId);
+      if (name) out.set(meetingId, name);
+    }
+  } catch {
+    // A missing client name is a worse chart, never a failed sync.
+  }
+  return out;
+}
+
 export async function syncHubspotActivity(): Promise<{ calls: number; emails: number; meetings: number }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
@@ -285,7 +343,7 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
     id: string; type: string; ownerId: string | null; ownerName: string | null;
     timestamp: Date; direction: string | null; status: string | null;
     durationMs: number | null; fromNumber: string | null; source: string | null;
-    outcome: string | null; lastSyncedAt: Date;
+    outcome: string | null; clientName: string | null; lastSyncedAt: Date;
   }[] = [];
 
   for (const source of ACTIVITY_SOURCES) {
@@ -303,6 +361,12 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
       results.push(...page.results);
       after = page.paging?.next?.after;
     } while (after);
+
+    // Only meetings carry a client; calls and emails stay counts-only.
+    const meetingCompanies =
+      source.type === "meeting"
+        ? await loadMeetingCompanies(results.map((r) => r.id), token)
+        : new Map<string, string>();
 
     const rows = results
       .map((r) => {
@@ -335,6 +399,7 @@ export async function syncHubspotActivity(): Promise<{ calls: number; emails: nu
           outcome: p.hs_call_disposition
             ? outcomeLabels.get(p.hs_call_disposition) ?? null
             : p.hs_meeting_outcome ?? null,
+          clientName: meetingCompanies.get(r.id) ?? null,
           lastSyncedAt: now,
         };
       })

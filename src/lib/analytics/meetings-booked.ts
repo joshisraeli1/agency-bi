@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 
 export interface BookedMeeting {
   id: string;
+  /** The HubSpot company the meeting is attached to, null when it has none. */
+  client: string | null;
   /** When it is scheduled to happen, null if HubSpot held no start time. */
   scheduledFor: string | null;
   outcome: string | null;
@@ -12,8 +14,8 @@ export interface MeetingDay {
   date: string; // YYYY-MM-DD
   label: string; // "9 Sep"
   booked: number;
-  /** The meetings behind the bar. Counts only — the sync carries no title,
-   *  attendee or note, so this says when each one lands, not who it is with. */
+  /** The meetings behind the bar: which client, and when it lands. The sync
+   *  carries the associated company but never the title, attendees or notes. */
   meetings: BookedMeeting[];
 }
 
@@ -47,7 +49,7 @@ export async function getMeetingsBooked(
 
   const rows = await db.hubspotActivity.findMany({
     where: { type: "meeting", timestamp: { gte: start }, ...(ownerId ? { ownerId } : {}) },
-    select: { id: true, timestamp: true, status: true, outcome: true },
+    select: { id: true, timestamp: true, status: true, outcome: true, clientName: true },
     orderBy: { timestamp: "asc" },
   });
 
@@ -76,6 +78,7 @@ export async function getMeetingsBooked(
     if (ahead) upcoming++;
     bucket.meetings.push({
       id: r.id,
+      client: r.clientName,
       scheduledFor: valid ? scheduled!.toISOString() : null,
       outcome: r.outcome,
       upcoming: ahead,

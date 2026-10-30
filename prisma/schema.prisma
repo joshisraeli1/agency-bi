@@ -171,6 +171,7 @@ model HubspotActivity {
   fromNumber   String? // calls: the dialler number. Null on manually-logged calls.
   source       String? // calls: VOIP for dialler calls, null when logged by hand
   outcome      String? // calls: disposition label — Connected/No answer/Meeting booked/...
+  clientName   String? // meetings: the associated HubSpot company. Set only for meetings — calls and emails stay counts-only.
   lastSyncedAt DateTime @default(now())
 
   @@index([type, timestamp])
