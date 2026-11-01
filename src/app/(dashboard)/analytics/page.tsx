@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getAgencyKPIs } from "@/lib/analytics/agency-kpis";
 import { getActiveRevenueSnapshot, getDivisionGoals, getAvgClientTenureMonths, getRevenueComposition } from "@/lib/analytics/active-revenue";
 import { getAvgDealSizeComparison } from "@/lib/analytics/avg-deal-size-comparison";
+import { getOneOffSales } from "@/lib/analytics/one-off-sales";
 import { getDivisionSummaryByMonth } from "@/lib/analytics/division-summary";
 import { getBusinessBalance } from "@/lib/analytics/business-balance";
 import { getUpsellTrend } from "@/lib/analytics/upsell-trend";
@@ -12,6 +13,7 @@ import { DivisionGoals } from "@/components/dashboard/division-goals";
 import { CumulativeDivisionRevenueChart } from "@/components/dashboard/cumulative-division-revenue-chart";
 import { RevenueCompositionChart } from "@/components/dashboard/revenue-composition-chart";
 import { AvgDealSizeComparisonCard } from "@/components/dashboard/avg-deal-size-comparison";
+import { OneOffSalesChart } from "@/components/dashboard/one-off-sales-chart";
 import {
   getLTVData,
   getRevenueByServiceType,
@@ -60,6 +62,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     activeSnapshot,
     divisionGoals,
     avgDealSizeComparison,
+    oneOffSales,
     avgTenure,
     cumulativeDivisionFY,
     revenueComposition,
@@ -85,6 +88,7 @@ export default async function AnalyticsPage({ searchParams }: Props) {
     getActiveRevenueSnapshot(),
     getDivisionGoals(),
     getAvgDealSizeComparison(),
+    getOneOffSales(months),
     getAvgClientTenureMonths(),
     getCumulativeDivisionRevenueFY(),
     getRevenueComposition(),
@@ -165,6 +169,9 @@ export default async function AnalyticsPage({ searchParams }: Props) {
 
       {/* Expansion revenue: upsell dollars and upsells as a share of the book */}
       <UpsellTrendCharts data={upsellTrend} />
+
+      {/* Project work, which every recurring surface deliberately excludes */}
+      <OneOffSalesChart data={oneOffSales} />
 
       {/* Where the live book came from */}
       <DealSourceSection data={dealSource} />
