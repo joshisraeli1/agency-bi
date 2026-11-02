@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { getRevenueOverview, getRevenueVsChurn, getYtdXeroRevenue } from "@/lib/analytics/revenue-overview";
+import { getRevenueOverview, getRevenueVsChurn, getUndatedChurn, getYtdXeroRevenue } from "@/lib/analytics/revenue-overview";
 import { getActiveRevenueSnapshot, getPackageRevenueByMonth } from "@/lib/analytics/active-revenue";
 import { getPipelineStageSnapshot } from "@/lib/analytics/pipeline-stages";
 import { getBudgetVsActual } from "@/lib/analytics/revenue-budget";
@@ -42,11 +42,12 @@ export default async function OverviewPage({ searchParams }: Props) {
   const curMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const lastYearMonthKey = `${nowDate.getFullYear() - 1}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const [clientCount, recentImports, revenue, revenueVsChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages, threeMonthForecast, downsells, xeroPnl] = await Promise.all([
+  const [clientCount, recentImports, revenue, revenueVsChurn, undatedChurn, activeSnapshot, forecast, budgetVsActual, ytdXero, lastYearPackages, pipelineStages, threeMonthForecast, downsells, xeroPnl] = await Promise.all([
     db.client.count({ where: { status: "active", OR: [{ hubspotDealId: { not: null } }, { hubspotCompanyId: { not: null } }] } }),
     db.dataImport.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
     getRevenueOverview(months),
     getRevenueVsChurn(12),
+    getUndatedChurn(),
     getActiveRevenueSnapshot(),
     getRevenueForecast(6),
     getBudgetVsActual(),
@@ -132,7 +133,7 @@ export default async function OverviewPage({ searchParams }: Props) {
 
       <BudgetVsActualChart data={budgetVsActual} />
 
-      <RevenueVsChurnChart data={revenueVsChurn} />
+      <RevenueVsChurnChart data={revenueVsChurn} undated={undatedChurn} />
 
       <RevenueForecastSection data={forecast} />
 

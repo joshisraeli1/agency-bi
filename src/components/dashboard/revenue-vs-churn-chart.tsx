@@ -23,7 +23,10 @@ interface Props {
 
 type ExpandedState = { month: string; type: "new" | "churn" } | null;
 
-export function RevenueVsChurnChart({ data }: Props) {
+export function RevenueVsChurnChart({
+  data,
+  undated = [],
+}: Props & { undated?: { id: string; name: string; revenue: number; stageLabel: string | null }[] }) {
   const [expanded, setExpanded] = useState<ExpandedState>(null);
   // Recurring-only by default: a one-off starting is not new recurring revenue
   // and a one-off ending is not churn, so project work makes a busy month look
@@ -102,6 +105,33 @@ export function RevenueVsChurnChart({ data }: Props) {
             </button>
           </div>
         </div>
+        {undated.length > 0 && (
+          <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+            <p className="text-sm font-medium">
+              {undated.length} deal{undated.length === 1 ? "" : "s"} worth{" "}
+              {formatCurrency(undated.reduce((s, d) => s + d.revenue, 0))} stopped paying with no
+              churn date
+            </p>
+            <p className="text-muted-foreground text-xs mt-1">
+              The bars are keyed on the churn date, so these sit in no month at all — their revenue
+              has left the book without being counted as churn anywhere. Set a churn date in HubSpot
+              and they will appear in that month.
+            </p>
+            <ul className="mt-2 space-y-1 text-sm">
+              {undated.map((d) => (
+                <li key={d.id} className="flex justify-between gap-4">
+                  <span>
+                    {d.name}
+                    {d.stageLabel && (
+                      <span className="text-muted-foreground"> · {d.stageLabel}</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums shrink-0">{formatCurrency(d.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={350}>

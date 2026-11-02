@@ -39,6 +39,13 @@ function mapDealStage(stageId: string): string {
   if (l.includes("very warm")) return "negotiation";
   if (l.includes("interested")) return "qualified";
   if (l.includes("churned")) return "churned";
+  // "Current (Not Paying)" is a closed, zero-probability stage: the client has
+  // stopped paying. It matched nothing above and fell through to "prospect",
+  // which reads as a deal that was never won — so the revenue left the book
+  // with no churn recorded against it. Checked before "re-engage" below,
+  // because "Mighty Munch Re-engagement" sits in this stage and the name must
+  // not decide the stage.
+  if (l.includes("not paying")) return "churned";
   if (l.includes("backburner") || l.includes("re-engage")) return "backburner";
   if (l.includes("legacy")) return "legacy";
   return "prospect";

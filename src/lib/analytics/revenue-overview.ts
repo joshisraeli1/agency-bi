@@ -336,6 +336,13 @@ export interface RevenueVsChurnClient {
   entryKey?: string;
 }
 
+export interface UndatedChurn {
+  id: string;
+  name: string;
+  revenue: number;
+  stageLabel: string | null;
+}
+
 export interface RevenueVsChurnRow {
   month: string;
   newRevenue: number;
@@ -494,4 +501,37 @@ export async function getRevenueVsChurn(months = 12): Promise<RevenueVsChurnRow[
       },
     };
   });
+}
+
+/**
+ * Deals that have stopped paying but carry no churn date.
+ *
+ * The churn bars are keyed on churn_date, so a deal without one sits in no
+ * month at all: its revenue leaves the book silently and no churn is ever
+ * recorded against it. Three live deals worth $26,500 were in this state when
+ * it was found, which is why a November that felt like $60k of churn reported
+ * $29,500.
+ *
+ * Zero-value deals are excluded — the legacy Urban Swan book has a long tail of
+ * them, and they change no figure whether dated or not.
+ */
+export async function getUndatedChurn(): Promise<UndatedChurn[]> {
+  const excludedIds = await getExcludedClientIds();
+  const rows = await db.hubspotDeal.findMany({
+    where: {
+      churnDate: null,
+      stage: "churned",
+      amountExGst: { gt: 0 },
+    },
+    select: { id: true, clientId: true, name: true, amountExGst: true, stageLabel: true },
+    orderBy: { amountExGst: "desc" },
+  });
+  return rows
+    .filter((d) => !(d.clientId && excludedIds.has(d.clientId)))
+    .map((d) => ({
+      id: d.id,
+      name: d.name.trim(),
+      revenue: Math.round(d.amountExGst ?? 0),
+      stageLabel: d.stageLabel,
+    }));
 }
