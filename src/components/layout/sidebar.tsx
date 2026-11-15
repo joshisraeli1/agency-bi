@@ -15,7 +15,7 @@ import {
   FileSpreadsheet,
   TrendingUp,
   PieChart,
-  // Scale, // used by the hidden Reconciliation nav entry below
+  Scale,
 } from "lucide-react";
 
 const navItems = [
@@ -28,6 +28,7 @@ const navItems = [
   // Absent from divisionNavItems below, so the nav swap keeps it away from leads;
   // /divisions does its own check, because a hidden link is not a boundary.
   { href: "/divisions", label: "Divisions", icon: PieChart },
+  { href: "/pnl", label: "P&L Analysis", icon: Scale },
   // Reconciliation moved to a dedicated tool. The page and its data are intact
   // and still reachable at /reconciliation for looking back — only the nav entry
   // is hidden, so the figures here can't be mistaken for the current source of
