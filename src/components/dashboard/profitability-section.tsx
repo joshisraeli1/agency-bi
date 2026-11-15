@@ -91,7 +91,10 @@ function DivisionSummaryBlock({
                   </td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-2 px-3 font-medium">Cost</td>
+                  <td className="py-2 px-3 font-medium">
+                    Cost
+                    <span className="text-muted-foreground font-normal text-xs"> · per Xero</span>
+                  </td>
                   {data.map((d) => (
                     <td key={d.division} className="text-right py-2 px-3">
                       ({formatCurrency(d.cost)})
@@ -115,6 +118,30 @@ function DivisionSummaryBlock({
                     {totalMarginPercent}%
                   </td>
                 </tr>
+                {data.some((d) => (d.loadedCost ?? 0) !== d.cost) && (
+                  <tr className="border-b">
+                    <td className="py-2 px-3 font-medium">
+                      Margin
+                      <span className="text-muted-foreground font-normal text-xs">
+                        {" "}
+                        · incl. shared delivery
+                      </span>
+                    </td>
+                    {data.map((d) => (
+                      <td
+                        key={d.division}
+                        className="text-right py-2 px-3 text-muted-foreground"
+                      >
+                        {(d.loadedCost ?? d.cost) === d.cost ? "—" : `${d.loadedMarginPercent}%`}
+                      </td>
+                    ))}
+                    <td className="text-right py-2 px-3 text-muted-foreground">
+                      {totalRevenue > 0
+                        ? `${Math.round(((totalRevenue - data.reduce((s2, d) => s2 + (d.loadedCost ?? d.cost), 0)) / totalRevenue) * 100)}%`
+                        : "—"}
+                    </td>
+                  </tr>
+                )}
                 <tr className="border-b">
                   <td className="py-2 px-3 font-medium">Multiple</td>
                   {data.map((d) => (
@@ -189,7 +216,7 @@ export function ProfitabilitySection({ divisionSummary }: Props) {
       {/* Division profitability — revenue and cost both from the Xero P&L */}
       <DivisionSummaryBlock
         title="Profitability by Division"
-        subtitle={`Xero P&L revenue and costs by division — ${active.label}. Contribution before shared overhead.`}
+        subtitle={`Xero P&L revenue and costs by division — ${active.label}. Cost is the Xero figure, so each column ties to the P&L; the second margin adds this division's share of shared delivery cost.`}
         data={active.rows}
         notice={
           isPartial

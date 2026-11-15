@@ -139,9 +139,16 @@ export interface AgencyKPIs {
 export interface DivisionProfitabilityRow {
   division: string;
   revenue: number;
+  /** Direct cost — only accounts that name this division in Xero. Ties to the
+   *  P&L line, which is what makes the margin checkable. */
   cost: number;
   ratio: number;
   marginPercent: number;
+  /** Direct cost plus this division's share of genuinely shared delivery cost
+   *  (talent managers, general freelancers). Closer to true economics, but it
+   *  is an allocation judgement and will never match a Xero line. */
+  loadedCost?: number;
+  loadedMarginPercent?: number;
   clientCount: number;
   avgDealSize: number;
 }

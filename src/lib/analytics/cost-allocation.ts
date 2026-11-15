@@ -70,7 +70,9 @@ export function mapAccountToDivisions(account: string): DivisionAllocation[] {
   if (a.includes("ad creative") || a.includes("content delivery")) return one("Content Delivery");
 
   // No division named — the genuinely shared creative costs split across the
-  // two divisions that consume them.
+  // two divisions that consume them. This is the LOADED view only: it is a
+  // judgement about who consumes the cost, not something Xero says, so it is
+  // kept out of the direct figure that has to tie to the P&L.
   if (a.includes("video editor") || a.includes("freelancer") || a.includes("talent") || a.includes("content creator")) {
     return split("Content Delivery", "Social Media Management");
   }
@@ -85,4 +87,28 @@ export function mapAccountToDivisions(account: string): DivisionAllocation[] {
   }
   // Overheads + everything genuinely non-divisional → Shared.
   return one("Shared/Overhead");
+}
+
+/**
+ * The division a cost account belongs to ACCORDING TO XERO — only an account
+ * that names one counts, and everything else is overhead.
+ *
+ * The restructured chart of accounts names the division on every direct line
+ * ("Wages - Social Media Management", "Editing Fee - Ad Creative"), so Xero has
+ * already done the allocation. mapAccountToDivisions then allocated a second
+ * time on top: $3,999 of shared accounts pushed October's Social Media cost to
+ * $101,250 against a P&L saying $97,251.78, and reported a 19% margin for a
+ * division running at 22%.
+ *
+ * This is the figure that reconciles. mapAccountToDivisions stays for the
+ * loaded view, where the shared delivery cost is deliberately carried.
+ */
+export function directDivisionOf(account: string): Division {
+  const a = account.toLowerCase().trim();
+  if (a.includes("social media") || /\bsmm\b/.test(a)) return "Social Media Management";
+  if (a.includes("ads management") || a.includes("ads mgmt") || a.includes("- ads") || a.includes("meta ads")) {
+    return "Ads Management";
+  }
+  if (a.includes("ad creative") || a.includes("content delivery")) return "Content Delivery";
+  return "Shared/Overhead";
 }

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
-import { DIVISIONS, mapAccountToDivisions } from "./cost-allocation";
+import { DIVISIONS, directDivisionOf, mapAccountToDivisions } from "./cost-allocation";
 import { getExcludedClientIds } from "./excluded-clients";
 import { foldUpsells, isOneOff } from "./upsells";
 import { resolveDealDivisions } from "./upsells";
@@ -64,6 +64,10 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
 
   const revenueBy = new Map<string, Map<string, number>>();
   const costBy = new Map<string, Map<string, number>>();
+  // Direct = what Xero itself says. Loaded = direct plus allocated shared
+  // delivery cost. Both are kept so the page can show the reconcilable figure
+  // and the economic one side by side instead of silently picking one.
+  const directCostBy = new Map<string, Map<string, number>>();
   const bump = (outer: Map<string, Map<string, number>>, month: string, division: string, amount: number) => {
     const inner = outer.get(month) ?? new Map<string, number>();
     inner.set(division, (inner.get(division) ?? 0) + amount);
@@ -81,6 +85,9 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     for (const { division, weight } of allocate(account)) {
       bump(costBy, rec.month, division, rec.amount * weight);
     }
+    // A manual override is an explicit instruction about where a cost belongs,
+    // so it wins here too; otherwise only an account naming a division counts.
+    bump(directCostBy, rec.month, overrides[account] ?? directDivisionOf(account), rec.amount);
   }
 
   const divisionByDeal = resolveDealDivisions(deals);
@@ -129,14 +136,21 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
     // Copied before reallocating so the stored map is never mutated across
     // months, and so a re-read of costBy still reflects the raw P&L.
     const cost = new Map(costBy.get(month) ?? []);
+    const directCost = new Map(directCostBy.get(month) ?? []);
     // Divisional staff paid out of a shared salary account are moved to their
-    // own division. Totals are unchanged — see cost-reallocation.ts.
+    // own division. Totals are unchanged — see cost-reallocation.ts. Applied to
+    // both views: a person paid from the wrong account is a booking error, not
+    // an allocation judgement, so it belongs in the reconcilable figure too.
     applyReallocations(cost, reallocations, allocate);
+    applyReallocations(directCost, reallocations, (acct) => [
+      { division: overrides[acct] ?? directDivisionOf(acct), weight: 1 },
+    ]);
     const { sum, count } = dealStatsFor(month);
 
     const rows: DivisionProfitabilityRow[] = DIVISIONS.map((division) => {
       const r = rev.get(division) ?? 0;
-      const c = cost.get(division) ?? 0;
+      const loaded = cost.get(division) ?? 0;
+      const c = directCost.get(division) ?? 0;
       const n = count.get(division) ?? 0;
       return {
         division,
@@ -144,11 +158,13 @@ export async function getDivisionSummaryByMonth(monthCount = 12): Promise<Divisi
         cost: Math.round(c),
         ratio: c > 0 ? Number((r / c).toFixed(1)) : 0,
         marginPercent: r > 0 ? Number((((r - c) / r) * 100).toFixed(0)) : 0,
+        loadedCost: Math.round(loaded),
+        loadedMarginPercent: r > 0 ? Number((((r - loaded) / r) * 100).toFixed(0)) : 0,
         clientCount: n,
         avgDealSize: n > 0 ? Math.round((sum.get(division) ?? 0) / n) : 0,
       };
     })
-      .filter((d) => d.revenue > 0 || d.cost > 0)
+      .filter((d) => d.revenue > 0 || d.cost > 0 || (d.loadedCost ?? 0) > 0)
       .sort((a, b) => b.revenue - a.revenue);
 
     return { month, label: formatMonth(month), rows };
