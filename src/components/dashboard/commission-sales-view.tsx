@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   BarChart,
   Bar,
@@ -18,7 +20,7 @@ import { formatCurrency } from "@/lib/utils";
 import { SalesActivityCharts } from "@/components/dashboard/sales-activity-charts";
 import { CallActivityChart } from "@/components/dashboard/call-activity-chart";
 import { MeetingsBookedChart } from "@/components/dashboard/meetings-booked-chart";
-import type { CommissionSales } from "@/lib/analytics/commission-sales";
+import type { CommissionSales, CommissionMonth } from "@/lib/analytics/commission-sales";
 import type { SalesActivity } from "@/lib/analytics/sales-activity";
 import type { CallActivity } from "@/lib/analytics/call-activity";
 import type { MeetingsBooked } from "@/lib/analytics/meetings-booked";
@@ -66,6 +68,16 @@ export function CommissionSalesView({
   meetings: MeetingsBooked;
 }) {
   const { months, clients, milestones } = data;
+  const [open, setOpen] = useState<{ month: CommissionMonth; kind: "meetings" | "signings" } | null>(
+    null
+  );
+
+  // Both charts open the same panel. A month with nothing in it still opens and
+  // says so — an empty panel reads as a broken click.
+  const openMonth = (label: unknown, kind: "meetings" | "signings") => {
+    const m = months.find((x) => x.label === label);
+    if (m) setOpen({ month: m, kind });
+  };
 
   const paceData = months.map((m) => ({
     label: m.label,
@@ -148,13 +160,19 @@ export function CommissionSalesView({
           <CardTitle className="text-base">Signings against pace</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
             Running total of clients signed, against the straight line to 36 across the year. The
-            pace line is where the total needs to be to finish on target.
+            pace line is where the total needs to be to finish on target. Click a month for the
+            clients behind it.
           </p>
         </CardHeader>
         <CardContent>
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={paceData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <LineChart
+                data={paceData}
+                margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                onClick={(state) => openMonth((state as { activeLabel?: string })?.activeLabel, "signings")}
+                style={{ cursor: "pointer" }}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.35} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis tickLine={false} axisLine={false} fontSize={12} width={32} allowDecimals={false} />
@@ -174,7 +192,8 @@ export function CommissionSalesView({
         <CardHeader>
           <CardTitle className="text-base">Each month</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            Clients signed and meetings booked, counted in the month the meeting was booked.
+            Clients signed and meetings booked, counted in the month the meeting was booked. Click
+            either bar for the detail.
           </p>
         </CardHeader>
         <CardContent>
@@ -186,8 +205,28 @@ export function CommissionSalesView({
                 <YAxis tickLine={false} axisLine={false} fontSize={12} width={32} allowDecimals={false} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="Qualified meetings" fill={PACE} radius={[4, 4, 0, 0]} maxBarSize={34} />
-                <Bar dataKey="Signings" fill={SIGNED} radius={[4, 4, 0, 0]} maxBarSize={34} />
+                <Bar
+                  dataKey="Qualified meetings"
+                  fill={PACE}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={34}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) =>
+                    openMonth((bar as unknown as { payload?: { label?: string } })?.payload?.label, "meetings")
+                  }
+                />
+                <Bar
+                  dataKey="Signings"
+                  fill={SIGNED}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={34}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) =>
+                    openMonth((bar as unknown as { payload?: { label?: string } })?.payload?.label, "signings")
+                  }
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -227,6 +266,81 @@ export function CommissionSalesView({
           </ul>
         </CardContent>
       </Card>
+
+      {open && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-medium text-sm">
+                {open.kind === "meetings" ? "Meetings booked" : "Clients signed"} in{" "}
+                {open.month.label}
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  ·{" "}
+                  {open.kind === "meetings"
+                    ? `${open.month.qualifiedMeetings} · ${formatCurrency(open.month.meetingFees)} earned`
+                    : `${open.month.signings} · ${formatCurrency(open.month.commission)} commission`}
+                </span>
+              </p>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() =>
+                    setOpen({ month: open.month, kind: open.kind === "meetings" ? "signings" : "meetings" })
+                  }
+                  className="text-sm text-muted-foreground hover:underline"
+                >
+                  Show {open.kind === "meetings" ? "signings" : "meetings"}
+                </button>
+                <button
+                  onClick={() => setOpen(null)}
+                  className="text-sm text-muted-foreground hover:underline"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {open.kind === "meetings" ? (
+              <ul className="mt-3 space-y-1 text-sm">
+                {open.month.meetings.map((m) => (
+                  <li key={m.id} className="flex justify-between gap-4">
+                    <span className="font-medium">{m.client ?? "No client attached"}</span>
+                    <span className="text-muted-foreground shrink-0">
+                      {m.scheduledFor ? `meets ${asDate(m.scheduledFor)}` : "no start time set"} ·{" "}
+                      {formatCurrency(185)}
+                    </span>
+                  </li>
+                ))}
+                {open.month.meetings.length === 0 && (
+                  <li className="text-muted-foreground">No meetings booked this month.</li>
+                )}
+              </ul>
+            ) : (
+              <ul className="mt-3 space-y-1 text-sm">
+                {open.month.signedClients.map((c) => (
+                  <li key={c.id} className="flex justify-between gap-4">
+                    <span className="font-medium">
+                      {c.name}
+                      <span className="text-muted-foreground font-normal">
+                        {" "}
+                        · client {c.clientNumber} at {(c.rate * 100).toFixed(2).replace(/\.00$/, "")}%
+                      </span>
+                    </span>
+                    <span className="tabular-nums shrink-0">
+                      {formatCurrency(c.monthly)}/mo → {formatCurrency(c.commission)}
+                    </span>
+                  </li>
+                ))}
+                {open.month.signedClients.length === 0 && (
+                  <li className="text-muted-foreground">
+                    No clients signed this month — the meetings above are the work that leads there.
+                  </li>
+                )}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Outreach activity — weekly emails sent and calls logged */}
       <SalesActivityCharts weeks={activity.weeks} />

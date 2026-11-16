@@ -25,6 +25,13 @@ export interface SignedClient {
   commission: number;
 }
 
+export interface BookedMeetingRef {
+  id: string;
+  client: string | null;
+  /** When it is scheduled to happen, as opposed to when it was booked. */
+  scheduledFor: string | null;
+}
+
 export interface CommissionMonth {
   month: string;
   label: string;
@@ -36,6 +43,10 @@ export interface CommissionMonth {
   /** Where the running total should be to finish the year on target. */
   targetToDate: number;
   signingsToDate: number;
+  /** Who was signed and who was booked, so a bar can be opened rather than
+   *  leaving a count to be taken on trust. */
+  signedClients: SignedClient[];
+  meetings: BookedMeetingRef[];
 }
 
 export interface CommissionMilestone {
@@ -111,7 +122,7 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
         type: "meeting",
         timestamp: { gte: COMMISSION_YEAR_START, lt: COMMISSION_YEAR_END },
       },
-      select: { timestamp: true },
+      select: { id: true, timestamp: true, status: true, clientName: true },
     }),
   ]);
 
@@ -173,16 +184,24 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
       Math.max(0, (endOfMonth.getTime() - COMMISSION_YEAR_START.getTime()) / yearMs)
     );
     const signingsThisMonth = clients.filter((c) => monthKeyOf(c.signedAt) === key);
-    const meetingsThisMonth = meetings.filter((m) => monthKeyOf(m.timestamp) === key).length;
+    const meetingsThisMonth = meetings
+      .filter((m) => monthKeyOf(m.timestamp) === key)
+      .map((m) => ({
+        id: m.id,
+        client: m.clientName,
+        scheduledFor: m.status && !Number.isNaN(new Date(m.status).getTime()) ? m.status : null,
+      }));
     months.push({
       month: key,
       label: formatMonth(key),
       signings: signingsThisMonth.length,
-      qualifiedMeetings: meetingsThisMonth,
-      meetingFees: meetingsThisMonth * QUALIFIED_MEETING_FEE,
+      qualifiedMeetings: meetingsThisMonth.length,
+      meetingFees: meetingsThisMonth.length * QUALIFIED_MEETING_FEE,
       commission: signingsThisMonth.reduce((s, c) => s + c.commission, 0),
       targetToDate: Math.round(SIGNING_TARGET * elapsedFraction),
       signingsToDate: 0, // filled below
+      signedClients: signingsThisMonth,
+      meetings: meetingsThisMonth,
     });
     cursor.setMonth(cursor.getMonth() + 1);
   }
