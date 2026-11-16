@@ -65,6 +65,23 @@ export function isOneOff(d: FoldableDeal): boolean {
 }
 
 /**
+ * Substantial project work — a brand campaign, a shoot, a website — as opposed
+ * to asset fees like recuts and raw-footage handovers.
+ *
+ * Both are one-off, so both stay out of MRR. The difference is that a project
+ * is delivery the division did and should be credited with in the month it ran,
+ * where a $240 reskin is not worth carrying into a divisional figure. Tagged in
+ * HubSpot on "Package Description" so the judgement stays with the team.
+ */
+export function isProject(d: FoldableDeal): boolean {
+  return (d.packageDescription ?? "")
+    .toLowerCase()
+    .split(/[;,/]/)
+    .map((t) => t.replace(/[^a-z]/g, ""))
+    .includes("project");
+}
+
+/**
  * Package types that name no division. HubSpot's "Other" covers one-off pieces
  * of work — a website build, a shoot — which belong to whichever division already
  * serves that client, not to Content Delivery just because it is the catch-all.

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { foldUpsells, isOneOff, resolveDealDivisions } from "./upsells";
+import { foldUpsells, isOneOff, isProject, resolveDealDivisions } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 
 export interface DivisionClient {
@@ -13,7 +13,13 @@ export interface DivisionClient {
 export interface DivisionMonth {
   month: string;
   label: string;
+  /** Recurring revenue only. The bonus plans measure this, and their targets
+   *  were set against a recurring book, so project work must not inflate it. */
   revenue: number;
+  /** Project work delivered in this month — counted in the month it ran, since
+   *  a project has no term to carry forward. */
+  projectRevenue: number;
+  projects: DivisionClient[];
   clientCount: number;
   newRevenue: number;
   churnedRevenue: number;
@@ -24,7 +30,12 @@ export interface DivisionMonth {
 export interface DivisionDashboard {
   division: string;
   months: DivisionMonth[];
+  /** Recurring revenue this month. */
   currentRevenue: number;
+  /** Project work billed this month, shown beside the recurring figure rather
+   *  than folded into it — the two answer different questions. */
+  currentProjectRevenue: number;
+  currentProjects: DivisionClient[];
   currentClientCount: number;
   avgDealSize: number;
   clients: DivisionClient[];
@@ -69,6 +80,17 @@ export async function getDivisionDashboard(
   // whole book above, so a cut inherits exactly the division its deals already
   // had rather than re-deciding it.
   const manager = opts.clientManager?.trim().toLowerCase();
+  // Project work is one-off, so it never survives the recurring filter below.
+  // It is collected separately and reported alongside, never inside, MRR.
+  const projectDeals = allDeals.filter((d) => {
+    if (d.clientId && excludedIds.has(d.clientId)) return false;
+    if (!isProject(d)) return false;
+    if ((d.amountExGst ?? 0) <= 0) return false;
+    if (divisionByDeal.get(d.id) !== division) return false;
+    if (manager && (d.clientManager ?? "").trim().toLowerCase() !== manager) return false;
+    return true;
+  });
+
   const deals = allDeals.filter((d) => {
     if (d.clientId && excludedIds.has(d.clientId)) return false;
     if (downsells.heldOutIds.has(d.id)) return false;
@@ -138,10 +160,19 @@ export async function getDivisionDashboard(
       }
     }
 
+    // A project is credited to the month it started: it has no term, so
+    // carrying it forward would bill the division for it every month.
+    const projects = projectDeals
+      .filter((d) => monthKeyOf(d.startDate ?? d.closeDate) === month)
+      .map((d) => ({ id: d.clientId ?? d.id, name: d.name.trim(), revenue: Math.round(d.amountExGst ?? 0) }))
+      .sort((a, b) => b.revenue - a.revenue);
+
     return {
       month,
       label: formatMonth(month),
       revenue: Math.round(revenue),
+      projectRevenue: projects.reduce((s, p) => s + p.revenue, 0),
+      projects,
       clientCount: liveClients.size,
       newRevenue: Math.round(newRevenue),
       churnedRevenue: Math.round(churnedRevenue),
@@ -174,6 +205,8 @@ export async function getDivisionDashboard(
     division,
     months: monthRows,
     currentRevenue,
+    currentProjectRevenue: monthRows[monthRows.length - 1]?.projectRevenue ?? 0,
+    currentProjects: monthRows[monthRows.length - 1]?.projects ?? [],
     currentClientCount: clients.length,
     // Deals carrying no value are not deals for this purpose — leaving them in
     // the denominator divided real revenue by a count padded with zeros, and
