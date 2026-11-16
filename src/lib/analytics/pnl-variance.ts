@@ -37,6 +37,11 @@ export interface AccountRow {
   note: string;
   /** How loudly to say it. */
   tone: "neutral" | "watch" | "alert";
+  /** What moved in HubSpot for this division that month. Context for the
+   *  account's movement, not an explanation of it — Xero bills on invoice date
+   *  and HubSpot holds contracted MRR, so the two will not tie exactly. */
+  won: ClientMove[];
+  lost: ClientMove[];
 }
 
 export type FindingKind =
@@ -223,6 +228,8 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
           division: directDivisionOf(account),
           note: "",
           tone: "neutral" as const,
+          won: [],
+          lost: [],
         };
       })
       // Biggest movers first: a report of 59 accounts is only useful if the
@@ -232,6 +239,26 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
 
   const revenue = build("revenue");
   const costs = build("cost");
+
+  // Client movement per division, attached to the revenue accounts that belong
+  // to it. A creator account has no clients behind it, so it gets none.
+  const movementByDivision = new Map<string, { won: ClientMove[]; lost: ClientMove[] }>();
+  for (const key of DIVISION_KEYS) {
+    const dash = await getDivisionDashboard(key, 24);
+    const row = dash.months.find((m) => m.month === target);
+    movementByDivision.set(key, {
+      won: (row?.newClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
+      lost: (row?.churnedClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
+    });
+  }
+  for (const r of revenue) {
+    if (isCreatorAccount(r.account)) continue;
+    const mv = movementByDivision.get(r.division);
+    if (!mv) continue;
+    r.won = mv.won;
+    r.lost = mv.lost;
+  }
+
   const findings = detectFindings([...revenue, ...costs]);
   annotate(revenue, findings);
   annotate(costs, findings);

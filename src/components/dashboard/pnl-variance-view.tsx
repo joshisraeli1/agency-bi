@@ -54,7 +54,19 @@ function Rows({
               </div>
             )}
           </td>
-          <td className={`py-2 px-3 text-sm max-w-[34em] ${TONE[r.tone]}`}>{r.note}</td>
+          <td className="py-2 px-3 text-sm max-w-[34em] space-y-1">
+            <p className={TONE[r.tone]}>{r.note}</p>
+            {(r.won.length > 0 || r.lost.length > 0) && (
+              <p className="text-muted-foreground">
+                {r.won.length > 0 && (
+                  <>Won {r.won.map((c) => `${c.name} ${formatCurrency(c.amount)}`).join(", ")}. </>
+                )}
+                {r.lost.length > 0 && (
+                  <>Lost {r.lost.map((c) => `${c.name} ${formatCurrency(c.amount)}`).join(", ")}.</>
+                )}
+              </p>
+            )}
+          </td>
         </tr>
       ))}
     </>
@@ -88,21 +100,6 @@ function ReconciliationRow({ r }: { r: DivisionReconciliation }) {
                 ? ` That leaves ${formatCurrency(r.unexplained)} unaccounted for — timing, part-months, or work billed without a deal behind it.`
                 : ` HubSpot then has ${formatCurrency(Math.abs(r.unexplained))} more under contract than Xero billed, which usually means a retainer that did not invoice this month.`}
           </p>
-        )}
-        {(r.won.length > 0 || r.lost.length > 0) && (
-          <p className="text-muted-foreground">
-            {r.won.length > 0 && (
-              <>
-                Won: {r.won.map((c) => `${c.name} ${formatCurrency(c.amount)}`).join(", ")}.{" "}
-              </>
-            )}
-            {r.lost.length > 0 && (
-              <>Lost: {r.lost.map((c) => `${c.name} ${formatCurrency(c.amount)}`).join(", ")}.</>
-            )}
-          </p>
-        )}
-        {r.won.length === 0 && r.lost.length === 0 && (
-          <p className="text-muted-foreground">No client moved in or out this month.</p>
         )}
       </td>
     </tr>
