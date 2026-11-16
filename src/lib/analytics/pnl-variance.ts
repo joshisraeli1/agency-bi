@@ -68,7 +68,12 @@ export interface DivisionReconciliation {
   gap: number;
   /** The part of the gap one-off project work accounts for. */
   oneOff: number;
-  /** What neither source explains. Named rather than guessed at. */
+  /** Creator revenue — billed through Xero but never held in HubSpot as a
+   *  deal, so it is a permanent and expected part of the gap rather than a
+   *  discrepancy. It was the bulk of what the page first called unexplained. */
+  creator: number;
+  /** What is left once one-off work and creator revenue are taken out. This is
+   *  the only part worth chasing. */
   unexplained: number;
   /** Which clients moved in HubSpot that month. A division's revenue changing
    *  is only interesting once you know who caused it. */
@@ -246,6 +251,11 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
         .filter((d) => divisionOfPackage(d.division) === key)
         .reduce((s, d) => s + d.revenue, 0)
     );
+    const creator = Math.round(
+      revenue
+        .filter((r) => r.division === key && isCreatorAccount(r.account))
+        .reduce((s2, r) => s2 + r.current, 0)
+    );
     const gap = xeroRevenue - hubspotMrr;
     const monthRow = dash.months.find((m) => m.month === target);
     reconciliation.push({
@@ -254,7 +264,8 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
       hubspotMrr,
       gap,
       oneOff: oneOffForDivision,
-      unexplained: gap - oneOffForDivision,
+      creator,
+      unexplained: gap - oneOffForDivision - creator,
       won: (monthRow?.newClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
       lost: (monthRow?.churnedClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
     });
@@ -356,6 +367,16 @@ function annotate(rows: AccountRow[], findings: Finding[]): void {
     const pct = r.deltaPercent === null ? "" : `, ${Math.abs(r.deltaPercent)}%`;
     r.note = `${r.delta > 0 ? "Up" : "Down"} ${money(Math.abs(r.delta))}${pct} — within normal movement.`;
   }
+}
+
+/**
+ * Creator revenue sits in its own Xero accounts and has no HubSpot deal behind
+ * it — it is talent billing, not a client retainer. Treating it as part of the
+ * unexplained gap made Ad Creative look $69,422 adrift when the real figure is
+ * $9,928.
+ */
+function isCreatorAccount(account: string): boolean {
+  return /content creator/i.test(account);
 }
 
 /** Any Xero schedule expressed per month, so it compares to a HubSpot retainer. */

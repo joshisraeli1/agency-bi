@@ -80,8 +80,13 @@ function ReconciliationRow({ r }: { r: DivisionReconciliation }) {
         ) : (
           <p className={Math.abs(r.unexplained) > 20000 ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}>
             Xero billed {formatCurrency(Math.abs(r.gap))} {direction} HubSpot has under contract.
-            {r.oneOff > 0 && ` ${formatCurrency(r.oneOff)} of that is one-off project work, which HubSpot never counts as recurring.`}
-            {` That leaves ${formatCurrency(Math.abs(r.unexplained))} unexplained.`}
+            {r.creator > 0 && ` ${formatCurrency(r.creator)} is creator revenue, which has no HubSpot deal behind it and never will.`}
+            {r.oneOff > 0 && ` ${formatCurrency(r.oneOff)} is one-off project work, which HubSpot never counts as recurring.`}
+            {Math.abs(r.unexplained) < 500
+              ? " Everything else reconciles."
+              : r.unexplained > 0
+                ? ` That leaves ${formatCurrency(r.unexplained)} unaccounted for — timing, part-months, or work billed without a deal behind it.`
+                : ` HubSpot then has ${formatCurrency(Math.abs(r.unexplained))} more under contract than Xero billed, which usually means a retainer that did not invoice this month.`}
           </p>
         )}
         {(r.won.length > 0 || r.lost.length > 0) && (
