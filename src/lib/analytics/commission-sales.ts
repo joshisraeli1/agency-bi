@@ -91,7 +91,7 @@ const monthKeyOf = (d: Date) =>
  */
 export async function getCommissionSales(person: Salesperson): Promise<CommissionSales> {
   const now = new Date();
-  const [deals, created] = await Promise.all([
+  const [deals, meetings] = await Promise.all([
     db.hubspotDeal.findMany({
       where: { ownerId: person.ownerId },
       select: {
@@ -101,11 +101,17 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
         contractTerms: true,
       },
     }),
-    db.hubspotDeal.count({
+    // Meetings he booked, from the HubSpot meeting objects. This used to count
+    // deals he created as a stand-in, because meetings were not synced at all;
+    // they are now, and he is paid per meeting booked, so the stand-in has to
+    // go — it undercounted him, since not every meeting produces a deal.
+    db.hubspotActivity.findMany({
       where: {
         ownerId: person.ownerId,
-        createDate: { gte: COMMISSION_YEAR_START, lt: COMMISSION_YEAR_END },
+        type: "meeting",
+        timestamp: { gte: COMMISSION_YEAR_START, lt: COMMISSION_YEAR_END },
       },
+      select: { timestamp: true },
     }),
   ]);
 
@@ -137,7 +143,7 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
   });
 
   const commissionEarned = clients.reduce((s, c) => s + c.commission, 0);
-  const qualifiedMeetings = created;
+  const qualifiedMeetings = meetings.length;
   const meetingFees = qualifiedMeetings * QUALIFIED_MEETING_FEE;
 
   // Open pipeline — anything not won and not lost.
@@ -146,18 +152,28 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
   );
   const pipelineValue = Math.round(open.reduce((s, d) => s + (d.amountExGst ?? 0), 0));
 
-  // Months of the commission year up to now, so the chart does not run ahead
-  // into empty future months.
+  // Calendar months of the commission year up to the one we are standing in.
+  //
+  // The cursor used to start on the 19th and step a month at a time, so a
+  // calendar month did not appear until its own 19th had passed — on 16 Nov the
+  // chart showed October alone while six November meetings sat invisible. It
+  // now walks calendar months, and the pace target is scaled by how much of the
+  // commission year has actually elapsed by the end of each one, so a part
+  // month is not credited as a whole one.
   const months: CommissionMonth[] = [];
-  const cursor = new Date(COMMISSION_YEAR_START);
-  let elapsed = 0;
-  while (cursor < COMMISSION_YEAR_END && cursor <= now) {
+  const cursor = new Date(COMMISSION_YEAR_START.getFullYear(), COMMISSION_YEAR_START.getMonth(), 1);
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const yearMs = COMMISSION_YEAR_END.getTime() - COMMISSION_YEAR_START.getTime();
+  while (cursor <= thisMonth && cursor < COMMISSION_YEAR_END) {
     const key = monthKeyOf(cursor);
-    elapsed++;
+    // Fraction of the commission year gone by the end of this calendar month.
+    const endOfMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const elapsedFraction = Math.min(
+      1,
+      Math.max(0, (endOfMonth.getTime() - COMMISSION_YEAR_START.getTime()) / yearMs)
+    );
     const signingsThisMonth = clients.filter((c) => monthKeyOf(c.signedAt) === key);
-    const meetingsThisMonth = deals.filter(
-      (d) => d.createDate && inYear(d.createDate) && monthKeyOf(d.createDate) === key
-    ).length;
+    const meetingsThisMonth = meetings.filter((m) => monthKeyOf(m.timestamp) === key).length;
     months.push({
       month: key,
       label: formatMonth(key),
@@ -165,7 +181,7 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
       qualifiedMeetings: meetingsThisMonth,
       meetingFees: meetingsThisMonth * QUALIFIED_MEETING_FEE,
       commission: signingsThisMonth.reduce((s, c) => s + c.commission, 0),
-      targetToDate: Math.round((SIGNING_TARGET / 12) * elapsed),
+      targetToDate: Math.round(SIGNING_TARGET * elapsedFraction),
       signingsToDate: 0, // filled below
     });
     cursor.setMonth(cursor.getMonth() + 1);
@@ -176,6 +192,13 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
     m.signingsToDate = running;
   }
 
+  // Elapsed time, not elapsed calendar months: on 16 November barely one month
+  // of a year that opened on 19 October has gone, and counting two would say he
+  // is further behind than he is.
+  const elapsed = Math.max(
+    0,
+    (now.getTime() - COMMISSION_YEAR_START.getTime()) / (yearMs / 12)
+  );
   const monthsRemaining = Math.max(0, 12 - elapsed);
   const shortfall = Math.max(0, SIGNING_TARGET - clients.length);
   const latest = months[months.length - 1];
@@ -224,7 +247,7 @@ export async function getCommissionSales(person: Salesperson): Promise<Commissio
     notStarted: now < COMMISSION_YEAR_START,
     yearStart: COMMISSION_YEAR_START,
     yearEnd: COMMISSION_YEAR_END,
-    monthsElapsed: elapsed,
+    monthsElapsed: Number(elapsed.toFixed(1)),
     signed: clients.length,
     target: SIGNING_TARGET,
     neededPerMonth: monthsRemaining > 0 ? Number((shortfall / monthsRemaining).toFixed(1)) : shortfall,

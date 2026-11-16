@@ -84,7 +84,7 @@ export function CommissionSalesView({
         <h1 className="text-3xl font-bold">{data.ownerName}</h1>
         <p className="text-muted-foreground mt-1">
           Commission year {asDate(data.yearStart)} – {asDate(data.yearEnd)}
-          {data.notStarted ? " · starts soon" : ` · month ${data.monthsElapsed} of 12`}
+          {data.notStarted ? " · starts soon" : ` · ${data.monthsElapsed} of 12 months elapsed`}
         </p>
       </div>
 
@@ -115,7 +115,7 @@ export function CommissionSalesView({
           icon={<CalendarClock className="h-4 w-4" />}
           label="Qualified meetings"
           value={String(data.qualifiedMeetings)}
-          note={`${formatCurrency(data.meetingFees)} earned · $185 each, uncapped`}
+          note={`${formatCurrency(data.meetingFees)} earned · $185 per meeting booked, uncapped`}
         />
         <Tile
           icon={<TrendingUp className="h-4 w-4" />}
@@ -174,8 +174,7 @@ export function CommissionSalesView({
         <CardHeader>
           <CardTitle className="text-base">Each month</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            Clients signed and qualified meetings held. A deal created in the CRM counts as the
-            qualified meeting that produced it.
+            Clients signed and meetings booked, counted in the month the meeting was booked.
           </p>
         </CardHeader>
         <CardContent>
