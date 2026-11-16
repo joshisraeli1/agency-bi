@@ -56,6 +56,11 @@ export interface Finding {
   pairedWith?: string;
 }
 
+export interface ClientMove {
+  name: string;
+  amount: number;
+}
+
 export interface DivisionReconciliation {
   division: string;
   xeroRevenue: number;
@@ -65,6 +70,15 @@ export interface DivisionReconciliation {
   oneOff: number;
   /** What neither source explains. Named rather than guessed at. */
   unexplained: number;
+  /** Which clients moved in HubSpot that month. A division's revenue changing
+   *  is only interesting once you know who caused it. */
+  won: ClientMove[];
+  lost: ClientMove[];
+}
+
+export interface UnmatchedXeroClient {
+  name: string;
+  monthly: number;
 }
 
 export interface MonthHealth {
@@ -92,6 +106,9 @@ export interface PnlVariance {
   costs: AccountRow[];
   findings: Finding[];
   reconciliation: DivisionReconciliation[];
+  /** Billed on a Xero repeating invoice with no HubSpot deal behind it. Either
+   *  the CRM is missing a deal, or the name does not match and needs an alias. */
+  unmatchedXero: UnmatchedXeroClient[];
   totals: {
     revenue: { current: number; prior: number };
     cost: { current: number; prior: number };
@@ -230,6 +247,7 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
         .reduce((s, d) => s + d.revenue, 0)
     );
     const gap = xeroRevenue - hubspotMrr;
+    const monthRow = dash.months.find((m) => m.month === target);
     reconciliation.push({
       division: key,
       xeroRevenue,
@@ -237,8 +255,34 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
       gap,
       oneOff: oneOffForDivision,
       unexplained: gap - oneOffForDivision,
+      won: (monthRow?.newClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
+      lost: (monthRow?.churnedClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
     });
   }
+
+  // Anything Xero bills on a repeating invoice that no HubSpot deal matches.
+  // Some of these are genuinely missing from the CRM and some are only a name
+  // the matcher cannot resolve — both are worth seeing, and the page says so
+  // rather than asserting which.
+  const [reconRows, repeating] = await Promise.all([
+    db.reconciliation.findMany({
+      where: { xeroRepeatingInvoiceId: { not: null } },
+      select: { xeroRepeatingInvoiceId: true },
+    }),
+    db.xeroRepeatingInvoice.findMany({
+      where: { status: "AUTHORISED", type: "ACCREC" },
+      select: { id: true, xeroContactName: true, subTotal: true, scheduleUnit: true, scheduleInterval: true },
+    }),
+  ]);
+  const matched = new Set(reconRows.map((r) => r.xeroRepeatingInvoiceId));
+  const unmatchedXero: UnmatchedXeroClient[] = repeating
+    .filter((r) => !matched.has(r.id))
+    .map((r) => ({
+      name: r.xeroContactName ?? "(no contact)",
+      monthly: Math.round(monthlyFrom(r.subTotal ?? 0, r.scheduleUnit, r.scheduleInterval)),
+    }))
+    .filter((r) => r.monthly > 0)
+    .sort((a, b) => b.monthly - a.monthly);
 
   return {
     month: target,
@@ -255,6 +299,7 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
     costs,
     findings,
     reconciliation,
+    unmatchedXero,
     totals: {
       revenue: {
         current: revenue.reduce((s, r) => s + r.current, 0),
@@ -311,6 +356,14 @@ function annotate(rows: AccountRow[], findings: Finding[]): void {
     const pct = r.deltaPercent === null ? "" : `, ${Math.abs(r.deltaPercent)}%`;
     r.note = `${r.delta > 0 ? "Up" : "Down"} ${money(Math.abs(r.delta))}${pct} — within normal movement.`;
   }
+}
+
+/** Any Xero schedule expressed per month, so it compares to a HubSpot retainer. */
+function monthlyFrom(subTotal: number, unit: string | null, interval: number | null): number {
+  const i = interval ?? 1;
+  if (unit === "WEEKLY") return (subTotal / i) * (52 / 12);
+  if (unit === "YEARLY") return subTotal / (12 * i);
+  return subTotal / i; // MONTHLY, and the safest default for anything unknown
 }
 
 /** The package type a one-off was sold as, mapped to the division that ran it. */

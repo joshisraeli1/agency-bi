@@ -72,17 +72,32 @@ function ReconciliationRow({ r }: { r: DivisionReconciliation }) {
       <td className="text-right py-2 px-3 tabular-nums text-muted-foreground" colSpan={2}>
         HubSpot {formatCurrency(r.hubspotMrr)}
       </td>
-      <td className="py-2 px-3 text-sm max-w-[34em]">
+      <td className="py-2 px-3 text-sm max-w-[34em] space-y-1">
         {Math.abs(r.gap) < 500 ? (
-          <span className="text-muted-foreground">
+          <p className="text-muted-foreground">
             Xero and HubSpot agree to within {formatCurrency(Math.abs(r.gap))}. Nothing to chase.
-          </span>
+          </p>
         ) : (
-          <span className={Math.abs(r.unexplained) > 20000 ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}>
+          <p className={Math.abs(r.unexplained) > 20000 ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}>
             Xero billed {formatCurrency(Math.abs(r.gap))} {direction} HubSpot has under contract.
             {r.oneOff > 0 && ` ${formatCurrency(r.oneOff)} of that is one-off project work, which HubSpot never counts as recurring.`}
-            {` That leaves ${formatCurrency(Math.abs(r.unexplained))} unexplained — timing, part-months, or work billed without a deal behind it.`}
-          </span>
+            {` That leaves ${formatCurrency(Math.abs(r.unexplained))} unexplained.`}
+          </p>
+        )}
+        {(r.won.length > 0 || r.lost.length > 0) && (
+          <p className="text-muted-foreground">
+            {r.won.length > 0 && (
+              <>
+                Won: {r.won.map((c) => `${c.name} ${formatCurrency(c.amount)}`).join(", ")}.{" "}
+              </>
+            )}
+            {r.lost.length > 0 && (
+              <>Lost: {r.lost.map((c) => `${c.name} ${formatCurrency(c.amount)}`).join(", ")}.</>
+            )}
+          </p>
+        )}
+        {r.won.length === 0 && r.lost.length === 0 && (
+          <p className="text-muted-foreground">No client moved in or out this month.</p>
         )}
       </td>
     </tr>
@@ -253,6 +268,32 @@ export function PnlVarianceView({ data }: { data: PnlVariance }) {
           </div>
         </CardContent>
       </Card>
+
+      {data.unmatchedXero.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Billed in Xero, not in HubSpot</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">
+              {data.unmatchedXero.length} active repeating invoices with no HubSpot deal behind
+              them, worth{" "}
+              {formatCurrency(data.unmatchedXero.reduce((s2, c) => s2 + c.monthly, 0))} a month.
+              Either the CRM is missing a deal, or the Xero contact name does not match one and
+              needs an alias — the two look identical from here, so both are listed rather than
+              guessed between.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm">
+              {data.unmatchedXero.map((c) => (
+                <li key={`${c.name}-${c.monthly}`} className="flex justify-between gap-4">
+                  <span>{c.name}</span>
+                  <span className="tabular-nums shrink-0">{formatCurrency(c.monthly)}/mo</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <p className="text-muted-foreground text-xs flex items-center gap-1.5">
         <ArrowRight className="h-3 w-3" />
