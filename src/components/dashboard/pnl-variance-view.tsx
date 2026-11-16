@@ -16,6 +16,20 @@ const TONE: Record<AccountRow["tone"], string> = {
 const signed = (n: number) =>
   `${n > 0 ? "+" : n < 0 ? "−" : ""}${formatCurrency(Math.abs(n))}`;
 
+/**
+ * Colour says whether a movement is GOOD, not whether it went up.
+ *
+ * Revenue rising and cost falling are both green; revenue falling and cost
+ * rising are both red. Colouring by direction alone would paint a cost blowout
+ * the same green as a sales month, which is the opposite of useful. The sign is
+ * printed either way, so the colour reinforces rather than carries the meaning.
+ */
+function changeTone(delta: number, section: AccountRow["section"]): string {
+  if (delta === 0) return "text-muted-foreground";
+  const good = section === "revenue" ? delta > 0 : delta < 0;
+  return good ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400";
+}
+
 function Rows({
   rows,
   showAll,
@@ -41,14 +55,10 @@ function Rows({
           <td className="text-right py-2 px-3 tabular-nums text-muted-foreground">
             {formatCurrency(r.prior)}
           </td>
-          <td
-            className={`text-right py-2 px-3 tabular-nums ${
-              r.delta === 0 ? "text-muted-foreground" : r.delta > 0 ? "" : ""
-            }`}
-          >
+          <td className={`text-right py-2 px-3 tabular-nums font-medium ${changeTone(r.delta, r.section)}`}>
             {signed(r.delta)}
             {r.deltaPercent !== null && r.delta !== 0 && (
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs font-normal opacity-70">
                 {r.deltaPercent > 0 ? "+" : "−"}
                 {Math.abs(r.deltaPercent)}%
               </div>
@@ -74,7 +84,6 @@ function Rows({
 }
 
 function ReconciliationRow({ r }: { r: DivisionReconciliation }) {
-  const direction = r.gap >= 0 ? "more than" : "less than";
   return (
     <tr className="border-b bg-muted/40">
       <td className="py-2 px-3 font-medium">{r.division}</td>
@@ -85,22 +94,38 @@ function ReconciliationRow({ r }: { r: DivisionReconciliation }) {
         HubSpot {formatCurrency(r.hubspotMrr)}
       </td>
       <td className="py-2 px-3 text-sm max-w-[34em] space-y-1">
-        {Math.abs(r.gap) < 500 ? (
-          <p className="text-muted-foreground">
-            Xero and HubSpot agree to within {formatCurrency(Math.abs(r.gap))}. Nothing to chase.
-          </p>
-        ) : (
-          <p className={Math.abs(r.unexplained) > 20000 ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}>
-            Xero billed {formatCurrency(Math.abs(r.gap))} {direction} HubSpot has under contract.
-            {r.creator > 0 && ` ${formatCurrency(r.creator)} is creator revenue, which has no HubSpot deal behind it and never will.`}
-            {r.oneOff > 0 && ` ${formatCurrency(r.oneOff)} is one-off project work, which HubSpot never counts as recurring.`}
-            {Math.abs(r.unexplained) < 500
-              ? " Everything else reconciles."
-              : r.unexplained > 0
-                ? ` That leaves ${formatCurrency(r.unexplained)} unaccounted for — timing, part-months, or work billed without a deal behind it.`
-                : ` HubSpot then has ${formatCurrency(Math.abs(r.unexplained))} more under contract than Xero billed, which usually means a retainer that did not invoice this month.`}
-          </p>
-        )}
+        {/* Lead with what is comparable, not the gross gap. Most of the
+            difference is revenue HubSpot was never going to hold, and saying
+            "Xero billed $18,274 more" first makes a reconciled division read
+            as a broken one. */}
+        <p className="text-muted-foreground">
+          {(r.creator > 0 || r.oneOff > 0) && (
+            <>
+              Of {formatCurrency(r.xeroRevenue)} billed,
+              {r.creator > 0 && ` ${formatCurrency(r.creator)} is creator revenue`}
+              {r.creator > 0 && r.oneOff > 0 && " and"}
+              {r.oneOff > 0 && ` ${formatCurrency(r.oneOff)} is one-off project work`}
+              {" "}— neither is ever held in HubSpot. That leaves{" "}
+              <span className="font-medium text-foreground">{formatCurrency(r.comparable)}</span>{" "}
+              comparable against HubSpot&apos;s {formatCurrency(r.hubspotMrr)}.{" "}
+            </>
+          )}
+          {Math.abs(r.unexplained) < 500 ? (
+            <span className="text-green-700 dark:text-green-400">
+              They reconcile to within {formatCurrency(Math.abs(r.unexplained))} — nothing to chase.
+            </span>
+          ) : r.unexplained > 0 ? (
+            <span className={Math.abs(r.unexplained) > 20000 ? "text-amber-700 dark:text-amber-500" : ""}>
+              Xero is {formatCurrency(r.unexplained)} ahead — timing, part-months, or work billed
+              without a deal behind it.
+            </span>
+          ) : (
+            <span className={Math.abs(r.unexplained) > 20000 ? "text-amber-700 dark:text-amber-500" : ""}>
+              HubSpot is {formatCurrency(Math.abs(r.unexplained))} ahead, which usually means a
+              retainer that did not invoice this month.
+            </span>
+          )}
+        </p>
       </td>
     </tr>
   );
@@ -172,6 +197,12 @@ export function PnlVarianceView({ data }: { data: PnlVariance }) {
             in total
           </span>
         </p>
+        <p className="text-xs text-muted-foreground">
+          <span className="text-green-700 dark:text-green-400 font-medium">Green</span> is good for
+          the business and{" "}
+          <span className="text-red-700 dark:text-red-400 font-medium">red</span> is not — so on
+          costs the colours invert, and a cost falling reads green.
+        </p>
         <button
           onClick={() => setShowAll((v) => !v)}
           className="text-sm rounded-md border px-3 py-1.5 hover:bg-muted"
@@ -219,7 +250,12 @@ export function PnlVarianceView({ data }: { data: PnlVariance }) {
                   <td className="text-right py-2 px-3 tabular-nums text-muted-foreground">
                     {formatCurrency(data.totals.revenue.prior)}
                   </td>
-                  <td className="text-right py-2 px-3 tabular-nums">
+                  <td
+                    className={`text-right py-2 px-3 tabular-nums ${changeTone(
+                      data.totals.revenue.current - data.totals.revenue.prior,
+                      "revenue"
+                    )}`}
+                  >
                     {signed(data.totals.revenue.current - data.totals.revenue.prior)}
                   </td>
                   <td />
@@ -260,7 +296,12 @@ export function PnlVarianceView({ data }: { data: PnlVariance }) {
                   <td className="text-right py-2 px-3 tabular-nums text-muted-foreground">
                     {formatCurrency(data.totals.cost.prior)}
                   </td>
-                  <td className="text-right py-2 px-3 tabular-nums">
+                  <td
+                    className={`text-right py-2 px-3 tabular-nums ${changeTone(
+                      data.totals.cost.current - data.totals.cost.prior,
+                      "cost"
+                    )}`}
+                  >
                     {signed(data.totals.cost.current - data.totals.cost.prior)}
                   </td>
                   <td />

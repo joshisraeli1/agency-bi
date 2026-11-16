@@ -77,6 +77,11 @@ export interface DivisionReconciliation {
    *  deal, so it is a permanent and expected part of the gap rather than a
    *  discrepancy. It was the bulk of what the page first called unexplained. */
   creator: number;
+  /** Xero revenue with creator and one-off work removed — the part that is
+   *  actually comparable to a HubSpot retainer book. Leading with the gross gap
+   *  made a division look adrift when most of it was revenue HubSpot was never
+   *  going to hold. */
+  comparable: number;
   /** What is left once one-off work and creator revenue are taken out. This is
    *  the only part worth chasing. */
   unexplained: number;
@@ -292,6 +297,7 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
       gap,
       oneOff: oneOffForDivision,
       creator,
+      comparable: xeroRevenue - creator - oneOffForDivision,
       unexplained: gap - oneOffForDivision - creator,
       won: (monthRow?.newClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
       lost: (monthRow?.churnedClients ?? []).map((c) => ({ name: c.name.trim(), amount: c.revenue })),
