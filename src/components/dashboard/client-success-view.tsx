@@ -91,11 +91,11 @@ function Detail({
           Close
         </button>
       </div>
-      <ul className="mt-3 space-y-1 text-sm">
+      <ul className="mt-3 space-y-1 text-sm max-w-xl">
         {rows.map((c, i) => (
-          <li key={`${c.id}-${i}`} className="flex justify-between gap-4">
+          <li key={`${c.id}-${i}`} className="flex justify-between gap-6">
             <span>{c.name}</span>
-            <span className="tabular-nums">{formatCurrency(c.revenue)}</span>
+            <span className="tabular-nums shrink-0">{formatCurrency(c.revenue)}</span>
           </li>
         ))}
         {rows.length === 0 && (
@@ -105,9 +105,9 @@ function Detail({
         )}
       </ul>
       {rows.length > 1 && (
-        <p className="mt-3 pt-2 border-t text-sm flex justify-between gap-4 font-medium">
+        <p className="mt-3 pt-2 border-t text-sm flex justify-between gap-6 font-medium max-w-xl">
           <span>Total</span>
-          <span className="tabular-nums">{formatCurrency(total)}</span>
+          <span className="tabular-nums shrink-0">{formatCurrency(total)}</span>
         </p>
       )}
     </div>

@@ -224,14 +224,53 @@ export async function getClientSuccessDashboard(
 
     // Retention is measured against the companies CARRIED INTO the month, so a
     // client won this month can neither be retained nor flatter the rate.
+    // A downsell handing over this month is a contraction, not a loss: the
+    // client is still here on a smaller deal. Finder.com's $20,000 replaced by
+    // $10,000 was booking as a $20,000 churn, because the replacement sat under
+    // a different client record with no client manager and so never entered the
+    // portfolio to keep the company alive.
+    const contractions = new Map<string, number>();
+    for (const p of downsells.contractionsByMonth.get(month) ?? []) {
+      if (p.clientId && excludedIds.has(p.clientId)) continue;
+      const key = p.clientId ?? `name:${normalize(p.predecessorName)}`;
+      contractions.set(key, (contractions.get(key) ?? 0) + Math.max(0, p.contractionExGst));
+    }
+    // The pair may sit under two different client records, so a predecessor's
+    // own key has to resolve to the contraction too.
+    const predecessorKeys = new Map<string, number>();
+    for (const d of deals) {
+      if (!downsells.predecessorIds.has(d.id)) continue;
+      if (monthKeyOf(d.churnDate) !== month) continue;
+      const amount = contractions.get(d.clientId ?? "") ??
+        contractions.get(`name:${normalize(d.companyName ?? d.name)}`) ??
+        null;
+      if (amount !== null) predecessorKeys.set(companyKeyOf(d), amount);
+    }
+
     let clientsAtStart = 0;
     let clientsRetained = 0;
     const churnedClients: PortfolioMovement[] = [];
     if (prev) {
       clientsAtStart = prev.size;
       for (const [key, c] of prev) {
-        if (here.has(key)) clientsRetained++;
-        else churnedClients.push({ id: key, name: c.name, revenue: Math.round(c.revenue) });
+        if (here.has(key)) {
+          clientsRetained++;
+          continue;
+        }
+        const contracted = predecessorKeys.get(key);
+        if (contracted !== undefined) {
+          // Kept, at a smaller number. Only the contraction is revenue lost.
+          clientsRetained++;
+          if (contracted > 0) {
+            churnedClients.push({
+              id: key,
+              name: `${c.name} (downsell)`,
+              revenue: Math.round(contracted),
+            });
+          }
+          continue;
+        }
+        churnedClients.push({ id: key, name: c.name, revenue: Math.round(c.revenue) });
       }
     }
 
