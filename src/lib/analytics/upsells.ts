@@ -82,11 +82,20 @@ export function isProject(d: FoldableDeal): boolean {
 }
 
 /**
- * Package types that name no division. HubSpot's "Other" covers one-off pieces
- * of work — a website build, a shoot — which belong to whichever division already
- * serves that client, not to Content Delivery just because it is the catch-all.
+ * Package types that name no division, so the deal inherits whichever division
+ * already serves that client rather than falling to Content Delivery because it
+ * is the catch-all.
+ *
+ * "One-off" belongs here and was missing: it describes the CONTRACT, not the
+ * service line. The Aqualyte photoshoot carried it and landed in Ad Creative
+ * despite Aqualyte being an organic social client — along with 32 other deals
+ * worth $120,417, all swept into Ad Creative regardless of who did the work.
  */
-const UNSPECIFIED_PACKAGE_TYPES = new Set(["other", ""]);
+const UNSPECIFIED_PACKAGE_TYPES = new Set(["other", "", "oneoff", "one-off", "one off"]);
+
+/** Lower-cased and stripped of punctuation, so "One-off" and "one off" match. */
+const normalizePackageType = (v: string | null | undefined): string =>
+  (v ?? "").toLowerCase().trim();
 
 export interface DivisionResolvable {
   id: string;
@@ -119,7 +128,7 @@ export function resolveDealDivisions<T extends DivisionResolvable & { amountExGs
   // Strongest signal per company: the division of their largest specified deal.
   const byCompany = new Map<string, { division: string; amount: number }>();
   for (const d of deals) {
-    const pkg = (d.contentPackageType ?? "").toLowerCase().trim();
+    const pkg = normalizePackageType(d.contentPackageType);
     if (UNSPECIFIED_PACKAGE_TYPES.has(pkg)) continue;
     const key = companyKeyOf(d);
     if (!key) continue;
@@ -132,7 +141,7 @@ export function resolveDealDivisions<T extends DivisionResolvable & { amountExGs
 
   const out = new Map<string, string>();
   for (const d of deals) {
-    const pkg = (d.contentPackageType ?? "").toLowerCase().trim();
+    const pkg = normalizePackageType(d.contentPackageType);
     const key = companyKeyOf(d);
     const inherited = UNSPECIFIED_PACKAGE_TYPES.has(pkg) && key ? byCompany.get(key) : undefined;
     out.set(d.id, inherited ? inherited.division : dealDivision(d.contentPackageType));
