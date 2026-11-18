@@ -28,6 +28,11 @@ const REVENUE_COLOR = "#ea580c";
 // system rather than two takes on the same measure.
 const NEW_COLOR = "#22c55e";
 const CHURN_COLOR = "#ef4444";
+// Project work gets its own hue rather than joining the green bar. It is
+// revenue won, but it is not recurring — folding it into "New Revenue" would
+// oblige the chart to churn it again next month, which is exactly the
+// distortion the agency-level chart has a toggle to avoid.
+const PROJECT_COLOR = "#7c3aed";
 
 const fmtAxis = (v: number) => (Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}K` : `$${v}`);
 
@@ -55,7 +60,10 @@ export function DivisionDashboardView({
   displayName: string;
   goals?: DivisionGoalProgress | null;
 }) {
-  const [selected, setSelected] = useState<{ month: DivisionMonth; kind: "new" | "churn" } | null>(null);
+  const [selected, setSelected] = useState<{
+    month: DivisionMonth;
+    kind: "new" | "churn" | "project";
+  } | null>(null);
 
   // 18 months are fetched so the bonus period is fully covered; the charts stay
   // at 12 so they don't get unreadably dense.
@@ -71,10 +79,12 @@ export function DivisionDashboardView({
   // Both series positive and drawn side by side, as on the overview. Churn as a
   // negative made the axis run below zero and the bars read as a diverging
   // measure, which is harder to compare at a glance than two bars of equal footing.
+  const hasProjects = months.some((m) => m.projectRevenue > 0);
   const movementData = months.map((m) => ({
     label: m.label,
     "New Revenue": m.newRevenue,
     "Churned Revenue": m.churnedRevenue,
+    "Project work": m.projectRevenue,
     month: m.month,
   }));
 
@@ -165,7 +175,8 @@ export function DivisionDashboardView({
         <CardHeader>
           <CardTitle className="text-base">New vs Churned Revenue</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            Revenue won and lost each month. Click a bar to see which clients.
+            Recurring revenue won and lost each month, with project work alongside — a campaign is
+            revenue won, but it never recurs and so never churns. Click a bar to see which clients.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -225,6 +236,28 @@ export function DivisionDashboardView({
                   style={{ fontSize: 10, fill: CHURN_COLOR, fontWeight: 600 }}
                 />
               </Bar>
+              {hasProjects && (
+                <Bar
+                  dataKey="Project work"
+                  fill={PROJECT_COLOR}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={34}
+                  minPointSize={2}
+                  cursor="pointer"
+                  onClick={(bar) => {
+                    const month = (bar as unknown as { payload?: { month?: string } })?.payload?.month;
+                    const m = months.find((x) => x.month === month);
+                    if (m) setSelected({ month: m, kind: "project" });
+                  }}
+                >
+                  <LabelList
+                    dataKey="Project work"
+                    position="top"
+                    formatter={formatLabel}
+                    style={{ fontSize: 10, fill: PROJECT_COLOR, fontWeight: 600 }}
+                  />
+                </Bar>
+              )}
           </BarChart>
           </ResponsiveContainer>
 
@@ -232,22 +265,31 @@ export function DivisionDashboardView({
             <div className="rounded-lg border p-4">
               <div className="flex items-center justify-between">
                 <p className="font-medium text-sm">
-                  {selected.kind === "new" ? "New" : "Churned"} — {selected.month.label}
+                  {selected.kind === "new" ? "New" : selected.kind === "churn" ? "Churned" : "Project work"} —{" "}
+                  {selected.month.label}
                 </p>
                 <button onClick={() => setSelected(null)} className="text-sm text-muted-foreground hover:underline">
                   Close
                 </button>
               </div>
               <ul className="mt-3 space-y-1 text-sm">
-                {(selected.kind === "new" ? selected.month.newClients : selected.month.churnedClients).map((c, i) => (
+                {(selected.kind === "new"
+                  ? selected.month.newClients
+                  : selected.kind === "churn"
+                    ? selected.month.churnedClients
+                    : selected.month.projects
+                ).map((c, i) => (
                   <li key={`${c.id}-${i}`} className="flex justify-between">
                     <span>{c.name}</span>
                     <span className="tabular-nums">{formatCurrency(c.revenue)}</span>
                   </li>
                 ))}
-                {(selected.kind === "new" ? selected.month.newClients : selected.month.churnedClients).length === 0 && (
-                  <li className="text-muted-foreground">Nothing this month.</li>
-                )}
+                {(selected.kind === "new"
+                  ? selected.month.newClients
+                  : selected.kind === "churn"
+                    ? selected.month.churnedClients
+                    : selected.month.projects
+                ).length === 0 && <li className="text-muted-foreground">Nothing this month.</li>}
               </ul>
             </div>
           )}
