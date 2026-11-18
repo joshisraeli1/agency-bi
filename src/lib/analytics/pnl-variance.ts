@@ -277,7 +277,9 @@ export async function getPnlVariance(month?: string): Promise<PnlVariance> {
       revenue.filter((r) => r.division === key).reduce((s, r) => s + r.current, 0)
     );
     const dash = await getDivisionDashboard(key, 24);
-    const hubspotMrr = dash.months.find((m) => m.month === target)?.revenue ?? 0;
+    // Recurring, not the headline: project work is already subtracted from the
+    // Xero side as one-off, so including it here would double-count it.
+    const hubspotMrr = dash.months.find((m) => m.month === target)?.recurringRevenue ?? 0;
     const oneOffForDivision = Math.round(
       (oneOffThisMonth?.deals ?? [])
         .filter((d) => divisionOfPackage(d.division) === key)

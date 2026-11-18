@@ -13,11 +13,15 @@ export interface DivisionClient {
 export interface DivisionMonth {
   month: string;
   label: string;
-  /** Recurring revenue only. The bonus plans measure this, and their targets
-   *  were set against a recurring book, so project work must not inflate it. */
+  /** The division's revenue for the month: recurring plus project work
+   *  delivered. This is the headline figure everywhere. */
   revenue: number;
-  /** Project work delivered in this month — counted in the month it ran, since
-   *  a project has no term to carry forward. */
+  /** Recurring only. The bonus plans measure THIS, because their targets were
+   *  set as a percentage above a recurring average — including project work
+   *  would move the goalposts mid-year. */
+  recurringRevenue: number;
+  /** Project work credited to this month, since a project has no term to carry
+   *  forward. Already included in `revenue` above. */
   projectRevenue: number;
   projects: DivisionClient[];
   clientCount: number;
@@ -30,10 +34,10 @@ export interface DivisionMonth {
 export interface DivisionDashboard {
   division: string;
   months: DivisionMonth[];
-  /** Recurring revenue this month. */
+  /** Recurring plus project work — the division's revenue this month. */
   currentRevenue: number;
-  /** Project work billed this month, shown beside the recurring figure rather
-   *  than folded into it — the two answer different questions. */
+  /** The recurring half, for the bonus and for comparing like with like. */
+  currentRecurringRevenue: number;
   currentProjectRevenue: number;
   currentProjects: DivisionClient[];
   currentClientCount: number;
@@ -167,11 +171,14 @@ export async function getDivisionDashboard(
       .map((d) => ({ id: d.clientId ?? d.id, name: d.name.trim(), revenue: Math.round(d.amountExGst ?? 0) }))
       .sort((a, b) => b.revenue - a.revenue);
 
+    const projectRevenue = projects.reduce((s, p) => s + p.revenue, 0);
+
     return {
       month,
       label: formatMonth(month),
-      revenue: Math.round(revenue),
-      projectRevenue: projects.reduce((s, p) => s + p.revenue, 0),
+      revenue: Math.round(revenue) + projectRevenue,
+      recurringRevenue: Math.round(revenue),
+      projectRevenue,
       projects,
       clientCount: liveClients.size,
       newRevenue: Math.round(newRevenue),
@@ -199,14 +206,18 @@ export async function getDivisionDashboard(
     else byClient.set(key, { id: key, name: d.name, revenue: amt });
   }
   const clients = [...byClient.values()].sort((a, b) => b.revenue - a.revenue);
-  const currentRevenue = clients.reduce((s, c) => s + c.revenue, 0);
+  const recurringRevenue = clients.reduce((s, c) => s + c.revenue, 0);
+  const currentProjects = monthRows[monthRows.length - 1]?.projects ?? [];
+  const currentProjectRevenue = monthRows[monthRows.length - 1]?.projectRevenue ?? 0;
+  const currentRevenue = recurringRevenue + currentProjectRevenue;
 
   return {
     division,
     months: monthRows,
     currentRevenue,
-    currentProjectRevenue: monthRows[monthRows.length - 1]?.projectRevenue ?? 0,
-    currentProjects: monthRows[monthRows.length - 1]?.projects ?? [],
+    currentRecurringRevenue: recurringRevenue,
+    currentProjectRevenue,
+    currentProjects,
     currentClientCount: clients.length,
     // Deals carrying no value are not deals for this purpose — leaving them in
     // the denominator divided real revenue by a count padded with zeros, and

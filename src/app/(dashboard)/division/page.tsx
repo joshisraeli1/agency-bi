@@ -69,7 +69,15 @@ export default async function DivisionPage({
     getDivisionBonusPlan(scope.division),
   ]);
 
-  const goals = plan ? computeGoalProgress(plan, data.months) : null;
+  // The bonus reads recurring revenue, not the headline. Its tiers were set as
+  // a percentage above a recurring average, so counting project work would move
+  // the target mid-year.
+  const goals = plan
+    ? computeGoalProgress(
+        plan,
+        data.months.map((m) => ({ month: m.month, revenue: m.recurringRevenue }))
+      )
+    : null;
 
   return <DivisionDashboardView data={data} displayName={scope.label} goals={goals} />;
 }

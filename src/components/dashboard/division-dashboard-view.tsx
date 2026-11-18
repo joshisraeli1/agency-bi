@@ -93,8 +93,8 @@ export function DivisionDashboardView({
       <div>
         <h1 className="text-3xl font-bold">{displayName}</h1>
         <p className="text-muted-foreground mt-1">
-          Your division&apos;s recurring revenue, with project work shown separately — a campaign
-          or a shoot is delivery you did, but it is not a retainer. All figures exclude GST.
+          Your division&apos;s revenue — retainers plus the project work you delivered. All figures
+          exclude GST.
         </p>
       </div>
 
@@ -103,7 +103,13 @@ export function DivisionDashboardView({
           icon={<Receipt className="h-4 w-4" />}
           label="Revenue this month"
           value={formatCurrency(data.currentRevenue)}
-          note={change === null ? undefined : `${change >= 0 ? "+" : ""}${change.toFixed(1)}% vs ${prev.label}`}
+          note={
+            data.currentProjectRevenue > 0
+              ? `${formatCurrency(data.currentRecurringRevenue)} recurring + ${formatCurrency(data.currentProjectRevenue)} project work`
+              : change === null
+                ? undefined
+                : `${change >= 0 ? "+" : ""}${change.toFixed(1)}% vs ${prev.label}`
+          }
         />
         <Tile icon={<Users className="h-4 w-4" />} label="Clients" value={String(data.currentClientCount)} />
         {data.currentProjectRevenue > 0 && (
@@ -111,7 +117,7 @@ export function DivisionDashboardView({
             icon={<Receipt className="h-4 w-4" />}
             label={`Project work — ${latest.label}`}
             value={formatCurrency(data.currentProjectRevenue)}
-            note={data.currentProjects.map((p) => p.name).join(", ")}
+            note={`Included above · ${data.currentProjects.map((p) => p.name).join(", ")}`}
           />
         )}
         <Tile
