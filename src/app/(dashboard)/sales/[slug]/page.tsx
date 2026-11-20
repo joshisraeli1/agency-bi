@@ -45,7 +45,7 @@ export default async function SalesPersonPage({
       getCommissionSales(person),
       getSalesActivity(52, person.ownerId),
       getCallActivity(90, person.ownerId),
-      getMeetingsBooked(90, person.ownerId),
+      getMeetingsBooked(365, person.ownerId),
     ]);
     return (
       <CommissionSalesView
@@ -61,7 +61,7 @@ export default async function SalesPersonPage({
     getMichaelSalesData(person.ownerId, person.name),
     getSalesActivity(52, person.ownerId),
     getCallActivity(90, person.ownerId),
-    getMeetingsBooked(90, person.ownerId),
+    getMeetingsBooked(365, person.ownerId),
   ]);
   return (
     <SalesPersonBoard
