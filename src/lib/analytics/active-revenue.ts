@@ -266,19 +266,28 @@ export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot>
   const [rawDeals, downsells] = await Promise.all([
     db.hubspotDeal.findMany({
       where: { stage: "closed_won" },
-      select: { id: true, name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true },
+      select: { id: true, name: true, stage: true, amount: true, amountExGst: true, contentPackageType: true, packageDescription: true, churnDate: true },
     }),
     getDownsellResolution(),
   ]);
-  // Count the full closed-won book (matching HubSpot's "Revenue by Package
-  // Type" / Revenue Summary) — inc-GST $642,059 / ex-GST $583,646. We do NOT
-  // filter by churn here: a deal in the closed-won stage is treated as current
-  // revenue even if it carries a churn date (churn-date-based exclusion belongs
-  // on the time-series charts, not the headline book).
-  // Unpaired downsells are held out until their HubSpot data is complete.
+  // The closed-won book, matching HubSpot's "Revenue by Package Type" view.
+  //
+  // A deal whose churn date has PASSED is dropped. This used to ignore churn
+  // dates entirely, on the reasoning that churn belongs on the time series
+  // rather than the headline — but that left revenue in the headline after it
+  // had ended, and put the tile above every chart on the same page. Superhero's
+  // downsell churned on 18 November and was still carrying $7,600 two days
+  // later.
+  //
+  // A FUTURE churn date still counts: a deal with a known end date is current
+  // revenue until that date arrives.
+  const now = new Date();
+  const live = rawDeals.filter(
+    (d) => !downsells.heldOutIds.has(d.id) && !(d.churnDate && d.churnDate <= now)
+  );
   // Fold upsells onto their base deal — an upsell is extra revenue for an
   // existing company, not a separate deal in the count / package breakdown.
-  const { deals } = foldUpsells(rawDeals.filter((d) => !downsells.heldOutIds.has(d.id)));
+  const { deals } = foldUpsells(live);
 
   const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;

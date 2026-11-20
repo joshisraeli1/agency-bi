@@ -94,13 +94,19 @@ export async function getRevenueForecast(monthsForward = 6): Promise<RevenueFore
     month: month ?? undefined,
   });
 
-  // Current MRR = active Closed Won (not churned before this month), incl. ones
-  // whose start date is in the future — they're signed and on the books.
+  // Current MRR = active Closed Won, incl. deals whose start date is in the
+  // future — they're signed and on the books.
+  //
+  // "Active" is tested to the DAY, not the month. Testing to the month kept a
+  // deal that churned on the 18th in the current book for the rest of November,
+  // which put this figure $7,600 above the Monthly Revenue tile on the same
+  // page. The bridge below is unaffected: a churn already behind us leaves both
+  // currentMrr and outgoing, so projected is unchanged.
   const closedWon = visible.filter((d) => d.stageLabel === CLOSED_WON);
+  const asOf = new Date();
+  const stillRunning = (d: { churnDate: Date | null }) => !(d.churnDate && d.churnDate <= asOf);
   const currentMrr = Math.round(
-    closedWon
-      .filter((d) => { const ck = monthKey(d.churnDate); return ck === null || ck >= current; })
-      .reduce((s, d) => s + exAmount(d), 0)
+    closedWon.filter(stillRunning).reduce((s, d) => s + exAmount(d), 0)
   );
 
   // Incoming = signed Contract Out (Start Date set) starting within the horizon.
@@ -109,9 +115,11 @@ export async function getRevenueForecast(monthsForward = 6): Promise<RevenueFore
     .map((d) => toDeal(d, monthKey(d.startDate)))
     .sort((a, b) => b.amount - a.amount);
 
-  // Outgoing = Closed Won deals whose Churn Date falls within the horizon.
+  // Outgoing = Closed Won deals whose Churn Date is still AHEAD of us and falls
+  // within the horizon. One already past has left currentMrr, so subtracting it
+  // again would double-count the loss.
   const outgoingDeals = closedWon
-    .filter((d) => inHorizon(monthKey(d.churnDate)))
+    .filter((d) => stillRunning(d) && inHorizon(monthKey(d.churnDate)))
     .map((d) => toDeal(d, monthKey(d.churnDate)))
     .sort((a, b) => b.amount - a.amount);
 
