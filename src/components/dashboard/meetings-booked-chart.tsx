@@ -169,7 +169,10 @@ export function MeetingsBookedChart({ data }: { data: MeetingsBooked }) {
               cursor="pointer"
               onClick={(bar) => {
                 const key = (bar as unknown as { payload?: { date?: string } })?.payload?.date;
-                const d = data.days.find((x) => x.date === key);
+                // The AGGREGATED buckets, not the raw daily ones: at week or
+                // month grain the key is a period ("2026-11"), which never
+                // matches a daily date, so clicking did nothing.
+                const d = days.find((x) => x.date === key);
                 if (d) setSelected(d);
               }}
             />

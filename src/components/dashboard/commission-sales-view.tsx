@@ -143,6 +143,11 @@ export function CommissionSalesView({
         />
       </div>
 
+      {/* Meetings are the leading indicator and what he is paid per, so they
+          lead the board. Outside the not-started guard too — he was booking
+          meetings before the commission year opened. */}
+      <MeetingsBookedChart data={meetings} />
+
       {data.notStarted && (
         <Card>
           <CardContent className="pt-6">
@@ -346,8 +351,6 @@ export function CommissionSalesView({
       <SalesActivityCharts weeks={activity.weeks} />
 
       <CallActivityChart data={callActivity} />
-
-      <MeetingsBookedChart data={meetings} />
 
       <Card>
         <CardHeader>
