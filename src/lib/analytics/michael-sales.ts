@@ -122,6 +122,9 @@ export interface MichaelSalesData {
   mrrDealsByMonth: Record<string, DealRef[]>;
   createdDealsByMonth: Record<string, DealRef[]>;
   newRevenueDealsByMonth: Record<string, DealRef[]>;
+  /** Create date of every counted (non-downsell) deal, ISO — lets a page count
+   *  any window, not just whole months. */
+  createdDealDates: string[];
 }
 
 function emptySeries(months: string[]): MonthlyValue[] {
@@ -266,10 +269,12 @@ export async function getMichaelSalesData(
   // Deals created per month + total in last 12mo
   const dealsCreatedPerMonth = emptySeries(months24);
   let dealsCreatedLast12mo = 0;
+  const createdDealDates: string[] = [];
   for (const d of deals) {
     if (isDownsellDeal(d)) continue;
     const key = toMonthKey(d.createDate);
     if (!key) continue;
+    createdDealDates.push(d.createDate!.toISOString());
     applyToSeries(dealsCreatedPerMonth, key, 1);
     if (key >= twelveMonthsAgoKey) dealsCreatedLast12mo += 1;
     (createdDealsByMonth[key] ??= []).push({ name: d.name, amount: d.amountExGst ?? d.amount ?? 0 });
@@ -380,6 +385,7 @@ export async function getMichaelSalesData(
     monthlyRevenue,
     newRevenuePerMonth,
     dealsCreatedPerMonth,
+    createdDealDates,
     mrrDealsByMonth,
     createdDealsByMonth,
     newRevenueDealsByMonth,
