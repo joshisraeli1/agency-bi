@@ -16,6 +16,7 @@ export type PipelineDealInput = {
   amount: number | null;
   amountExGst: number | null;
   startDate: Date | null;
+  churnDate?: Date | null;
 };
 
 // The raw HubSpot stage labels each column collects. The two "Churned but still
@@ -33,34 +34,36 @@ const dealValue = (d: PipelineDealInput): number =>
   Math.round(d.amountExGst ?? (d.amount != null ? d.amount / GST_MULTIPLIER : 0));
 
 /**
- * Buckets synced HubSpot deals into five pipeline-stage columns, keyed on the
- * raw `stageLabel` (with Contract out split by start-date presence). Columns are
- * mutually exclusive (one deal → one column).
+ * Buckets synced HubSpot deals into pipeline-stage columns, keyed on the raw
+ * `stageLabel` (with Contract out split by start-date presence). Columns are
+ * mutually exclusive (one deal → one column), except Outgoing, which is a view
+ * of Closed Won: a deal still pays until its churn date, so it stays in both.
  *
  *  - Very Warm    : stageLabel === "Very Warm"
  *  - Contract out : stageLabel === "Contract out" AND no start date (not yet scheduled)
  *  - Incoming     : stageLabel === "Contract out" AND a start date is set
  *                   (signed / 100% starting — matches the forecast waterfall's "incoming")
  *  - Closed Won   : stageLabel === "Closed Won"
+ *  - Outgoing     : Closed Won with a churn date still ahead — revenue that is
+ *                   leaving (matches the forecast waterfall's "outgoing")
  *  - Churned (still active) : stageLabel ∈ {"Churned but still active", "Current (Not Paying)"}
  *
- * `now` is accepted for a stable snapshot signature but is not used here — the
- * columns no longer depend on any date.
+ * `now` decides which churn dates are still ahead, for Outgoing.
  */
 export function bucketPipelineStages(
   deals: PipelineDealInput[],
   excludedIds: Set<string>,
   now: Date
 ): PipelineStageColumn[] {
-  void now;
   const columns: PipelineStageColumn[] = [
     { stage: "Very Warm", total: 0, deals: [] },
     { stage: "Contract out", total: 0, deals: [] },
     { stage: "Incoming", total: 0, deals: [] },
+    { stage: "Outgoing", total: 0, deals: [] },
     { stage: "Closed Won", total: 0, deals: [] },
     { stage: "Churned (still active)", total: 0, deals: [] },
   ];
-  const [veryWarm, contractOut, incoming, closedWon, churned] = columns;
+  const [veryWarm, contractOut, incoming, outgoing, closedWon, churned] = columns;
 
   for (const d of deals) {
     if (d.clientId && excludedIds.has(d.clientId)) continue;
@@ -74,6 +77,7 @@ export function bucketPipelineStages(
       (d.startDate ? incoming : contractOut).deals.push({ name: d.name, amount });
     } else if (d.stageLabel === "Closed Won") {
       closedWon.deals.push({ name: d.name, amount });
+      if (d.churnDate && d.churnDate > now) outgoing.deals.push({ name: d.name, amount });
     } else if (d.stageLabel && CHURNED_LABELS.includes(d.stageLabel)) {
       churned.deals.push({ name: d.name, amount });
     }
@@ -109,6 +113,7 @@ export async function getPipelineStageSnapshot(): Promise<PipelineStageColumn[]>
         amount: true,
         amountExGst: true,
         startDate: true,
+        churnDate: true,
       },
     }),
   ]);
