@@ -98,7 +98,7 @@ export async function getClientBook(): Promise<ClientBook> {
     db.client.findMany({
       select: {
         id: true, name: true, status: true, industry: true, website: true, source: true,
-        notes: true, startDate: true, endDate: true, retainerValue: true,
+        notes: true, startDate: true, endDate: true, retainerValue: true, hubspotDealId: true,
         _count: { select: { aliases: true, hubspotDeals: true } },
       },
     }),
@@ -174,8 +174,11 @@ export async function getClientBook(): Promise<ClientBook> {
     }
 
     const primary = [...folded].sort((a, b) => (b.amountExGst ?? 0) - (a.amountExGst ?? 0))[0];
+    // The deal's "Company name" is what the team types; the Client record's name
+    // is the HubSpot company object's, which can be a legal or styled name
+    // ("AQUILA ®", "… Pty Ltd") or a different company altogether.
     const displayName = clientDisplayName(
-      record?.name ?? primary?.companyName ?? primary?.name ?? "Unknown",
+      primary?.companyName?.trim() || record?.name || primary?.name || "Unknown",
       groupDeals.map((d) => d.name)
     );
 
@@ -208,13 +211,19 @@ export async function getClientBook(): Promise<ClientBook> {
   // Monday/manual clients that never had a HubSpot deal would otherwise vanish.
   // The synthetic Xero P&L record is not a client and is always excluded.
   const seen = new Set(rows.map((r) => normalize(r.name)));
+  const syncedDealIds = new Set(rawDeals.map((d) => d.id));
   for (const c of clientRecords) {
     if (c._count.hubspotDeals > 0) continue;
     // Only genuinely non-HubSpot clients qualify. A hubspot-sourced record with
     // no deals is a leftover shell keeping a stale retainer, not a real client.
     if (c.source === "hubspot" || c.source === "xero") continue;
     if (c.name.startsWith("Xero P&L")) continue;
-    if (c.status === "churned" || c.status === "prospect") continue;
+    // Paused is not paying. (It is also how a leftover demo record from the
+    // seed script, FreshBite Foods, was getting through.)
+    if (c.status === "churned" || c.status === "prospect" || c.status === "paused") continue;
+    // A Monday record whose deal now sits under another client is a duplicate
+    // of that client (CitySwoon Ads Management → City Swoon), not a client.
+    if (c.hubspotDealId && syncedDealIds.has(c.hubspotDealId)) continue;
     if (excludedIds.has(c.id)) continue;
     if (seen.has(normalize(c.name))) continue;
     if ((c.retainerValue ?? 0) <= 0) continue;

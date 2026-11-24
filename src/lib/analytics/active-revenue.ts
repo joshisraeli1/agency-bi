@@ -227,7 +227,7 @@ export async function getPackageRevenueByMonth(
     if (!startKey) return false;
     return monthKey >= startKey && (!churnKey || monthKey < churnKey);
   });
-  const { deals } = foldUpsells(active);
+  const deals = foldWithinPackage(active);
   const byPkg = new Map<string, { revenue: number; count: number }>();
   for (const d of deals) {
     const pkg = classifyPackageType(d.contentPackageType);
@@ -239,6 +239,25 @@ export async function getPackageRevenueByMonth(
   return Array.from(byPkg.entries())
     .map(([packageType, r]) => ({ packageType, revenue: Math.round(r.revenue), count: r.count }))
     .sort((a, b) => b.revenue - a.revenue);
+}
+
+/**
+ * Fold upsells onto a base deal of the SAME package type only.
+ *
+ * An upsell into a new service line is that line's revenue. Superhero's Meta Ads
+ * upsell had no Ads base to join, so a plain fold put its $6,500 on the Content
+ * deal and it vanished from the Ads Management bar. Folding per bucket leaves a
+ * cross-line upsell standing as its own deal in its own bar; the total is the same.
+ */
+function foldWithinPackage<T extends Parameters<typeof foldUpsells>[0][number]>(deals: T[]): T[] {
+  const byPkg = new Map<string, T[]>();
+  for (const d of deals) {
+    const pkg = classifyPackageType(d.contentPackageType);
+    const arr = byPkg.get(pkg);
+    if (arr) arr.push(d);
+    else byPkg.set(pkg, [d]);
+  }
+  return [...byPkg.values()].flatMap((group) => foldUpsells(group).deals);
 }
 
 /**
@@ -287,7 +306,8 @@ export async function getActiveRevenueSnapshot(): Promise<ActiveRevenueSnapshot>
   );
   // Fold upsells onto their base deal — an upsell is extra revenue for an
   // existing company, not a separate deal in the count / package breakdown.
-  const { deals } = foldUpsells(live);
+  // Only within a package type, though: see foldWithinPackage.
+  const deals = foldWithinPackage(live);
 
   const byPkg = new Map<string, { count: number; revenue: number; deals: PackageDeal[] }>();
   let totalInc = 0;
