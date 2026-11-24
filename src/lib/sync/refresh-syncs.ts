@@ -284,12 +284,13 @@ async function loadCallOutcomes(token: string): Promise<Map<string, string>> {
 }
 
 /**
- * The company each meeting is attached to, resolved in batches of 100.
+ * The client each meeting is for, resolved in batches of 100.
  *
- * Two hops — meeting to company id, then company id to name — but both are
- * batched, so a year of meetings costs a handful of calls rather than one per
- * meeting. A meeting with no association simply has no client, which is a real
- * state (an internal or personal calendar entry) and not an error.
+ * First the associated company's name. Company associations are patchy in this
+ * account (calendar-synced meetings often land with only a contact and a deal),
+ * so a meeting with no company falls back to its associated deal's "Company
+ * name" — the field the team actually fills in — then the deal name. Each hop is
+ * batched, so a year of meetings costs a handful of calls, not one per meeting.
  */
 async function loadMeetingCompanies(
   meetingIds: string[],
@@ -328,6 +329,41 @@ async function loadMeetingCompanies(
 
     for (const [meetingId, companyId] of companyIdByMeeting) {
       const name = nameById.get(companyId);
+      if (name) out.set(meetingId, name);
+    }
+
+    const unresolved = meetingIds.filter((id) => !out.has(id));
+    const dealIdByMeeting = new Map<string, string>();
+    for (let i = 0; i < unresolved.length; i += 100) {
+      const batch = unresolved.slice(i, i + 100);
+      const res = await hubspotPost<{ results?: { from: { id: string }; to?: { toObjectId: string }[] }[] }>(
+        "/crm/v4/associations/meetings/deals/batch/read",
+        { inputs: batch.map((id) => ({ id })) },
+        token
+      );
+      for (const r of res.results ?? []) {
+        const first = r.to?.[0]?.toObjectId;
+        if (first) dealIdByMeeting.set(r.from.id, String(first));
+      }
+    }
+
+    const dealIds = [...new Set(dealIdByMeeting.values())];
+    const dealClientById = new Map<string, string>();
+    for (let i = 0; i < dealIds.length; i += 100) {
+      const batch = dealIds.slice(i, i + 100);
+      const res = await hubspotPost<{ results?: { id: string; properties: Record<string, string | null> }[] }>(
+        "/crm/v3/objects/deals/batch/read",
+        { inputs: batch.map((id) => ({ id })), properties: ["company_name", "dealname"] },
+        token
+      );
+      for (const r of res.results ?? []) {
+        const name = r.properties?.company_name?.trim() || r.properties?.dealname?.trim();
+        if (name) dealClientById.set(r.id, name);
+      }
+    }
+
+    for (const [meetingId, dealId] of dealIdByMeeting) {
+      const name = dealClientById.get(dealId);
       if (name) out.set(meetingId, name);
     }
   } catch {
