@@ -2,7 +2,7 @@ import { formatMonth } from "@/lib/utils";
 import { getDownsellResolution } from "./downsells";
 
 export const STAGE_PROBABILITY: Record<string, number> = {
-  "Very Warm": 0.7,
+  "Very Warm": 0.2, // was 0.7, which read far too bullish
   "Contract out": 0.9,
 };
 
