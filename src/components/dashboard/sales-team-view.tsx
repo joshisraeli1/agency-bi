@@ -1,5 +1,7 @@
 "use client";
 
+import { RANGES, type RangeKey } from "@/lib/sales-ranges";
+
 import { useState } from "react";
 import Link from "next/link";
 import {
@@ -15,14 +17,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 
-/** The window the headline counts cover. Snapshots (MRR, pipeline, active
- *  deals) are "right now" and ignore it. */
-export const RANGES = [
-  { key: "30d", label: "30 days", days: 30 },
-  { key: "90d", label: "90 days", days: 90 },
-  { key: "12m", label: "12 months", days: 365 },
-] as const;
-export type RangeKey = (typeof RANGES)[number]["key"];
 
 interface DealItem {
   name: string;

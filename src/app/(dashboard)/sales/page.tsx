@@ -5,7 +5,8 @@ import { getMichaelSalesData } from "@/lib/analytics/michael-sales";
 import { getCommissionSales } from "@/lib/analytics/commission-sales";
 import { getSalesActivity } from "@/lib/analytics/sales-activity";
 import { getMeetingsBooked } from "@/lib/analytics/meetings-booked";
-import { SalesTeamView, RANGES, type RangeKey } from "@/components/dashboard/sales-team-view";
+import { SalesTeamView } from "@/components/dashboard/sales-team-view";
+import { RANGES, type RangeKey } from "@/lib/sales-ranges";
 import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
 
