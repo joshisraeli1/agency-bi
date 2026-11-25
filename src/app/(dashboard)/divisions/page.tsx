@@ -4,6 +4,7 @@ import { ArrowRight, PieChart, Users } from "lucide-react";
 import { getSession, isDivisionLead, hasRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getDivisionDashboard } from "@/lib/analytics/division-dashboard";
+import { getClientSuccessDashboard } from "@/lib/analytics/client-success";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
 import { DIVISION_KEYS, DIVISION_VIEWS, divisionDisplayName } from "@/lib/divisions";
@@ -33,9 +34,7 @@ export default async function DivisionsPage() {
   const [dashboards, viewDashboards, leads] = await Promise.all([
     Promise.all(DIVISION_KEYS.map((key) => getDivisionDashboard(key, 1))),
     Promise.all(
-      DIVISION_VIEWS.map((v) =>
-        getDivisionDashboard(v.baseDivision, 1, { clientManager: v.clientManager })
-      )
+      DIVISION_VIEWS.map((v) => getClientSuccessDashboard(v, 2))
     ),
     db.user.findMany({
       where: { role: "division_lead" },
@@ -64,7 +63,7 @@ export default async function DivisionsPage() {
     lead: leadByDivision.get(v.key) ?? null,
     revenue: viewDashboards[i].currentRevenue,
     clients: viewDashboards[i].currentClientCount,
-    cutOf: divisionDisplayName(v.baseDivision) as string | null,
+    cutOf: "every division" as string | null,
   }));
 
   return (

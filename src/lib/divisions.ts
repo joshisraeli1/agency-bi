@@ -45,6 +45,16 @@ export interface DivisionView {
   baseDivision: DivisionKey;
   /** Matched against HubspotDeal.clientManager. */
   clientManager: string;
+  /**
+   * The clients this manager looks after, as listed on the Monday client board.
+   * `clientManager` alone misses a lot: upsells and replacement deals are often
+   * created without it, and some clients were signed under someone else's name.
+   * Each entry matches deals whose normalised company name (or deal name) starts
+   * with one of `match`, and every deal on that client counts, whatever its tag
+   * or division. Deals tagged with the manager still count on top of this, which
+   * keeps clients that have since left in the history.
+   */
+  roster?: { name: string; match: string[] }[];
 }
 
 export const DIVISION_VIEWS: DivisionView[] = [
@@ -53,6 +63,35 @@ export const DIVISION_VIEWS: DivisionView[] = [
     label: "Client Success",
     baseDivision: "Content Delivery",
     clientManager: "Emily Heinhuis",
+    // The "Current" group on Emily's Monday client board, 2026-11-25.
+    roster: [
+      { name: "Pilot", match: ["pilot", "hims"] },
+      { name: "CitySwoon", match: ["cityswoon"] },
+      { name: "Finder.com.au", match: ["finder"] },
+      { name: "ATP Science", match: ["atpscience"] },
+      { name: "Tropeaka", match: ["tropeaka"] },
+      { name: "Step One", match: ["stepone"] },
+      { name: "Youfoodz", match: ["youfoodz"] },
+      { name: "Updoc", match: ["updoc"] },
+      { name: "Chill Chair", match: ["chillchair"] },
+      { name: "Mighty Munch", match: ["mightymunch"] },
+      { name: "HelloFresh AU", match: ["hellofreshau"] },
+      { name: "HelloFresh NZ", match: ["hellofreshnz"] },
+      { name: "EveryPlate", match: ["everyplate"] },
+      { name: "Blue Light Card", match: ["bluelightcard"] },
+      { name: "Driva", match: ["driva"] },
+      { name: "Elyos AI", match: ["elyosai"] },
+      { name: "Linktree", match: ["linktree"] },
+      { name: "Ecovacs", match: ["ecovacs"] },
+      { name: "Pet Circle", match: ["petcircle"] },
+      { name: "Wipertech", match: ["wipertech"] },
+      { name: "Blossom App", match: ["blossom"] },
+      { name: "Cygnett", match: ["cygnett"] },
+      { name: "Amber", match: ["amberelectric"] },
+      { name: "OneMRI", match: ["onemri"] },
+      { name: "FX Trading", match: ["fxtrading"] },
+      { name: "Blinq", match: ["blinq"] },
+    ],
   },
 ];
 

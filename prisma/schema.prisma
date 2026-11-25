@@ -199,6 +199,7 @@ model HubspotDeal {
   companyName        String? // HubSpot deal property "Company name" — the client identity for this account (associations are unreliable)
   clientManager      String? // HubSpot "Client Manager" — who owns the relationship. NOT account_manager, which HubSpot labels "Executor" and means the delivery owner.
   contractTerms      String? // HubSpot "Contract Terms" — "3 - month" | "6 - month" | "Month to Month" | "One-off" | "1 month trial"
+  stageEnteredAt     DateTime? // HubSpot hs_v2_date_entered_current_stage — when the deal moved into its current stage (e.g. when a client paused)
   packageDescription String? // HubSpot "Package Description" — Legacy|One-off|Combo|Other|Upsell
   commissionType     String? // HubSpot "Commission Type" — Support|Owned (Owned → 9% commission)
   industry           String?

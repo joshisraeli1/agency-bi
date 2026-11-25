@@ -220,8 +220,8 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
       <div>
         <h1 className="text-3xl font-bold">{data.label}</h1>
         <p className="text-muted-foreground mt-1">
-          The clients you look after, drawn from {data.baseLabel}. All figures are recurring
-          revenue, ex-GST.
+          The clients you look after, across every division, with every deal on them — upsells and
+          one-off work included. All figures are recurring revenue, ex-GST.
         </p>
       </div>
 
@@ -230,13 +230,15 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           icon={<Receipt className="h-4 w-4" />}
           label="Revenue you look after"
           value={formatCurrency(data.currentRevenue)}
-          note={`${data.currentClientCount} client${data.currentClientCount === 1 ? "" : "s"}`}
+          note={`${data.currentClientCount + data.churnedThisMonth.length} clients this month · ${data.currentClientCount} paying${
+            data.churnedThisMonth.length ? `, ${data.churnedThisMonth.length} churned` : ""
+          }`}
         />
         <Tile
           icon={<PieChart className="h-4 w-4" />}
           label={`Share of ${data.baseLabel}`}
           value={`${data.sharePct}%`}
-          note={`of ${formatCurrency(data.divisionRevenue)} across the division`}
+          note={`of ${formatCurrency(data.divisionRevenue)} across the agency`}
         />
         <Tile
           icon={<Repeat className="h-4 w-4" />}
@@ -265,6 +267,43 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
           }
         />
       </div>
+
+      {data.scheduledChurn.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Churn already booked</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">
+              Clients with an end date in HubSpot that hasn&apos;t arrived yet. They still count as
+              retained until that date.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm max-w-xl">
+              {data.scheduledChurn.map((c) => (
+                <li key={c.id} className="flex justify-between gap-6">
+                  <span>
+                    {c.name}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {c.leaving ? "leaving" : "reducing"}{" "}
+                      {new Date(c.date).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                    </span>
+                  </span>
+                  <span className="tabular-nums shrink-0">−{formatCurrency(c.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+            {data.scheduledChurn.length > 1 && (
+              <p className="mt-3 pt-2 border-t text-sm flex justify-between gap-6 font-medium max-w-xl">
+                <span>Total</span>
+                <span className="tabular-nums shrink-0">
+                  −{formatCurrency(data.scheduledChurn.reduce((s, c) => s + c.revenue, 0))}
+                </span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Retention is the KPI, so it leads. One series — the title names it, so
           no legend box is needed. */}
@@ -327,10 +366,10 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
         <CardHeader>
           <CardTitle className="text-base">Upsells vs churned revenue</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            Expansion you won against revenue lost when a client left altogether. New business is
-            excluded — it isn&apos;t your work. A client dropping one deal while keeping others is a
-            contraction, not a churn, so it isn&apos;t counted here either. Click a bar for the
-            clients behind it.
+            Expansion you won — upsells, plus one-off work like reshoots and statics sold to an
+            existing client — against revenue lost, whether a client left altogether or stayed on
+            less (marked &ldquo;reduced&rdquo;). New business is excluded — it isn&apos;t your work. Click
+            a bar for the clients behind it.
           </p>
         </CardHeader>
         <CardContent>
@@ -586,9 +625,8 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
         <CardHeader>
           <CardTitle className="text-base">Revenue over time</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            Your portfolio against the whole of {data.baseLabel}. Both are monthly recurring revenue
-            on one scale, so the gap between the lines is the part of the division you don&apos;t
-            look after.
+            Your portfolio against the whole agency. Both are monthly recurring revenue on one
+            scale, so the gap between the lines is the part of the agency you don&apos;t look after.
           </p>
         </CardHeader>
         <CardContent>
@@ -626,8 +664,9 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
         <CardHeader>
           <CardTitle className="text-base">Clients</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">
-            {clients.length} client{clients.length === 1 ? "" : "s"} in your portfolio, by monthly
-            revenue ex-GST.
+            {clients.length + data.churnedThisMonth.length} clients this month — {clients.length}{" "}
+            paying, by monthly revenue ex-GST
+            {data.churnedThisMonth.length > 0 && <>, and {data.churnedThisMonth.length} who churned this month</>}.
           </p>
         </CardHeader>
         <CardContent>
@@ -654,6 +693,24 @@ export function ClientSuccessView({ data }: { data: ClientSuccessDashboard }) {
                     <td className="text-right py-2 px-3 tabular-nums">
                       {c.ltv ? formatCurrency(c.ltv) : "—"}
                     </td>
+                  </tr>
+                ))}
+                {data.churnedThisMonth.map((c) => (
+                  <tr key={c.id} className="border-b text-muted-foreground">
+                    <td className="py-2 px-3">
+                      {c.name}{" "}
+                      <span className="text-xs rounded bg-red-500/10 text-red-600 px-1.5 py-0.5">
+                        Churned
+                        {c.date
+                          ? ` ${new Date(c.date).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}`
+                          : ""}
+                      </span>
+                    </td>
+                    <td className="text-right py-2 px-3 tabular-nums">
+                      <span className="line-through">{formatCurrency(c.revenue)}</span>
+                    </td>
+                    <td className="text-right py-2 px-3">—</td>
+                    <td className="text-right py-2 px-3">—</td>
                   </tr>
                 ))}
                 <tr className="font-medium">

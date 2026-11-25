@@ -106,6 +106,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
     "createdate", "closedate", "start_date", "churn_date", "hubspot_owner_id",
     "content_package_type", "package_description", "commission_type", "industry_type",
     "reasons_for_churn", "company_name", "outreach_source", "client_manager", "contract_terms",
+    "hs_v2_date_entered_current_stage",
   ];
   const relevant: HubSpotResult[] = [];
   let after: string | undefined;
@@ -166,6 +167,7 @@ export async function syncHubspotDeals(): Promise<{ inPipeline: number; upserted
       startDate: parseDate(p.start_date),
       closeDate: parseDate(p.closedate),
       churnDate: parseDate(p.churn_date),
+      stageEnteredAt: parseDate(p.hs_v2_date_entered_current_stage),
       churnReason: p.reasons_for_churn ?? null,
       contentPackageType: p.content_package_type ?? null,
       companyName: p.company_name ?? null,

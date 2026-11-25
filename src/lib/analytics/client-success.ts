@@ -1,13 +1,13 @@
 import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { foldUpsells, isOneOff, isUpsell, normalize, resolveDealDivisions } from "./upsells";
+import { foldUpsells, isOneOff, isProject, isUpsell, normalize } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { DivisionView } from "@/lib/divisions";
-import { divisionDisplayName } from "@/lib/divisions";
 
 const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
 const MONTHS = 12;
+const PAUSED_STAGE = "Current (Not Paying)";
 
 export interface PortfolioClient {
   id: string;
@@ -82,7 +82,19 @@ export interface TermConversion {
   survived: PortfolioMovement[];
 }
 
+/** A churn date already booked for a later date: known, not yet happened. */
+export interface ScheduledChurn {
+  id: string;
+  name: string;
+  revenue: number;
+  date: Date;
+  /** True when the client has nothing left running after this date. */
+  leaving: boolean;
+}
+
 export interface ClientSuccessDashboard {
+  /** Clients who left during the current month — still on the board, no longer paying. */
+  churnedThisMonth: (PortfolioMovement & { date: Date | null })[];
   label: string;
   baseLabel: string;
   currentRevenue: number;
@@ -100,20 +112,8 @@ export interface ClientSuccessDashboard {
   quarters: PortfolioQuarter[];
   termConversions: TermConversion[];
   clients: PortfolioClient[];
+  scheduledChurn: ScheduledChurn[];
 }
-
-/**
- * A company, not a contract. Retention is a statement about whether a client
- * stayed, so a company holding three deals that drops one has NOT churned — it
- * contracted. Keying on the deal would score that as a lost client and
- * understate retention badly.
- *
- * Mirrors the grouping in client-book.ts: clientId where there is one, the
- * normalised HubSpot company name otherwise (plenty of companies have no Client
- * record at all).
- */
-const companyKeyOf = (d: { clientId?: string | null; companyName?: string | null; id: string }): string =>
-  d.clientId ?? (d.companyName ? `name:${normalize(d.companyName)}` : d.id);
 
 /**
  * The client-servicing dashboard: one manager's book, and how much of it they
@@ -133,36 +133,106 @@ export async function getClientSuccessDashboard(
   view: DivisionView,
   months = MONTHS
 ): Promise<ClientSuccessDashboard> {
-  const [excludedIds, allDeals, downsells] = await Promise.all([
+  const [excludedIds, fetched, downsells] = await Promise.all([
     getExcludedClientIds(),
     db.hubspotDeal.findMany({
-      where: { OR: [{ stage: "closed_won" }, { churnDate: { not: null } }] },
+      where: {
+        OR: [
+          { stage: "closed_won" },
+          { churnDate: { not: null } },
+          { stageLabel: PAUSED_STAGE },
+        ],
+      },
       select: {
         ...DOWNSELL_DEAL_SELECT,
         companyName: true,
         clientManager: true,
         contractTerms: true,
+        stageLabel: true,
+        stageEnteredAt: true,
       },
     }),
     getDownsellResolution(),
   ]);
 
-  // Divisions resolve over the whole book first, so a cut inherits the division
-  // its deals already had rather than re-deciding it for a smaller set.
-  const divisionByDeal = resolveDealDivisions(allDeals);
+  // A paused client has stopped paying, so for retention it has churned, on the
+  // day the deal moved into the paused stage (HubSpot gives it no churn date).
+  // One paused before it ever started never ran at all.
+  const allDeals = fetched.flatMap((d) => {
+    if (d.stageLabel !== PAUSED_STAGE || d.churnDate) return [d];
+    const start = d.startDate ?? d.closeDate;
+    const pausedAt = d.stageEnteredAt ?? d.closeDate;
+    if (!start || !pausedAt || pausedAt <= start) return [];
+    return [{ ...d, churnDate: pausedAt }];
+  });
 
-  const passesGates = (d: (typeof allDeals)[number]) => {
+  type Deal = (typeof allDeals)[number];
+  const gated = allDeals.filter((d) => {
     if (d.clientId && excludedIds.has(d.clientId)) return false;
-    if (downsells.heldOutIds.has(d.id)) return false;
-    if (isOneOff(d) || /ad[\s-]?hoc/i.test(d.name)) return false;
-    return divisionByDeal.get(d.id) === view.baseDivision;
-  };
+    return !downsells.heldOutIds.has(d.id);
+  });
+  const isRecurring = (d: Deal) => !(isOneOff(d) || /ad[\s-]?hoc/i.test(d.name));
 
+  // Who is in the book. A client, not a deal: the roster names the clients this
+  // manager looks after, and a deal tagged with the manager brings its whole
+  // client in too. Every deal on such a client then counts — the upsell nobody
+  // tagged, the replacement raised under someone else's name, and the work in
+  // other divisions — because the relationship is the client, not the line item.
   const manager = view.clientManager.trim().toLowerCase();
-  const divisionDeals = allDeals.filter(passesGates);
-  const deals = divisionDeals.filter(
-    (d) => (d.clientManager ?? "").trim().toLowerCase() === manager
-  );
+  const roster = view.roster ?? [];
+  const rosterOf = (d: Deal): string | null => {
+    const names = [d.companyName, d.name].filter((n): n is string => !!n).map(normalize);
+    return roster.find((r) => r.match.some((m) => names.some((n) => n.startsWith(m))))?.name ?? null;
+  };
+  // A deal on the same client record joins that roster client even when it is
+  // named differently in HubSpot.
+  const rosterByClient = new Map<string, string>();
+  for (const d of gated) {
+    const r = rosterOf(d);
+    if (r && d.clientId && !rosterByClient.has(d.clientId)) rosterByClient.set(d.clientId, r);
+  }
+  /**
+   * A company, not a contract. Retention is a statement about whether a client
+   * stayed, so a company holding three deals that drops one has NOT churned — it
+   * contracted. Roster name first, then the Client record, then the normalised
+   * HubSpot company name (plenty of companies have no Client record at all).
+   */
+  const companyKeyOf = (d: Deal): string => {
+    const r = rosterOf(d) ?? (d.clientId ? rosterByClient.get(d.clientId) : undefined);
+    if (r) return `roster:${r}`;
+    return d.clientId ?? (d.companyName ? `name:${normalize(d.companyName)}` : d.id);
+  };
+  // Roster clients go by their board name; anyone else by HubSpot's company name.
+  const companyNameByKey = new Map<string, string>();
+  for (const d of gated) {
+    const n = d.companyName?.trim();
+    if (n) companyNameByKey.set(companyKeyOf(d), n);
+  }
+  const nameOf = (key: string, fallback: string) =>
+    key.startsWith("roster:") ? key.slice("roster:".length) : (companyNameByKey.get(key) ?? fallback);
+
+  // A client tagged with the manager but NOT on the roster only counts once it
+  // has left: it is churn history worth keeping, but if it is still running and
+  // missing from the board, someone else looks after it now.
+  const stillRunning = new Set<string>();
+  const today = new Date();
+  for (const d of gated) {
+    if (d.stage === "closed_won" && isRecurring(d) && (!d.churnDate || d.churnDate > today)) {
+      stillRunning.add(companyKeyOf(d));
+    }
+  }
+  const inBook = new Set<string>();
+  for (const d of gated) {
+    const key = companyKeyOf(d);
+    if (key.startsWith("roster:")) inBook.add(key);
+    else if ((d.clientManager ?? "").trim().toLowerCase() === manager && !stillRunning.has(key)) {
+      inBook.add(key);
+    }
+  }
+  const bookDeals = gated.filter((d) => inBook.has(companyKeyOf(d)));
+  const deals = bookDeals.filter(isRecurring);
+  // The book spans divisions, so it is read against the whole agency.
+  const agencyDeals = gated.filter(isRecurring);
 
   const now = new Date();
   const keys: string[] = [];
@@ -171,7 +241,7 @@ export async function getClientSuccessDashboard(
     keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
 
-  const liveIn = (d: (typeof allDeals)[number], month: string) => {
+  const liveIn = (d: Deal, month: string) => {
     const { startKey, churnKey } = windowKeys(d, downsells);
     return !!startKey && month >= startKey && (!churnKey || month < churnKey);
   };
@@ -186,7 +256,7 @@ export async function getClientSuccessDashboard(
       const key = companyKeyOf(d);
       const existing = m.get(key);
       if (existing) existing.revenue += amt;
-      else m.set(key, { name: d.name.trim(), revenue: amt });
+      else m.set(key, { name: nameOf(key, d.name.trim()), revenue: amt });
     }
     companiesByMonth.set(month, m);
   }
@@ -217,56 +287,30 @@ export async function getClientSuccessDashboard(
     const prev = i > 0 ? companiesByMonth.get(keys[i - 1])! : null;
 
     const revenue = [...here.values()].reduce((s, c) => s + c.revenue, 0);
-    const divisionRevenue = divisionDeals.reduce(
+    const divisionRevenue = agencyDeals.reduce(
       (s, d) => (liveIn(d, month) ? s + Math.max(0, d.amountExGst ?? 0) : s),
       0
     );
 
     // Retention is measured against the companies CARRIED INTO the month, so a
     // client won this month can neither be retained nor flatter the rate.
-    // A downsell handing over this month is a contraction, not a loss: the
-    // client is still here on a smaller deal. Finder.com's $20,000 replaced by
-    // $10,000 was booking as a $20,000 churn, because the replacement sat under
-    // a different client record with no client manager and so never entered the
-    // portfolio to keep the company alive.
-    const contractions = new Map<string, number>();
-    for (const p of downsells.contractionsByMonth.get(month) ?? []) {
-      if (p.clientId && excludedIds.has(p.clientId)) continue;
-      const key = p.clientId ?? `name:${normalize(p.predecessorName)}`;
-      contractions.set(key, (contractions.get(key) ?? 0) + Math.max(0, p.contractionExGst));
-    }
-    // The pair may sit under two different client records, so a predecessor's
-    // own key has to resolve to the contraction too.
-    const predecessorKeys = new Map<string, number>();
-    for (const d of deals) {
-      if (!downsells.predecessorIds.has(d.id)) continue;
-      if (monthKeyOf(d.churnDate) !== month) continue;
-      const amount = contractions.get(d.clientId ?? "") ??
-        contractions.get(`name:${normalize(d.companyName ?? d.name)}`) ??
-        null;
-      if (amount !== null) predecessorKeys.set(companyKeyOf(d), amount);
-    }
-
+    //
+    // Revenue lost counts every dollar that went, not just whole clients: a
+    // client that stays on a smaller package (Finder.com going from $20,000 to
+    // $10,000, or an upsell running out) is kept, but the drop is still churned
+    // revenue and is listed as "(reduced)".
     let clientsAtStart = 0;
     let clientsRetained = 0;
     const churnedClients: PortfolioMovement[] = [];
     if (prev) {
       clientsAtStart = prev.size;
       for (const [key, c] of prev) {
-        if (here.has(key)) {
+        const still = here.get(key);
+        if (still) {
           clientsRetained++;
-          continue;
-        }
-        const contracted = predecessorKeys.get(key);
-        if (contracted !== undefined) {
-          // Kept, at a smaller number. Only the contraction is revenue lost.
-          clientsRetained++;
-          if (contracted > 0) {
-            churnedClients.push({
-              id: key,
-              name: `${c.name} (downsell)`,
-              revenue: Math.round(contracted),
-            });
+          const drop = c.revenue - still.revenue;
+          if (drop >= 1) {
+            churnedClients.push({ id: key, name: `${c.name} (reduced)`, revenue: Math.round(drop) });
           }
           continue;
         }
@@ -275,16 +319,29 @@ export async function getClientSuccessDashboard(
     }
 
     // Upsells only — new business is not a client-servicing lead's work, so it
-    // is excluded rather than shown and explained away.
+    // is excluded rather than shown and explained away. An upsell is anything
+    // tagged Upsell, plus one-off or project work sold to a client that was
+    // already with us (a reshoot, a statics pack): that is selling more into the
+    // account, whatever HubSpot calls it.
     const upsells: PortfolioMovement[] = [];
     let upsellRevenue = 0;
-    for (const d of deals) {
+    for (const d of bookDeals) {
       const amt = d.amountExGst ?? 0;
-      if (amt <= 0 || !isUpsell(d)) continue;
+      if (amt <= 0) continue;
       if (downsells.successorIds.has(d.id)) continue; // a replacement, not an expansion
       if (monthKeyOf(d.startDate ?? d.closeDate) !== month) continue;
+      const extraWork = !isRecurring(d) || isProject(d);
+      if (!isUpsell(d)) {
+        if (!extraWork) continue;
+        const first = startedAt.get(companyKeyOf(d));
+        if (!first || (monthKeyOf(first) ?? "") >= month) continue;
+      }
       upsellRevenue += amt;
-      upsells.push({ id: d.clientId ?? d.id, name: d.name.trim(), revenue: Math.round(amt) });
+      upsells.push({
+        id: d.id,
+        name: `${d.name.trim()}${!isRecurring(d) ? " (one-off)" : ""}`,
+        revenue: Math.round(amt),
+      });
     }
 
     return {
@@ -404,7 +461,7 @@ export async function getClientSuccessDashboard(
         decisionPoint.setMonth(decisionPoint.getMonth() + termLength);
         const movement: PortfolioMovement = {
           id: key,
-          name: first.name.trim(),
+          name: nameOf(key, first.name.trim()),
           revenue: Math.round(first.amountExGst ?? 0),
         };
         if (decisionPoint > now) {
@@ -454,7 +511,7 @@ export async function getClientSuccessDashboard(
     const amt = Math.round(d.amountExGst ?? 0);
     const existing = byCompany.get(key);
     if (existing) existing.revenue += amt;
-    else byCompany.set(key, { id: key, name: d.name.trim(), revenue: amt, ltv: null, startDate: null });
+    else byCompany.set(key, { id: key, name: nameOf(key, d.name.trim()), revenue: amt, ltv: null, startDate: null });
   }
   // LTV and tenure read every deal a company ever had, not just the live ones.
   for (const [key, client] of byCompany) {
@@ -476,6 +533,40 @@ export async function getClientSuccessDashboard(
     .map((c) => (c.startDate ? (now.getTime() - c.startDate.getTime()) / MS_PER_MONTH : null))
     .filter((v): v is number => v !== null);
 
+  // Churn already booked for a later date. Without this a client on its way out
+  // (Finder.com, ending 18 December) looks fully retained until the day it goes.
+  const scheduledChurn: ScheduledChurn[] = [];
+  const liveByCompany = new Map<string, Deal[]>();
+  for (const d of liveDeals) {
+    const key = companyKeyOf(d);
+    liveByCompany.set(key, [...(liveByCompany.get(key) ?? []), d]);
+  }
+  for (const [key, live] of liveByCompany) {
+    const ending = live.filter((d) => d.churnDate && d.churnDate > now && (d.amountExGst ?? 0) > 0);
+    if (!ending.length) continue;
+    const last = new Date(Math.max(...ending.map((d) => d.churnDate!.getTime())));
+    scheduledChurn.push({
+      id: key,
+      name: nameOf(key, ending[0].name.trim()),
+      revenue: Math.round(ending.reduce((s2, d) => s2 + (d.amountExGst ?? 0), 0)),
+      date: last,
+      leaving: live.every((d) => !!d.churnDate && d.churnDate > now),
+    });
+  }
+  scheduledChurn.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Who left this month, with the day they went, so the client list matches the
+  // board: someone who stopped paying on the 2nd is still a client this month.
+  const lastRow = monthRows[monthRows.length - 1];
+  const churnedThisMonth = (lastRow?.churnedClients ?? [])
+    .filter((c) => !c.name.endsWith("(reduced)"))
+    .map((c) => {
+      const ends = deals
+        .filter((d) => companyKeyOf(d) === c.id && monthKeyOf(d.churnDate) === currentMonth)
+        .map((d) => d.churnDate!.getTime());
+      return { ...c, date: ends.length ? new Date(Math.max(...ends)) : null };
+    });
+
   // Retention across the whole window, not an average of monthly rates — a
   // rate of rates weights a quiet month the same as a busy one.
   const carried = monthRows.reduce((s, m) => s + m.clientsAtStart, 0);
@@ -483,7 +574,7 @@ export async function getClientSuccessDashboard(
 
   return {
     label: view.label,
-    baseLabel: divisionDisplayName(view.baseDivision),
+    baseLabel: "Agency",
     currentRevenue,
     currentClientCount: clients.length,
     divisionRevenue,
@@ -497,5 +588,7 @@ export async function getClientSuccessDashboard(
     quarters,
     termConversions,
     clients,
+    scheduledChurn,
+    churnedThisMonth,
   };
 }
