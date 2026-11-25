@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { formatMonth } from "@/lib/utils";
 import { getExcludedClientIds } from "./excluded-clients";
-import { foldUpsells, isOneOff, isProject, isUpsell, normalize } from "./upsells";
+import { foldUpsells, isOneOff, isProject, isUpsell, normalize, resolveDealDivisions } from "./upsells";
 import { getDownsellResolution, DOWNSELL_DEAL_SELECT, windowKeys } from "./downsells";
 import type { DivisionView } from "@/lib/divisions";
 
@@ -213,7 +213,10 @@ export async function getClientSuccessDashboard(
 
   // A client tagged with the manager but NOT on the roster only counts once it
   // has left: it is churn history worth keeping, but if it is still running and
-  // missing from the board, someone else looks after it now.
+  // missing from the board, someone else looks after it now. And only when the
+  // tag sits on base-division work: a Social-only client tagged with the manager
+  // (Mocka) was another lead's client, whatever the tag says.
+  const divisionByDeal = resolveDealDivisions(allDeals);
   const stillRunning = new Set<string>();
   const today = new Date();
   for (const d of gated) {
@@ -225,7 +228,11 @@ export async function getClientSuccessDashboard(
   for (const d of gated) {
     const key = companyKeyOf(d);
     if (key.startsWith("roster:")) inBook.add(key);
-    else if ((d.clientManager ?? "").trim().toLowerCase() === manager && !stillRunning.has(key)) {
+    else if (
+      (d.clientManager ?? "").trim().toLowerCase() === manager &&
+      divisionByDeal.get(d.id) === view.baseDivision &&
+      !stillRunning.has(key)
+    ) {
       inBook.add(key);
     }
   }
